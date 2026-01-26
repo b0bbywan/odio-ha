@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configuration Odio Audio",
+        "description": "Configurez votre système audio Odio",
+        "data": {
+          "api_url": "URL de l'API",
+          "scan_interval": "Intervalle de scan audio (secondes)",
+          "service_scan_interval": "Intervalle de scan services (secondes)"
+        },
+        "data_description": {
+          "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8080)",
+          "scan_interval": "Fréquence de mise à jour des clients audio (recommandé: 5s)",
+          "service_scan_interval": "Fréquence de mise à jour des services (recommandé: 60s)"
+        }
+      },
+      "services": {
+        "title": "Association des services",
+        "description": "Associez vos services audio à des entités media_player existantes (optionnel). Les services non associés seront créés comme de nouvelles entités.",
+        "data_description": {
+          "services_info": "Sélectionnez une entité media_player existante pour chaque service que vous souhaitez associer. Laissez vide pour créer une nouvelle entité."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter à l'API",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Cette API est déjà configurée"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Odio Audio",
+        "description": "Configurez les intervalles de mise à jour",
+        "data": {
+          "scan_interval": "Intervalle de scan audio (secondes)",
+          "service_scan_interval": "Intervalle de scan services (secondes)"
+        },
+        "data_description": {
+          "scan_interval": "Fréquence de mise à jour des clients audio (recommandé: 5s)",
+          "service_scan_interval": "Fréquence de mise à jour des services (recommandé: 60s)"
+        }
+      }
+    }
+  }
+}

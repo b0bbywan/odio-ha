@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Odio Audio Configuration",
+        "description": "Configure your Odio audio system",
+        "data": {
+          "api_url": "API URL",
+          "scan_interval": "Audio scan interval (seconds)",
+          "service_scan_interval": "Service scan interval (seconds)"
+        },
+        "data_description": {
+          "api_url": "The base URL of your go-odio-api (e.g. http://192.168.1.100:8080)",
+          "scan_interval": "How often to update audio clients (recommended: 5s)",
+          "service_scan_interval": "How often to update services (recommended: 60s)"
+        }
+      },
+      "services": {
+        "title": "Service Mapping",
+        "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities.",
+        "data_description": {
+          "services_info": "Select an existing media_player entity for each service you want to map. Leave empty to create a new entity."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to API",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This API is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Odio Audio Options",
+        "description": "Configure update intervals",
+        "data": {
+          "scan_interval": "Audio scan interval (seconds)",
+          "service_scan_interval": "Service scan interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to update audio clients (recommended: 5s)",
+          "service_scan_interval": "How often to update services (recommended: 60s)"
+        }
+      }
+    }
+  }
+}
