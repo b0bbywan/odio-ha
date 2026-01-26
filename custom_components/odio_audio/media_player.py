@@ -146,6 +146,67 @@ async def async_setup_entry(
 
     async_add_entities(entities)
 
+    # Track known standalone clients to detect new ones
+    known_remote_clients = {
+        entity._client_name: entity
+        for entity in entities
+        if isinstance(entity, OdioStandaloneClientMediaPlayer)
+    }
+
+    # Set up listener to detect new remote clients
+    @callback
+    def _async_check_new_clients():
+        """Check for new remote clients and create entities."""
+        if not audio_coordinator.data or not server_hostname:
+            return
+
+        new_entities = []
+
+        for client in audio_coordinator.data:
+            client_name = client.get("name", "")
+            client_host = client.get("host", "")
+            app = client.get("app", "").lower()
+            binary = client.get("binary", "").lower()
+
+            # Only process remote clients
+            is_remote = client_host and client_host != server_hostname
+            if not is_remote or not client_name:
+                continue
+
+            # Skip if we already have an entity for this client
+            if client_name in known_remote_clients:
+                continue
+
+            # Skip if handled by a service
+            is_handled = any(
+                pattern in [client_name.lower(), app, binary]
+                for pattern in handled_client_patterns
+            )
+            if is_handled:
+                continue
+
+            # Create new entity for this remote client
+            _LOGGER.info("Detected new remote client: '%s' from host '%s'", client_name, client_host)
+            entity = OdioStandaloneClientMediaPlayer(
+                audio_coordinator,
+                api_url,
+                session,
+                config_entry.entry_id,
+                client,
+                server_hostname,
+            )
+            new_entities.append(entity)
+            known_remote_clients[client_name] = entity
+
+        if new_entities:
+            _LOGGER.info("Adding %d new remote client entities", len(new_entities))
+            async_add_entities(new_entities)
+
+    # Listen for coordinator updates
+    config_entry.async_on_unload(
+        audio_coordinator.async_add_listener(_async_check_new_clients)
+    )
+
 
 class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     """Representation of the main Odio Audio receiver.
