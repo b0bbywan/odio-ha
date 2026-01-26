@@ -32,7 +32,10 @@ from .const import (
     ATTR_SERVICE_SCOPE,
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
+    ENDPOINT_SERVER_MUTE,
+    ENDPOINT_SERVER_VOLUME,
     ENDPOINT_CLIENT_MUTE,
+    ENDPOINT_CLIENT_VOLUME,
     ENDPOINT_SERVICE_ENABLE,
     ENDPOINT_SERVICE_DISABLE,
     ENDPOINT_SERVICE_RESTART,
@@ -310,30 +313,25 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        # Note: API doesn't support setting volume directly
-        # This would need to be implemented in go-odio-api
-        _LOGGER.warning("Volume control not yet implemented in API")
+        try:
+            url = f"{self._api_url}{ENDPOINT_SERVER_VOLUME}"
+            _LOGGER.debug("Setting receiver volume to %.2f at %s", volume, url)
+            async with self._session.post(url, json={"volume": volume}) as response:
+                response.raise_for_status()
+            await self.coordinator.async_request_refresh()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error setting receiver volume: %s", err)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
-        if not self.coordinator.data:
-            return
-
-        for client in self.coordinator.data:
-            client_name = client.get("name")
-            if client_name:
-                try:
-                    # PulseAudio utilise le name, pas l'id
-                    # URL encode le nom pour gérer les espaces et caractères spéciaux
-                    encoded_name = quote(client_name, safe='')
-                    url = f"{self._api_url}{ENDPOINT_CLIENT_MUTE.format(name=encoded_name)}"
-                    _LOGGER.debug("Muting client '%s' at %s", client_name, url)
-                    async with self._session.post(url, json={"muted": mute}) as response:
-                        response.raise_for_status()
-                except aiohttp.ClientError as err:
-                    _LOGGER.error("Error muting client '%s': %s", client_name, err)
-
-        await self.coordinator.async_request_refresh()
+        try:
+            url = f"{self._api_url}{ENDPOINT_SERVER_MUTE}"
+            _LOGGER.debug("Setting receiver mute to %s at %s", mute, url)
+            async with self._session.post(url, json={"muted": mute}) as response:
+                response.raise_for_status()
+            await self.coordinator.async_request_refresh()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error muting receiver: %s", err)
 
 
 class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
@@ -843,8 +841,29 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
                 {"entity_id": self._mapped_entity, "volume_level": volume},
                 blocking=True,
             )
-        else:
-            _LOGGER.warning("Volume control not yet implemented in API")
+            return
+        
+        # Fallback to PulseAudio client volume
+        client = self._get_client()
+        if not client:
+            _LOGGER.warning("No client found for service %s/%s, cannot set volume", 
+                          self._service_info["scope"], self._service_info["name"])
+            return
+
+        client_name = client.get("name")
+        if not client_name:
+            _LOGGER.error("Client has no name: %s", client)
+            return
+
+        try:
+            encoded_name = quote(client_name, safe='')
+            url = f"{self._api_url}{ENDPOINT_CLIENT_VOLUME.format(name=encoded_name)}"
+            _LOGGER.debug("Setting volume for client '%s' to %.2f at %s", client_name, volume, url)
+            async with self._session.post(url, json={"volume": volume}) as response:
+                response.raise_for_status()
+            await self.coordinator.async_request_refresh()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error setting volume for client '%s': %s", client_name, err)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
@@ -1042,17 +1061,36 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         """Get the current client data from coordinator by NAME."""
         if not self.coordinator.data:
             return None
-
+        
         # Find client by NAME (stable across reconnections)
         for client in self.coordinator.data:
             if client.get("name") == self._client_name:
                 return client
-
+        
         return None
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        _LOGGER.warning("Volume control not yet implemented in API")
+        client = self._get_current_client()
+        if not client:
+            _LOGGER.warning("Remote client '%s' is not connected, cannot set volume", self._client_name)
+            return
+
+        client_name = client.get("name")
+        if not client_name:
+            _LOGGER.error("Client has no name: %s", client)
+            return
+
+        try:
+            encoded_name = quote(client_name, safe='')
+            url = f"{self._api_url}{ENDPOINT_CLIENT_VOLUME.format(name=encoded_name)}"
+            _LOGGER.debug("Setting volume for remote client '%s' (host: %s) to %.2f at %s", 
+                         client_name, self._client_host, volume, url)
+            async with self._session.post(url, json={"volume": volume}) as response:
+                response.raise_for_status()
+            await self.coordinator.async_request_refresh()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error setting volume for remote client '%s': %s", client_name, err)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""

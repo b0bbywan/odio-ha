@@ -66,6 +66,9 @@ Représente le **serveur audio PulseAudio/PipeWire** et agrège tous les clients
   - `playing` : Au moins un client est en lecture
   - `idle` : Des clients sont connectés mais aucun ne joue
   - `off` : Aucun client connecté
+- **Actions** :
+  - `volume_set` : Contrôle le volume global du serveur (via `/audio/server/volume`)
+  - `volume_mute` : Mute global du serveur (via `/audio/server/mute`)
 - **Attributs** :
   - `active_clients` : Nombre de clients actifs
   - `playing_clients` : Nombre de clients en lecture
@@ -86,7 +89,8 @@ Chaque service audio client activé (MPD, Snapcast, Spotifyd, Shairport-Sync, up
 - **Actions natives** :
   - `turn_on` : Active et redémarre le service
   - `turn_off` : Désactive le service
-  - `mute` / `unmute` : Contrôle du mute PulseAudio
+  - `volume_mute` : Contrôle du mute PulseAudio du client
+  - `volume_set` : Contrôle du volume PulseAudio du client (via `/audio/clients/{name}/volume`)
 - **Actions héritées** (si service associé à une entité) :
   - `play`, `pause`, `stop` : Contrôle de lecture
   - `next_track`, `previous_track` : Navigation
@@ -127,8 +131,8 @@ Les clients **distants** (host différent du serveur) qui se connectent directem
   - `idle` : Client connecté mais pas de lecture
   - `playing` : Client en lecture
 - **Actions** :
-  - `mute` / `unmute` : Contrôle du mute PulseAudio
-  - `volume_set` : Contrôle du volume (si supporté par l'API)
+  - `volume_mute` : Contrôle du mute PulseAudio du client
+  - `volume_set` : Contrôle du volume PulseAudio du client (via `/audio/clients/{name}/volume`)
 
 **Attributs :**
 - `client_name` : Nom stable du client
@@ -167,6 +171,33 @@ Les clients **distants** (host différent du serveur) qui se connectent directem
 ## Exemple d'automatisation
 
 ```yaml
+# Contrôle du volume global
+automation:
+  - alias: "Volume global à 50% la nuit"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: media_player.volume_set
+        target:
+          entity_id: media_player.odio_audio_receiver
+        data:
+          volume_level: 0.5
+
+# Mute global en mode silence
+automation:
+  - alias: "Mute global en mode silence"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.silence_mode
+        to: 'on'
+    action:
+      - service: media_player.volume_mute
+        target:
+          entity_id: media_player.odio_audio_receiver
+        data:
+          is_volume_muted: true
+
 # Activer Snapcast quand on lance une lecture
 automation:
   - alias: "Démarrer Snapcast sur lecture"
@@ -191,6 +222,23 @@ automation:
       - service: media_player.media_pause
         target:
           entity_id: media_player.mpd_service_user
+
+# Contrôler le volume d'un client spécifique
+automation:
+  - alias: "Baisser le volume du tunnel bobby le soir"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    condition:
+      - condition: state
+        entity_id: media_player.tunnel_for_bobby_bobby_desktop
+        state: 'playing'
+    action:
+      - service: media_player.volume_set
+        target:
+          entity_id: media_player.tunnel_for_bobby_bobby_desktop
+        data:
+          volume_level: 0.3
 
 # Afficher l'album art dans une carte
 type: media-control
@@ -228,13 +276,26 @@ automation:
 
 Cette intégration nécessite que votre API go-odio-api expose les endpoints suivants :
 
+**Endpoints de lecture :**
 - `GET /audio/server` : Informations serveur
 - `GET /audio/clients` : Liste des clients audio
-- `POST /audio/clients/{name}/mute` : Contrôle mute (**utilise le `name` du client, pas l'`id`**)
 - `GET /services` : Liste des services
+
+**Endpoints de contrôle audio :**
+- `POST /audio/server/mute` : Mute global du serveur (payload: `{"muted": true}`)
+- `POST /audio/server/volume` : Volume global du serveur (payload: `{"volume": 0.5}`)
+- `POST /audio/clients/{name}/mute` : Mute d'un client spécifique (payload: `{"muted": true}`)
+- `POST /audio/clients/{name}/volume` : Volume d'un client spécifique (payload: `{"volume": 0.5}`)
+
+**Endpoints de contrôle services :**
 - `POST /services/{scope}/{unit}/enable` : Activer un service
 - `POST /services/{scope}/{unit}/disable` : Désactiver un service
 - `POST /services/{scope}/{unit}/restart` : Redémarrer un service
+
+**Notes importantes :**
+- Les endpoints `{name}` utilisent le **nom** du client PulseAudio, pas l'ID
+- Le volume est une valeur float entre 0.0 (muet) et 1.0 (100%)
+- Les endpoints `/audio/server/*` contrôlent tous les clients en une seule opération
 
 ### ⚠️ Important : Endpoint de mute
 
