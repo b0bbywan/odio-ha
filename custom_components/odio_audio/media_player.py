@@ -112,7 +112,8 @@ async def async_setup_entry(
     # Create entities for standalone clients (e.g., PipeWire TCP tunnels)
     # These are remote clients (different host) without a local systemd service
     if audio_coordinator.data:
-        for client in audio_coordinator.data:
+        audio = service_coordinator.data.get("audio", [])
+        for client in audio:
             client_name = client.get("name", "")
             client_host = client.get("host", "")
             app = client.get("app", "").lower()
@@ -265,8 +266,9 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not self.coordinator.data:
             return MediaPlayerState.OFF
 
+        clients = self.coordinator.data.get("audio", [])
         # Check if any client is playing
-        for client in self.coordinator.data:
+        for client in clients:
             if not client.get("corked", True):
                 return MediaPlayerState.PLAYING
 
@@ -287,8 +289,9 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not self.coordinator.data:
             return None
 
+        clients = self.coordinator.data.get("audio", [])
         # Average volume of all clients
-        volumes = [client.get("volume", 0) for client in self.coordinator.data]
+        volumes = [client.get("volume", 0) for client in clients]
         if volumes:
             return sum(volumes) / len(volumes)
         return None
@@ -299,8 +302,9 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not self.coordinator.data:
             return False
 
+        clients = self.coordinator.data.get("audio", [])
         # Check if any client is muted
-        return any(client.get("muted", False) for client in self.coordinator.data)
+        return any(client.get("muted", False) for client in clients)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -308,9 +312,11 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         attrs = {}
 
         if self.coordinator.data:
-            attrs["active_clients"] = len(self.coordinator.data)
+            clients = self.coordinator.data.get("audio", [])
+
+            attrs["active_clients"] = len(clients)
             attrs["playing_clients"] = len([
-                client for client in self.coordinator.data
+                client for client in clients
                 if not client.get("corked", True)
             ])
 
@@ -433,7 +439,9 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         # Check if service has an active audio client
         if self.coordinator.data:
             service_name = self._service_info["name"].replace(".service", "")
-            for client in self.coordinator.data:
+            clients = self.coordinator.data.get("audio", [])
+
+            for client in clients:
                 client_name = client.get("name", "").lower()
                 app = client.get("app", "").lower()
                 binary = client.get("binary", "").lower()
@@ -611,7 +619,8 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             return None
 
         service_name = self._service_info["name"].replace(".service", "")
-        for client in self.coordinator.data:
+        clients = self.coordinator.data.get("audio", [])
+        for client in clients:
             client_name = client.get("name", "").lower()
             app = client.get("app", "").lower()
             binary = client.get("binary", "").lower()
@@ -1049,8 +1058,9 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not self.coordinator.data:
             return None
 
+        clients = self.coordinator.data.get("audio", [])
         # Find client by NAME (stable across reconnections)
-        for client in self.coordinator.data:
+        for client in clients:
             if client.get("name") == self._client_name:
                 return client
 

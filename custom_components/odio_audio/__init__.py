@@ -69,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     data = await response.json()
                     _LOGGER.debug("Audio clients fetched: %d clients", len(data) if isinstance(data, list) else 0)
-                    return data
+                    return {"audio": data}
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching audio clients from %s", url)
