@@ -469,7 +469,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
-        features = (
+        base_features = (
             MediaPlayerEntityFeature.TURN_ON
             | MediaPlayerEntityFeature.TURN_OFF
             | MediaPlayerEntityFeature.VOLUME_MUTE
@@ -477,31 +477,11 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         # Add volume control if client is found
         if self._get_client():
-            features |= MediaPlayerEntityFeature.VOLUME_SET
+            base_features |= MediaPlayerEntityFeature.VOLUME_SET
 
         # Add features from mapped entity if available
         mapped_features = self._get_mapped_attribute("supported_features")
-        if mapped_features is None:
-            return features
-
-        # Add relevant features from the mapped entity
-        feature_map = {
-            MediaPlayerEntityFeature.PLAY,
-            MediaPlayerEntityFeature.PAUSE,
-            MediaPlayerEntityFeature.STOP,
-            MediaPlayerEntityFeature.NEXT_TRACK,
-            MediaPlayerEntityFeature.PREVIOUS_TRACK,
-            MediaPlayerEntityFeature.SEEK,
-            MediaPlayerEntityFeature.SELECT_SOURCE,
-            MediaPlayerEntityFeature.SHUFFLE_SET,
-            MediaPlayerEntityFeature.REPEAT_SET,
-        }
-
-        for feature in feature_map:
-            if mapped_features & feature:
-                features |= feature
-
-        return features
+        return _get_supported_features(base_features, mapped_features)
 
     @property
     def volume_level(self) -> float | None:
@@ -534,72 +514,72 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     @property
     def media_content_id(self) -> str | None:
         """Content ID of current playing media."""
-        self._get_mapped_attribute("media_content_id")
+        return self._get_mapped_attribute("media_content_id")
 
     @property
     def media_content_type(self) -> str | None:
         """Content type of current playing media."""
-        self._get_mapped_attribute("media_content_type")
+        return self._get_mapped_attribute("media_content_type")
 
     @property
     def media_duration(self) -> int | None:
         """Duration of current playing media in seconds."""
-        self._get_mapped_attribute("media_duration")
+        return self._get_mapped_attribute("media_duration")
 
     @property
     def media_position(self) -> int | None:
         """Position of current playing media in seconds."""
-        self._get_mapped_attribute("media_position")
+        return self._get_mapped_attribute("media_position")
 
     @property
     def media_position_updated_at(self):
         """When was the position of the current playing media valid."""
-        self._get_mapped_attribute("media_position_updated_at")
+        return self._get_mapped_attribute("media_position_updated_at")
 
     @property
     def media_title(self) -> str | None:
         """Title of current playing media."""
-        self._get_mapped_attribute("media_title")
+        return self._get_mapped_attribute("media_title")
 
     @property
     def media_artist(self) -> str | None:
         """Artist of current playing media."""
-        self._get_mapped_attribute("media_artist")
+        return self._get_mapped_attribute("media_artist")
 
     @property
     def media_album_name(self) -> str | None:
         """Album name of current playing media."""
-        self._get_mapped_attribute("media_album_name")
+        return self._get_mapped_attribute("media_album_name")
 
     @property
     def media_track(self) -> int | None:
         """Track number of current playing media."""
-        self._get_mapped_attribute("media_track")
+        return self._get_mapped_attribute("media_track")
 
     @property
     def media_image_url(self) -> str | None:
         """Image url of current playing media."""
-        self._get_mapped_attribute("entity_picture")
+        return self._get_mapped_attribute("entity_picture")
 
     @property
     def shuffle(self) -> bool | None:
         """Boolean if shuffle is enabled."""
-        self._get_mapped_attribute("shuffle")
+        return self._get_mapped_attribute("shuffle")
 
     @property
     def repeat(self) -> str | None:
         """Return current repeat mode."""
-        self._get_mapped_attribute("repeat")
+        return self._get_mapped_attribute("repeat")
 
     @property
     def source(self) -> str | None:
         """Name of the current input source."""
-        self._get_mapped_attribute("source")
+        return self._get_mapped_attribute("source")
 
     @property
     def source_list(self) -> list[str] | None:
         """List of available input sources."""
-        self._get_mapped_attribute("source_list")
+        return self._get_mapped_attribute("source_list")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -927,31 +907,11 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
         # Standalone clients support mute and volume
-        features = MediaPlayerEntityFeature.VOLUME_MUTE | MediaPlayerEntityFeature.VOLUME_SET
 
+        base_features = MediaPlayerEntityFeature.VOLUME_MUTE | MediaPlayerEntityFeature.VOLUME_SET
         # Add features from mapped entity if available
         mapped_features = self._get_mapped_attribute("supported_features")
-        if mapped_features is None:
-            return features
-
-        # Add relevant features from the mapped entity
-        feature_map = {
-            MediaPlayerEntityFeature.PLAY,
-            MediaPlayerEntityFeature.PAUSE,
-            MediaPlayerEntityFeature.STOP,
-            MediaPlayerEntityFeature.NEXT_TRACK,
-            MediaPlayerEntityFeature.PREVIOUS_TRACK,
-            MediaPlayerEntityFeature.SEEK,
-            MediaPlayerEntityFeature.SELECT_SOURCE,
-            MediaPlayerEntityFeature.SHUFFLE_SET,
-            MediaPlayerEntityFeature.REPEAT_SET,
-        }
-
-        for feature in feature_map:
-            if mapped_features & feature:
-                features |= feature
-
-        return features
+        return _get_supported_features(base_features, mapped_features)
 
     @property
     def volume_level(self) -> float | None:
@@ -1237,3 +1197,42 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         except Exception as err:
             _LOGGER.warning("Failed to delegate %s to %s: %s", service, self._mapped_entity, err)
             return False
+
+
+def _get_supported_features(
+    base_features: MediaPlayerEntityFeature,
+    mapped_features: MediaPlayerEntityFeature | None
+) -> MediaPlayerEntityFeature:
+    """Helper function to add mapped features to base features.
+
+    Args:
+        base_features: Base features supported by the entity
+        mapped_features: The mapped features value (can be None)
+
+    Returns:
+        MediaPlayerEntityFeature with all supported features
+    """
+    features = base_features
+
+    # Add features from mapped entity if available
+    if mapped_features is None:
+        return features
+
+    # Add relevant features from the mapped entity
+    feature_map = {
+        MediaPlayerEntityFeature.PLAY,
+        MediaPlayerEntityFeature.PAUSE,
+        MediaPlayerEntityFeature.STOP,
+        MediaPlayerEntityFeature.NEXT_TRACK,
+        MediaPlayerEntityFeature.PREVIOUS_TRACK,
+        MediaPlayerEntityFeature.SEEK,
+        MediaPlayerEntityFeature.SELECT_SOURCE,
+        MediaPlayerEntityFeature.SHUFFLE_SET,
+        MediaPlayerEntityFeature.REPEAT_SET,
+    }
+
+    for feature in feature_map:
+        if mapped_features & feature:
+            features |= feature
+
+    return features
