@@ -12,7 +12,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
@@ -39,15 +38,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Odio Audio from a config entry."""
     _LOGGER.info("Setting up Odio Audio integration")
 
+    # Debug: log raw entry data
+    _LOGGER.debug("entry.data = %s", dict(entry.data))
+    _LOGGER.debug("entry.options = %s", dict(entry.options))
+
     api_url = entry.data[CONF_API_URL]
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     service_scan_interval = entry.options.get(
         CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
     )
-    service_mappings = entry.data.get(CONF_SERVICE_MAPPINGS, {})
+    # Read mappings from options only (not from data anymore)
+    service_mappings = entry.options.get(CONF_SERVICE_MAPPINGS, {})
 
-    _LOGGER.debug("Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
-                 api_url, scan_interval, service_scan_interval)
+    _LOGGER.debug(
+        "Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
+        api_url, scan_interval, service_scan_interval,
+    )
     _LOGGER.debug("Service mappings: %s", service_mappings)
 
     session = async_get_clientsession(hass)
@@ -68,11 +74,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     data = await response.json()
                     _LOGGER.debug("Audio clients fetched: %d clients", len(data) if isinstance(data, list) else 0)
-                    return data
+                    return {"audio": data}
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching audio clients from %s", url)
-            raise UpdateFailed(f"Timeout communicating with API") from err
+            raise UpdateFailed("Timeout communicating with API") from err
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Client error fetching audio clients: %s", err)
@@ -88,6 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=f"{DOMAIN}_audio",
         update_method=async_update_audio,
         update_interval=timedelta(seconds=scan_interval),
+        config_entry=entry,
     )
 
     # Coordinator for services (slow polling)
@@ -123,7 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching services/server data")
-            raise UpdateFailed(f"Timeout communicating with API") from err
+            raise UpdateFailed("Timeout communicating with API") from err
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Client error fetching services/server: %s", err)
@@ -139,6 +146,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=f"{DOMAIN}_services",
         update_method=async_update_services,
         update_interval=timedelta(seconds=service_scan_interval),
+        config_entry=entry,
     )
 
     # Fetch initial data
@@ -170,8 +178,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
     _LOGGER.info("Odio Audio integration setup complete")
     return True
 
@@ -192,5 +198,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     _LOGGER.info("Reloading Odio Audio integration")
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
+    hass.config_entries.async_schedule_reload(entry.entry_id)
