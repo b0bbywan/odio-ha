@@ -350,7 +350,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
                     if service_coordinator.data:
                         server_hostname = service_coordinator.data.get("server", {}).get("hostname")
 
-                    for client in audio_coordinator.data:
+                    for client in audio_coordinator.data.get("audio", []):
                         client_name = client.get("name", "")
                         client_host = client.get("host", "")
 
@@ -419,7 +419,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
             if service_coordinator.data:
                 server_hostname = service_coordinator.data.get("server", {}).get("hostname")
 
-            for client in audio_coordinator.data:
+            for client in audio_coordinator.data.get("audio", []):
                 client_name = client.get("name", "")
                 client_host = client.get("host", "")
 

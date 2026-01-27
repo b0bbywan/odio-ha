@@ -171,7 +171,7 @@ async def async_setup_entry(
 
         new_entities = []
 
-        for client in audio_coordinator.data:
+        for client in audio_coordinator.data.get("audio", []):
             client_name = client.get("name", "")
             client_host = client.get("host", "")
             app = client.get("app", "").lower()
@@ -692,7 +692,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         # Delegate to mapped entity if available
-        if self._delegate_to_hass("volume_set", {"volume_level": volume}):
+        if await self._delegate_to_hass("volume_set", {"volume_level": volume}):
             return
 
         # Fallback to PulseAudio client volume
@@ -722,7 +722,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         # Try mapped entity first
-        if self._delegate_to_hass("volume_mute", {"is_volume_muted": mute}):
+        if await self._delegate_to_hass("volume_mute", {"is_volume_muted": mute}):
             return
 
         # Fallback to PulseAudio client mute
@@ -776,7 +776,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         except aiohttp.ClientError as err:
             _LOGGER.error("Error controlling service %s/%s (%s): %s", scope, unit, action, err)
 
-    def _get_mapped_attribute(self, attribute: str):
+    def _get_mapped_attribute(self, attribute: str) -> Any | None:
         if self._mapped_entity and self._hass:
             mapped_state = self._hass.states.get(self._mapped_entity)
             if mapped_state:
