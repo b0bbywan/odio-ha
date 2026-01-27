@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+
 from typing import Any, Callable
 
 from homeassistant.components.media_player import (
@@ -773,7 +775,6 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         # Generate a stable unique_id from the client name
         # Sanitize the name for use in entity_id
-        import re
         safe_name = re.sub(r'[^a-z0-9_]+', '_', self._client_name.lower()).strip('_')
 
         self._attr_unique_id = f"{entry_id}_remote_{safe_name}"
