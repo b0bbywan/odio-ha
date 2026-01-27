@@ -6,11 +6,13 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
 
 - **Media Player Receiver principal** : Contrôle global de votre système audio
 - **Media Players par service** : Chaque service audio (MPD, Snapcast, Shairport-Sync, etc.) devient une entité contrôlable
+- **Media Players clients distants** : Détection automatique des clients réseau (tunnels PipeWire, Kodi, etc.)
 - **Mise à jour optimisée** : Polling rapide pour les clients audio (5s par défaut), lent pour les services (60s par défaut)
-- **Association d'entités** : Possibilité de lier les services à des entités media_player existantes
+- **Association d'entités** : Possibilité de lier les services et clients à des entités media_player existantes
 - **Contrôle complet** :
   - Activation/désactivation des services
-  - Contrôle du mute
+  - Contrôle du volume (global et par client)
+  - Contrôle du mute (global et par client)
   - Lecture de l'état (playing/idle/off)
   - Informations détaillées sur les clients actifs
 
@@ -43,19 +45,38 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
    - Par exemple : associer `user/mpd.service` à `media_player.music_player_daemon`
    - **Avantages** : L'entité Odio hérite de toutes les capacités de l'entité associée (play/pause, next, album art, etc.)
 
-### Pourquoi associer les services ?
+### Reconfiguration (associations après coup)
 
-Lorsqu'un service est associé à une entité existante, l'entité Odio devient un **proxy enrichi** qui combine :
-- **Contrôle du service** (on/off via systemd)
-- **Contrôle audio** (mute via PulseAudio)
+Vous pouvez modifier les associations à tout moment :
+
+1. Allez dans **Paramètres** → **Appareils et services** → **Odio Audio**
+2. Cliquez sur **Configurer** (icône d'engrenage)
+3. Choisissez **"Gérer les associations d'entités"**
+4. Associez ou dissociez vos services et **clients distants** (nouveauté !)
+5. Les changements sont appliqués immédiatement
+
+Vous pouvez maintenant également associer les **clients distants** (tunnels PipeWire, Kodi, etc.) à des entités existantes ! Par exemple, associer votre `Tunnel for kodi` à `media_player.kodi_htpc` pour bénéficier de toutes les fonctionnalités Kodi tout en contrôlant le service audio.
+
+### Pourquoi associer les services et clients ?
+
+Lorsqu'un service ou client distant est associé à une entité existante, l'entité Odio devient un **proxy enrichi** qui combine :
+- **Contrôle du service** (on/off via systemd - services uniquement)
+- **Contrôle audio PulseAudio** (mute et volume indépendants)
 - **Toutes les fonctionnalités de l'entité associée** : play, pause, next, previous, seek, shuffle, repeat, source selection, album art, progression, etc.
 
-**Exemple :** Si vous associez `user/mpd.service` à `media_player.music_player_daemon` :
-- ✅ Turn On/Off : Active/désactive le service MPD
-- ✅ Play/Pause/Next/Previous : Délégué à l'entité MPD
-- ✅ Album art, titre, artiste : Récupérés depuis l'entité MPD
-- ✅ Mute : Contrôlé via PulseAudio
-- ✅ Volume : Délégué à l'entité MPD
+**Exemple service :** Si vous associez `user/mpd.service` à `media_player.music_player_daemon` :
+- ✅ **Turn On/Off** : Active/désactive le service MPD via systemd
+- ✅ **Play/Pause/Next/Previous** : Délégués à l'entité MPD
+- ✅ **Album art, titre, artiste** : Récupérés depuis l'entité MPD
+- ✅ **Mute** : Contrôlé via PulseAudio (indépendant du mute MPD)
+- ✅ **Volume** : Priorité à l'entité MPD, fallback sur PulseAudio
+
+**Exemple client distant :** Si vous associez `Tunnel for xbmc@htpc` à `media_player.kodi_htpc` :
+- ✅ **Play/Pause/Next/Previous** : Délégués à l'entité Kodi
+- ✅ **Album art, titre, artiste, progression** : Récupérés depuis l'entité Kodi
+- ✅ **Mute** : Contrôlé via PulseAudio (coupe le son du tunnel sans toucher à Kodi)
+- ✅ **Volume** : Priorité à l'entité Kodi, fallback sur PulseAudio
+- ℹ️ **Pas de Turn On/Off** : Les clients distants n'ont pas de service systemd local
 
 ## Structure des entités
 
@@ -130,19 +151,33 @@ Les clients **distants** (host différent du serveur) qui se connectent directem
   - `off` : Client déconnecté (l'entité reste visible)
   - `idle` : Client connecté mais pas de lecture
   - `playing` : Client en lecture
-- **Actions** :
+  - `paused` : Client en pause (si associé à une entité qui supporte pause)
+- **Actions natives** :
   - `volume_mute` : Contrôle du mute PulseAudio du client
   - `volume_set` : Contrôle du volume PulseAudio du client (via `/audio/clients/{name}/volume`)
+- **Actions héritées** (si client associé à une entité) :
+  - `play`, `pause`, `stop` : Contrôle de lecture
+  - `next_track`, `previous_track` : Navigation
+  - `seek` : Recherche dans le média
+  - `shuffle_set`, `repeat_set` : Modes de lecture
+  - `select_source` : Sélection de source
 
 **Attributs :**
 - `client_name` : Nom stable du client
 - `remote_host` : Hostname du client distant
 - `server_hostname` : Hostname du serveur audio
 - `status` : `connected` ou `disconnected`
+- `mapped_entity` : Entité associée (si configuré)
 - `client_id` : ID PulseAudio actuel (change à chaque reconnexion)
 - `app`, `backend`, `user` : Informations du client
 - `connection` : Détails de connexion (ex: "TCP/IP client from 192.168.1.24:50324")
 - `app_version` : Version de l'application cliente
+- **Attributs hérités** (si client associé) :
+  - `media_title`, `media_artist`, `media_album_name` : Métadonnées
+  - `media_duration`, `media_position` : Progression
+  - `entity_picture` : Album art
+  - `shuffle`, `repeat` : Modes de lecture
+  - `source`, `source_list` : Sources disponibles
 
 **Exemples :**
 ```yaml

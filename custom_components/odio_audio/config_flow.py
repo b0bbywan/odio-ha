@@ -257,19 +257,46 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
+        self._step = "init"
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the options."""
+        """Manage the options - main menu."""
         if user_input is not None:
-            _LOGGER.info("Updating options: scan_interval=%s, service_scan_interval=%s",
-                        user_input.get(CONF_SCAN_INTERVAL),
-                        user_input.get(CONF_SERVICE_SCAN_INTERVAL))
-            return self.async_create_entry(title="", data=user_input)
+            if user_input.get("next_step") == "intervals":
+                return await self.async_step_intervals()
+            elif user_input.get("next_step") == "mappings":
+                return await self.async_step_mappings()
 
         return self.async_show_form(
             step_id="init",
+            data_schema=vol.Schema({
+                vol.Required("next_step", default="intervals"): vol.In({
+                    "intervals": "Modifier les intervalles de scan",
+                    "mappings": "Gérer les associations d'entités",
+                }),
+            }),
+        )
+
+    async def async_step_intervals(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure scan intervals."""
+        if user_input is not None:
+            _LOGGER.info("Updating intervals: scan_interval=%s, service_scan_interval=%s",
+                        user_input.get(CONF_SCAN_INTERVAL),
+                        user_input.get(CONF_SERVICE_SCAN_INTERVAL))
+
+            # Keep existing mappings, only update intervals
+            new_options = dict(self._config_entry.options)
+            new_options[CONF_SCAN_INTERVAL] = user_input[CONF_SCAN_INTERVAL]
+            new_options[CONF_SERVICE_SCAN_INTERVAL] = user_input[CONF_SERVICE_SCAN_INTERVAL]
+
+            return self.async_create_entry(title="", data=new_options)
+
+        return self.async_show_form(
+            step_id="intervals",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
@@ -286,4 +313,141 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
                     ): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
                 }
             ),
+        )
+
+    async def async_step_mappings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure entity mappings for services and standalone clients."""
+        if user_input is not None:
+            _LOGGER.debug("Processing mapping updates")
+
+            # Build new service mappings from user input
+            service_mappings = dict(self._config_entry.data.get(CONF_SERVICE_MAPPINGS, {}))
+
+            # Get current data from coordinator to find all mappable entities
+            coordinator_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+            if coordinator_data:
+                service_coordinator = coordinator_data["service_coordinator"]
+                audio_coordinator = coordinator_data["audio_coordinator"]
+
+                # Update service mappings
+                if service_coordinator.data:
+                    services = service_coordinator.data.get("services", [])
+                    for service in services:
+                        if service.get("exists") and service.get("enabled") and service["name"] in SUPPORTED_SERVICES:
+                            key = f"{service['scope']}_{service['name']}"
+                            service_key = f"{service['scope']}/{service['name']}"
+                            if key in user_input and user_input[key]:
+                                service_mappings[service_key] = user_input[key]
+                            elif service_key in service_mappings and not user_input.get(key):
+                                # Remove mapping if cleared
+                                del service_mappings[service_key]
+
+                # Handle standalone client mappings
+                # We'll store these separately with a "client:" prefix to distinguish them
+                if audio_coordinator.data:
+                    server_hostname = None
+                    if service_coordinator.data:
+                        server_hostname = service_coordinator.data.get("server", {}).get("hostname")
+
+                    for client in audio_coordinator.data:
+                        client_name = client.get("name", "")
+                        client_host = client.get("host", "")
+
+                        # Only process remote clients
+                        is_remote = server_hostname and client_host and client_host != server_hostname
+                        if not is_remote or not client_name:
+                            continue
+
+                        import re
+                        safe_name = re.sub(r'[^a-z0-9_]+', '_', client_name.lower()).strip('_')
+                        key = f"client_{safe_name}"
+                        client_mapping_key = f"client:{client_name}"
+
+                        if key in user_input and user_input[key]:
+                            service_mappings[client_mapping_key] = user_input[key]
+                        elif client_mapping_key in service_mappings and not user_input.get(key):
+                            # Remove mapping if cleared
+                            del service_mappings[client_mapping_key]
+
+            _LOGGER.info("Updating mappings: %d total mappings", len(service_mappings))
+
+            # Update config entry data (not options, as mappings are in data)
+            new_data = dict(self._config_entry.data)
+            new_data[CONF_SERVICE_MAPPINGS] = service_mappings
+
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                data=new_data,
+            )
+
+            # Keep existing options unchanged
+            return self.async_create_entry(title="", data=dict(self._config_entry.options))
+
+        # Build schema for all mappable entities (services + standalone clients)
+        schema = {}
+
+        coordinator_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+        if not coordinator_data:
+            return self.async_abort(reason="not_loaded")
+
+        service_coordinator = coordinator_data["service_coordinator"]
+        audio_coordinator = coordinator_data["audio_coordinator"]
+        current_mappings = self._config_entry.data.get(CONF_SERVICE_MAPPINGS, {})
+
+        # Add services
+        if service_coordinator.data:
+            services = service_coordinator.data.get("services", [])
+            for service in services:
+                if service.get("exists") and service.get("enabled") and service["name"] in SUPPORTED_SERVICES:
+                    key = f"{service['scope']}_{service['name']}"
+                    service_key = f"{service['scope']}/{service['name']}"
+                    description = service.get("description", service["name"])
+                    default_value = current_mappings.get(service_key)
+
+                    schema[vol.Optional(key, default=default_value)] = selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="media_player",
+                            multiple=False,
+                        )
+                    )
+
+        # Add standalone clients
+        if audio_coordinator.data:
+            server_hostname = None
+            if service_coordinator.data:
+                server_hostname = service_coordinator.data.get("server", {}).get("hostname")
+
+            for client in audio_coordinator.data:
+                client_name = client.get("name", "")
+                client_host = client.get("host", "")
+
+                # Only show remote clients
+                is_remote = server_hostname and client_host and client_host != server_hostname
+                if not is_remote or not client_name:
+                    continue
+
+                import re
+                safe_name = re.sub(r'[^a-z0-9_]+', '_', client_name.lower()).strip('_')
+                key = f"client_{safe_name}"
+                client_mapping_key = f"client:{client_name}"
+                default_value = current_mappings.get(client_mapping_key)
+
+                schema[vol.Optional(key, description={"suggested_value": default_value} if default_value else None)] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="media_player",
+                        multiple=False,
+                    )
+                )
+
+        if not schema:
+            return self.async_abort(reason="no_mappable_entities")
+
+        return self.async_show_form(
+            step_id="mappings",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "info": "Associez vos services et clients distants à des entités media_player existantes. Laissez vide pour supprimer l'association."
+            },
         )

@@ -66,9 +66,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.error("Audio clients endpoint returned %s: %s", response.status, error_text)
                         raise UpdateFailed(f"Error fetching audio clients: HTTP {response.status}")
 
-                    data = await response.json()
-                    _LOGGER.debug("Audio clients fetched: %d clients", len(data) if isinstance(data, list) else 0)
-                    return data
+                    # Handle both application/json and text/plain
+                    text = await response.text()
+                    try:
+                        import json
+                        data = json.loads(text)
+                        _LOGGER.debug("Audio clients fetched: %d clients", len(data) if isinstance(data, list) else 0)
+                        return data
+                    except json.JSONDecodeError as err:
+                        _LOGGER.error("Failed to parse audio clients as JSON: %s", text[:200])
+                        raise UpdateFailed(f"Invalid JSON response: {err}") from err
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching audio clients from %s", url)
@@ -88,6 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=f"{DOMAIN}_audio",
         update_method=async_update_audio,
         update_interval=timedelta(seconds=scan_interval),
+        config_entry=entry,
     )
 
     # Coordinator for services (slow polling)
@@ -107,8 +115,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.error("Services endpoint returned %s: %s", response.status, error_text)
                         raise UpdateFailed(f"Error fetching services: HTTP {response.status}")
 
-                    services = await response.json()
-                    _LOGGER.debug("Services fetched: %d services", len(services) if isinstance(services, list) else 0)
+                    # Handle both application/json and text/plain
+                    text = await response.text()
+                    try:
+                        import json
+                        services = json.loads(text)
+                        _LOGGER.debug("Services fetched: %d services", len(services) if isinstance(services, list) else 0)
+                    except json.JSONDecodeError as err:
+                        _LOGGER.error("Failed to parse services as JSON: %s", text[:200])
+                        raise UpdateFailed(f"Invalid JSON response: {err}") from err
 
                 async with session.get(server_url) as response:
                     if response.status != 200:
@@ -116,8 +131,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.error("Server endpoint returned %s: %s", response.status, error_text)
                         raise UpdateFailed(f"Error fetching server info: HTTP {response.status}")
 
-                    server = await response.json()
-                    _LOGGER.debug("Server info fetched: %s", server.get("name"))
+                    # Handle both application/json and text/plain
+                    text = await response.text()
+                    try:
+                        import json
+                        server = json.loads(text)
+                        _LOGGER.debug("Server info fetched: %s", server.get("name"))
+                    except json.JSONDecodeError as err:
+                        _LOGGER.error("Failed to parse server as JSON: %s", text[:200])
+                        raise UpdateFailed(f"Invalid JSON response: {err}") from err
 
                 return {"services": services, "server": server}
 
@@ -139,6 +161,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=f"{DOMAIN}_services",
         update_method=async_update_services,
         update_interval=timedelta(seconds=service_scan_interval),
+        config_entry=entry,
     )
 
     # Fetch initial data
@@ -170,7 +193,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # Don't auto-reload on options change, only on explicit reload
+    # This prevents state conflicts when updating mappings
+    # entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     _LOGGER.info("Odio Audio integration setup complete")
     return True
