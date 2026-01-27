@@ -9,7 +9,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -115,7 +114,7 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle the initial step."""
         errors = {}
 
@@ -177,7 +176,7 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_services(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle service mapping step."""
         if user_input is not None:
             _LOGGER.debug("Processing service mappings")
@@ -259,7 +258,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ):
         """Manage the options - main menu."""
         if user_input is not None:
             if user_input.get("next_step") == "intervals":
@@ -279,7 +278,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_intervals(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ):
         """Configure scan intervals."""
         if user_input is not None:
             _LOGGER.info(
@@ -317,7 +316,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_mappings(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ):
         """Configure entity mappings for services and standalone clients."""
         if user_input is not None:
             _LOGGER.debug("Processing mapping updates")
