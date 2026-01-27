@@ -12,7 +12,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
@@ -46,8 +45,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     service_mappings = entry.data.get(CONF_SERVICE_MAPPINGS, {})
 
-    _LOGGER.debug("Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
-                 api_url, scan_interval, service_scan_interval)
+    _LOGGER.debug(
+        "Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
+        api_url, scan_interval, service_scan_interval,
+    )
     _LOGGER.debug("Service mappings: %s", service_mappings)
 
     session = async_get_clientsession(hass)
@@ -79,7 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching audio clients from %s", url)
-            raise UpdateFailed(f"Timeout communicating with API") from err
+            raise UpdateFailed("Timeout communicating with API") from err
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Client error fetching audio clients: %s", err)
@@ -145,7 +146,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         except asyncio.TimeoutError as err:
             _LOGGER.error("Timeout fetching services/server data")
-            raise UpdateFailed(f"Timeout communicating with API") from err
+            raise UpdateFailed("Timeout communicating with API") from err
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Client error fetching services/server: %s", err)

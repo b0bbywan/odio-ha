@@ -8,12 +8,10 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     DOMAIN,
@@ -158,7 +156,7 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
 
             except Exception as err:
-                _LOGGER.exception("Unexpected exception during setup")
+                _LOGGER.exception("Unexpected exception during setup: %s", err)
                 errors["base"] = "unknown"
 
         return self.async_show_form(
@@ -210,7 +208,7 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = {}
         for service in self._services:
             key = f"{service['scope']}_{service['name']}"
-            description = service.get("description", service["name"])
+#            description = service.get("description", service["name"])
             schema[vol.Optional(key)] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain="media_player",
@@ -284,9 +282,11 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Configure scan intervals."""
         if user_input is not None:
-            _LOGGER.info("Updating intervals: scan_interval=%s, service_scan_interval=%s",
-                        user_input.get(CONF_SCAN_INTERVAL),
-                        user_input.get(CONF_SERVICE_SCAN_INTERVAL))
+            _LOGGER.info(
+                "Updating intervals: scan_interval=%s, service_scan_interval=%s",
+                user_input.get(CONF_SCAN_INTERVAL),
+                user_input.get(CONF_SERVICE_SCAN_INTERVAL),
+            )
 
             # Keep existing mappings, only update intervals
             new_options = dict(self._config_entry.options)
@@ -403,7 +403,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
                 if service.get("exists") and service.get("enabled") and service["name"] in SUPPORTED_SERVICES:
                     key = f"{service['scope']}_{service['name']}"
                     service_key = f"{service['scope']}/{service['name']}"
-                    description = service.get("description", service["name"])
+#                    description = service.get("description", service["name"])
                     default_value = current_mappings.get(service_key)
 
                     schema[vol.Optional(key, default=default_value)] = selector.EntitySelector(
@@ -415,6 +415,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
         # Add standalone clients
         if audio_coordinator.data:
+            import re
             server_hostname = None
             if service_coordinator.data:
                 server_hostname = service_coordinator.data.get("server", {}).get("hostname")
@@ -428,7 +429,6 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
                 if not is_remote or not client_name:
                     continue
 
-                import re
                 safe_name = re.sub(r'[^a-z0-9_]+', '_', client_name.lower()).strip('_')
                 key = f"client_{safe_name}"
                 client_mapping_key = f"client:{client_name}"
