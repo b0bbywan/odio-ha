@@ -1,29 +1,35 @@
 """Config flow for Odio Audio integration."""
+
 from __future__ import annotations
 
 import logging
+import re
+from copy import deepcopy
 from typing import Any
 
 import aiohttp
 import voluptuous as vol
 
-from homeassistant import config_entries
-from homeassistant.const import CONF_NAME
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlowWithReload,
+)
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
-    DOMAIN,
     CONF_API_URL,
     CONF_SCAN_INTERVAL,
-    CONF_SERVICE_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
+    CONF_SERVICE_SCAN_INTERVAL,
+    DEFAULT_NAME,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
-    DEFAULT_NAME,
+    DOMAIN,
+    ENDPOINT_CLIENTS,
     ENDPOINT_SERVER,
     ENDPOINT_SERVICES,
     SUPPORTED_SERVICES,
@@ -31,186 +37,176 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# =============================================================================
+# Exceptions
+# =============================================================================
 
-async def validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any]:
-    """Validate the API connection."""
-    _LOGGER.debug("Starting API validation for URL: %s", api_url)
 
+class OdioConfigError(Exception):
+    """Base exception for Odio config errors."""
+
+
+class CannotConnect(OdioConfigError):
+    """Error to indicate we cannot connect."""
+
+
+class InvalidResponse(OdioConfigError):
+    """Error to indicate invalid API response."""
+
+
+class NoServicesFound(OdioConfigError):
+    """Error to indicate no services were found."""
+
+
+# =============================================================================
+# Validation
+# =============================================================================
+
+
+async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any]:
+    """Validate the API connection and return server info and services.
+
+    Raises:
+        CannotConnect: If connection fails.
+        InvalidResponse: If API returns invalid data.
+    """
     session = async_get_clientsession(hass)
 
     try:
         # Test server endpoint
         server_url = f"{api_url}{ENDPOINT_SERVER}"
-        _LOGGER.debug("Testing server endpoint: %s", server_url)
-
         async with session.get(
-            server_url,
-            timeout=aiohttp.ClientTimeout(total=10)
+            server_url, timeout=aiohttp.ClientTimeout(total=10)
         ) as response:
-            _LOGGER.debug("Server endpoint status: %s", response.status)
-
             if response.status != 200:
-                error_text = await response.text()
-                _LOGGER.error("Server endpoint returned %s: %s", response.status, error_text)
-                raise ValueError(f"Server returned status {response.status}")
-
+                raise CannotConnect(f"Server returned status {response.status}")
             server_info = await response.json()
-            _LOGGER.debug("Server info received: %s", server_info)
 
         # Test services endpoint
         services_url = f"{api_url}{ENDPOINT_SERVICES}"
-        _LOGGER.debug("Testing services endpoint: %s", services_url)
-
         async with session.get(
-            services_url,
-            timeout=aiohttp.ClientTimeout(total=10)
+            services_url, timeout=aiohttp.ClientTimeout(total=10)
         ) as response:
-            _LOGGER.debug("Services endpoint status: %s", response.status)
-            _LOGGER.debug("Services endpoint content-type: %s", response.content_type)
-
             if response.status != 200:
-                error_text = await response.text()
-                _LOGGER.error("Services endpoint returned %s: %s", response.status, error_text)
-                raise ValueError(f"Services returned status {response.status}")
+                raise CannotConnect(f"Services returned status {response.status}")
 
-            # Handle both application/json and text/plain
             text = await response.text()
             try:
                 import json
-                services = json.loads(text)
-                _LOGGER.debug("Services received: %d services found", len(services))
-            except json.JSONDecodeError as err:
-                _LOGGER.error("Failed to parse services response as JSON: %s", text[:200])
-                raise ValueError(f"Invalid JSON response: {err}") from err
 
-        _LOGGER.info("API validation successful")
-        return {
-            "server_info": server_info,
-            "services": services,
-        }
+                services = json.loads(text)
+            except json.JSONDecodeError as err:
+                raise InvalidResponse(f"Invalid JSON response: {err}") from err
+
+        return {"server_info": server_info, "services": services}
 
     except aiohttp.ClientConnectorError as err:
-        _LOGGER.error("Connection error - cannot reach API at %s: %s", api_url, err)
-        raise ValueError(f"Cannot connect to {api_url}") from err
-
+        raise CannotConnect(f"Cannot connect to {api_url}") from err
     except aiohttp.ClientError as err:
-        _LOGGER.error("HTTP client error: %s", err)
-        raise ValueError(f"HTTP error: {err}") from err
-
-    except Exception as err:
-        _LOGGER.exception("Unexpected error during API validation")
-        raise ValueError(f"Unexpected error: {err}") from err
+        raise CannotConnect(f"HTTP error: {err}") from err
 
 
-class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Odio Audio."""
+async def async_fetch_available_services(
+    hass: HomeAssistant, api_url: str
+) -> list[dict[str, Any]]:
+    """Fetch available services from API.
 
-    VERSION = 1
+    Returns list of enabled, supported services.
+    """
+    try:
+        info = await async_validate_api(hass, api_url)
+        return [
+            svc
+            for svc in info.get("services", [])
+            if svc.get("exists")
+            and svc.get("enabled")
+            and svc.get("name") in SUPPORTED_SERVICES
+        ]
+    except OdioConfigError:
+        return []
 
-    def __init__(self) -> None:
-        """Initialize."""
-        self._api_url: str | None = None
-        self._scan_interval: int = DEFAULT_SCAN_INTERVAL
-        self._service_scan_interval: int = DEFAULT_SERVICE_SCAN_INTERVAL
-        self._services: list[dict[str, Any]] = []
-        self._entities: list[str] = []
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step."""
-        errors = {}
+async def async_fetch_remote_clients(
+    hass: HomeAssistant, api_url: str
+) -> list[dict[str, Any]]:
+    """Fetch remote clients from API.
 
-        if user_input is not None:
-            _LOGGER.debug("Processing user input: %s", {k: v for k, v in user_input.items() if k != CONF_API_URL})
+    Returns list of remote clients (not on server host).
+    """
+    try:
+        info = await async_validate_api(hass, api_url)
+        server_hostname = info.get("server_info", {}).get("hostname")
 
-            try:
-                # Validate API
-                info = await validate_api(self.hass, user_input[CONF_API_URL])
+        session = async_get_clientsession(hass)
+        # Assuming there's an endpoint for clients - adjust as needed
+        clients_url = f"{api_url}/{ENDPOINT_CLIENTS}"
+        async with session.get(
+            clients_url, timeout=aiohttp.ClientTimeout(total=10)
+        ) as response:
+            if response.status != 200:
+                return []
+            clients = await response.json()
 
-                self._api_url = user_input[CONF_API_URL]
-                self._scan_interval = user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-                self._service_scan_interval = user_input.get(
-                    CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
+        return [
+            client
+            for client in clients
+            if client.get("host") and client.get("host") != server_hostname
+        ]
+    except (OdioConfigError, aiohttp.ClientError):
+        return []
+
+
+# =============================================================================
+# Schema helpers
+# =============================================================================
+
+
+def add_suggested_values_to_schema(
+    data_schema: vol.Schema, suggested_values: dict[str, Any]
+) -> vol.Schema:
+    """Make a copy of the schema, populated with suggested values."""
+    schema: dict[Any, Any] = {}
+    for key, val in data_schema.schema.items():
+        new_key = key
+        if isinstance(key, vol.Marker):
+            key_str = str(key.schema) if hasattr(key, "schema") else str(key)
+            if key_str in suggested_values:
+                new_key = deepcopy(key)
+                new_key.description = {"suggested_value": suggested_values[key_str]}
+        schema[new_key] = val
+    return vol.Schema(schema)
+
+
+def build_service_mapping_schema(
+    services: list[dict[str, Any]],
+    current_mappings: dict[str, str] | None = None,
+) -> vol.Schema:
+    """Build schema for service entity mappings.
+
+    For existing mappings: shows entity selector + delete checkbox
+    For new mappings: shows only entity selector
+    """
+    current_mappings = current_mappings or {}
+    schema: dict[Any, Any] = {}
+
+    for service in services:
+        key = f"{service['scope']}_{service['name']}"
+        service_key = f"{service['scope']}/{service['name']}"
+        current_value = current_mappings.get(service_key)
+
+        # Entity selector (with suggested value if exists)
+        if current_value:
+            schema[
+                vol.Optional(key, description={"suggested_value": current_value})
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="media_player",
+                    multiple=False,
                 )
-
-                # Filter enabled services
-                self._services = [
-                    svc for svc in info["services"]
-                    if svc.get("exists") and svc.get("enabled")
-                    and svc["name"] in SUPPORTED_SERVICES
-                ]
-
-                _LOGGER.info("Found %d enabled services", len(self._services))
-
-                # Get all media_player entities for mapping
-                self._entities = [
-                    entity_id
-                    for entity_id in self.hass.states.async_entity_ids("media_player")
-                ]
-
-                _LOGGER.debug("Found %d existing media_player entities", len(self._entities))
-
-                return await self.async_step_services()
-
-            except ValueError as err:
-                _LOGGER.error("Validation error: %s", err)
-                errors["base"] = "cannot_connect"
-
-            except Exception as err:
-                _LOGGER.exception("Unexpected exception during setup")
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_API_URL, default="http://localhost:8080"): str,
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
-                    vol.Optional(
-                        CONF_SERVICE_SCAN_INTERVAL, default=DEFAULT_SERVICE_SCAN_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
-                }
-            ),
-            errors=errors,
-        )
-
-    async def async_step_services(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle service mapping step."""
-        if user_input is not None:
-            _LOGGER.debug("Processing service mappings")
-
-            # Build service mappings from user input
-            mappings = {}
-            for service in self._services:
-                key = f"{service['scope']}_{service['name']}"
-                if key in user_input and user_input[key]:
-                    mappings[f"{service['scope']}/{service['name']}"] = user_input[key]
-                    _LOGGER.debug("Mapped %s/%s to %s", service['scope'], service['name'], user_input[key])
-
-            _LOGGER.info("Creating config entry with %d service mappings", len(mappings))
-
-            return self.async_create_entry(
-                title=DEFAULT_NAME,
-                data={
-                    CONF_API_URL: self._api_url,
-                    CONF_SERVICE_MAPPINGS: mappings,
-                },
-                options={
-                    CONF_SCAN_INTERVAL: self._scan_interval,
-                    CONF_SERVICE_SCAN_INTERVAL: self._service_scan_interval,
-                },
             )
-
-        # Build schema for service mappings
-        schema = {}
-        for service in self._services:
-            key = f"{service['scope']}_{service['name']}"
-            description = service.get("description", service["name"])
+            # Add delete checkbox for existing mappings
+            schema[vol.Optional(f"{key}_delete", default=False)] = selector.BooleanSelector()
+        else:
             schema[vol.Optional(key)] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain="media_player",
@@ -218,72 +214,453 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             )
 
-        if not schema:
-            # No services to map, create entry directly
-            _LOGGER.info("No services to map, creating entry directly")
+    return vol.Schema(schema)
 
-            return self.async_create_entry(
-                title=DEFAULT_NAME,
-                data={
-                    CONF_API_URL: self._api_url,
-                    CONF_SERVICE_MAPPINGS: {},
-                },
-                options={
-                    CONF_SCAN_INTERVAL: self._scan_interval,
-                    CONF_SERVICE_SCAN_INTERVAL: self._service_scan_interval,
-                },
+
+def build_client_mapping_schema(
+    clients: list[dict[str, Any]],
+    current_mappings: dict[str, str] | None = None,
+) -> vol.Schema:
+    """Build schema for client entity mappings.
+
+    For existing mappings: shows entity selector + delete checkbox
+    For new mappings: shows only entity selector
+    """
+    current_mappings = current_mappings or {}
+    schema: dict[Any, Any] = {}
+
+    for client in clients:
+        client_name = client.get("name", "")
+        if not client_name:
+            continue
+
+        safe_name = re.sub(r"[^a-z0-9_]+", "_", client_name.lower()).strip("_")
+        key = f"client_{safe_name}"
+        client_mapping_key = f"client:{client_name}"
+        current_value = current_mappings.get(client_mapping_key)
+
+        # Entity selector (with suggested value if exists)
+        if current_value:
+            schema[
+                vol.Optional(key, description={"suggested_value": current_value})
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="media_player",
+                    multiple=False,
+                )
+            )
+            # Add delete checkbox for existing mappings
+            schema[vol.Optional(f"{key}_delete", default=False)] = selector.BooleanSelector()
+        else:
+            schema[vol.Optional(key)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="media_player",
+                    multiple=False,
+                )
             )
 
-        return self.async_show_form(
-            step_id="services",
-            data_schema=vol.Schema(schema),
-            description_placeholders={
-                "services_info": "Associez vos services audio à des entités existantes dans Home Assistant (optionnel)"
-            },
-        )
+    return vol.Schema(schema)
+
+
+def parse_service_mappings_from_input(
+    user_input: dict[str, Any],
+    services: list[dict[str, Any]],
+    existing_mappings: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Parse service mappings from user input.
+
+    Handles both entity selection and delete checkboxes.
+    A mapping is removed if:
+    - The delete checkbox is checked, OR
+    - The entity field is empty/None
+    """
+    # Start fresh - only include mappings that are NOT services (e.g., client mappings)
+    mappings: dict[str, str] = {}
+
+    # Keep existing mappings that are NOT services
+    if existing_mappings:
+        for key, value in existing_mappings.items():
+            is_service_mapping = any(
+                f"{svc['scope']}/{svc['name']}" == key for svc in services
+            )
+            if not is_service_mapping:
+                mappings[key] = value
+
+    # Process services from user_input
+    for service in services:
+        key = f"{service['scope']}_{service['name']}"
+        service_key = f"{service['scope']}/{service['name']}"
+        delete_key = f"{key}_delete"
+
+        # Check if user wants to delete this mapping
+        if user_input.get(delete_key, False):
+            # Don't add this mapping (effectively deletes it)
+            continue
+
+        # Add mapping if entity is selected
+        entity_value = user_input.get(key)
+        if entity_value:
+            mappings[service_key] = entity_value
+
+    return mappings
+
+
+def parse_client_mappings_from_input(
+    user_input: dict[str, Any],
+    clients: list[dict[str, Any]],
+    existing_mappings: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Parse client mappings from user input.
+
+    Handles both entity selection and delete checkboxes.
+    A mapping is removed if:
+    - The delete checkbox is checked, OR
+    - The entity field is empty/None
+
+    Only modifies mappings for clients that are currently visible in the form.
+    Preserves mappings for clients not in the current list (e.g., offline clients).
+    """
+    mappings = dict(existing_mappings or {})
+
+    # Build set of client mapping keys we're currently managing
+    managed_client_keys: set[str] = set()
+    for client in clients:
+        client_name = client.get("name", "")
+        if client_name:
+            managed_client_keys.add(f"client:{client_name}")
+
+    # Remove only the client mappings that ARE in the current clients list
+    # (preserve mappings for offline/unavailable clients)
+    for key in list(mappings.keys()):
+        if key.startswith("client:") and key in managed_client_keys:
+            del mappings[key]
+
+    # Now add client mappings from user_input (unless delete is checked)
+    for client in clients:
+        client_name = client.get("name", "")
+        if not client_name:
+            continue
+
+        safe_name = re.sub(r"[^a-z0-9_]+", "_", client_name.lower()).strip("_")
+        key = f"client_{safe_name}"
+        client_mapping_key = f"client:{client_name}"
+        delete_key = f"{key}_delete"
+
+        # Check if user wants to delete this mapping
+        if user_input.get(delete_key, False):
+            continue
+
+        # Add mapping if entity is selected
+        entity_value = user_input.get(key)
+        if entity_value:
+            mappings[client_mapping_key] = entity_value
+
+    return mappings
+
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+STEP_USER_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_API_URL, default="http://localhost:8080"): str,
+    }
+)
+
+STEP_OPTIONS_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Optional(
+            CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
+        ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
+        vol.Optional(
+            CONF_SERVICE_SCAN_INTERVAL, default=DEFAULT_SERVICE_SCAN_INTERVAL
+        ): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
+    }
+)
+
+
+# =============================================================================
+# Config Flow
+# =============================================================================
+
+
+class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Odio Audio."""
+
+    VERSION = 1
+
+    def __init__(self) -> None:
+        """Initialize config flow."""
+        super().__init__()
+        self._data: dict[str, Any] = {}
+        self._options: dict[str, Any] = {}
+        self._services: list[dict[str, Any]] = []
 
     @staticmethod
     @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> OdioAudioOptionsFlow:
+    def async_get_options_flow(config_entry: ConfigEntry) -> OdioAudioOptionsFlow:
         """Get the options flow for this handler."""
-        return OdioAudioOptionsFlow(config_entry)
+        return OdioAudioOptionsFlow()
+
+    async def _async_validate_api_url(self, api_url: str) -> dict[str, str]:
+        """Validate API URL and populate services.
+
+        Returns dict of errors (empty if valid).
+        """
+        errors: dict[str, str] = {}
+
+        try:
+            info = await async_validate_api(self.hass, api_url)
+            self._services = [
+                svc
+                for svc in info.get("services", [])
+                if svc.get("exists")
+                and svc.get("enabled")
+                and svc.get("name") in SUPPORTED_SERVICES
+            ]
+            _LOGGER.info("Found %d enabled services", len(self._services))
+
+        except CannotConnect:
+            errors["base"] = "cannot_connect"
+        except InvalidResponse:
+            errors["base"] = "invalid_response"
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Unexpected error during API validation")
+            errors["base"] = "unknown"
+
+        return errors
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the initial step - API URL configuration."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            api_url = user_input[CONF_API_URL]
+
+            # Check if already configured
+            await self.async_set_unique_id(api_url)
+            self._abort_if_unique_id_configured()
+
+            # Validate API
+            errors = await self._async_validate_api_url(api_url)
+
+            if not errors:
+                self._data[CONF_API_URL] = api_url
+                return await self.async_step_options()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle scan interval options."""
+        if user_input is not None:
+            self._options[CONF_SCAN_INTERVAL] = user_input.get(
+                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+            )
+            self._options[CONF_SERVICE_SCAN_INTERVAL] = user_input.get(
+                CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
+            )
+            return await self.async_step_services()
+
+        return self.async_show_form(
+            step_id="options",
+            data_schema=STEP_OPTIONS_DATA_SCHEMA,
+        )
+
+    async def async_step_services(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle service mapping step."""
+        if user_input is not None:
+            # Parse mappings from user input
+            mappings = parse_service_mappings_from_input(
+                user_input, self._services, None
+            )
+            self._options[CONF_SERVICE_MAPPINGS] = mappings
+
+            return self._create_entry()
+
+        # No services to map - create entry directly
+        if not self._services:
+            self._options[CONF_SERVICE_MAPPINGS] = {}
+            return self._create_entry()
+
+        schema = build_service_mapping_schema(self._services)
+
+        return self.async_show_form(
+            step_id="services",
+            data_schema=schema,
+            description_placeholders={
+                "services_info": (
+                    "Associez vos services audio à des entités media_player "
+                    "existantes dans Home Assistant (optionnel)."
+                )
+            },
+        )
+
+    def _create_entry(self) -> ConfigFlowResult:
+        """Create the config entry."""
+        return self.async_create_entry(
+            title=DEFAULT_NAME,
+            data=self._data,
+            options=self._options,
+        )
 
 
-class OdioAudioOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Odio Audio."""
+# =============================================================================
+# Options Flow
+# =============================================================================
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+
+class OdioAudioOptionsFlow(OptionsFlowWithReload):
+    """Handle options flow for Odio Audio.
+
+    Inherits from OptionsFlowWithReload for automatic reload on options change.
+    """
+
+    def __init__(self) -> None:
         """Initialize options flow."""
-        self._config_entry = config_entry
+        super().__init__()
+        self._data: dict[str, Any] = {}
+        self._options: dict[str, Any] = {}
+        self._services: list[dict[str, Any]] = []
+        self._clients: list[dict[str, Any]] = []
+
+    async def _async_fetch_mappable_entities(self, api_url: str) -> None:
+        """Fetch services and clients that can be mapped."""
+        self._services = await async_fetch_available_services(self.hass, api_url)
+        self._clients = await async_fetch_remote_clients(self.hass, api_url)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage the options."""
+    ) -> ConfigFlowResult:
+        """Manage the options - show menu."""
+        # Initialize from current config
+        self._data = dict(self.config_entry.data)
+        self._options = dict(self.config_entry.options)
+
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["intervals", "mappings"],
+            description_placeholders={
+                "name": self.config_entry.title,
+            },
+        )
+
+    async def async_step_intervals(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure scan intervals."""
         if user_input is not None:
-            _LOGGER.info("Updating options: scan_interval=%s, service_scan_interval=%s",
-                        user_input.get(CONF_SCAN_INTERVAL),
-                        user_input.get(CONF_SERVICE_SCAN_INTERVAL))
-            return self.async_create_entry(title="", data=user_input)
+            new_options = dict(self._options)
+            new_options[CONF_SCAN_INTERVAL] = user_input[CONF_SCAN_INTERVAL]
+            new_options[CONF_SERVICE_SCAN_INTERVAL] = user_input[
+                CONF_SERVICE_SCAN_INTERVAL
+            ]
+
+            _LOGGER.info(
+                "Updating intervals: scan=%s, service_scan=%s",
+                new_options[CONF_SCAN_INTERVAL],
+                new_options[CONF_SERVICE_SCAN_INTERVAL],
+            )
+
+            return self.async_create_entry(title="", data=new_options)
+
+        # Build schema with current values as suggested
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_SCAN_INTERVAL): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=300)
+                ),
+                vol.Optional(CONF_SERVICE_SCAN_INTERVAL): vol.All(
+                    vol.Coerce(int), vol.Range(min=10, max=600)
+                ),
+            }
+        )
+
+        suggested = {
+            CONF_SCAN_INTERVAL: self._options.get(
+                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+            ),
+            CONF_SERVICE_SCAN_INTERVAL: self._options.get(
+                CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
+            ),
+        }
 
         return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL,
-                        default=self._config_entry.options.get(
-                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
-                    vol.Optional(
-                        CONF_SERVICE_SCAN_INTERVAL,
-                        default=self._config_entry.options.get(
-                            CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
-                }
-            ),
+            step_id="intervals",
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
+        )
+
+    async def async_step_mappings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure entity mappings for services and clients."""
+        api_url = self._data.get(CONF_API_URL)
+
+        if not api_url:
+            return self.async_abort(reason="no_api_url")
+
+        # Fetch current mappable entities from API
+        await self._async_fetch_mappable_entities(api_url)
+
+        current_mappings = self._options.get(CONF_SERVICE_MAPPINGS, {})
+
+        if user_input is not None:
+            _LOGGER.debug("user_input received: %s", user_input)
+            _LOGGER.debug("current_mappings before parse: %s", current_mappings)
+            _LOGGER.debug("services list: %s", [(s['scope'], s['name']) for s in self._services])
+            _LOGGER.debug("clients list: %s", [c.get('name') for c in self._clients])
+
+            # Parse service mappings
+            new_mappings = parse_service_mappings_from_input(
+                user_input, self._services, current_mappings
+            )
+            _LOGGER.debug("after service parse: %s", new_mappings)
+
+            # Parse client mappings
+            new_mappings = parse_client_mappings_from_input(
+                user_input, self._clients, new_mappings
+            )
+            _LOGGER.debug("after client parse: %s", new_mappings)
+
+            _LOGGER.info("Updating mappings: %d total", len(new_mappings))
+
+            new_options = dict(self._options)
+            new_options[CONF_SERVICE_MAPPINGS] = new_mappings
+            _LOGGER.debug("new_options to save: %s", new_options)
+
+            return self.async_create_entry(title="", data=new_options)
+
+        # Build combined schema for services and clients
+        if not self._services and not self._clients:
+            return self.async_abort(reason="no_mappable_entities")
+
+        schema_dict: dict[Any, Any] = {}
+
+        # Add service selectors
+        service_schema = build_service_mapping_schema(self._services, current_mappings)
+        schema_dict.update(service_schema.schema)
+
+        # Add client selectors
+        client_schema = build_client_mapping_schema(self._clients, current_mappings)
+        schema_dict.update(client_schema.schema)
+
+        return self.async_show_form(
+            step_id="mappings",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={
+                "info": (
+                    "Associez vos services et clients distants à des entités "
+                    "media_player existantes. Laissez vide pour supprimer l'association."
+                )
+            },
         )
