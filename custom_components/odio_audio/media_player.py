@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 import aiohttp
@@ -416,23 +416,13 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def state(self) -> MediaPlayerState:
         """Return the state of the device."""
         # If mapped to another entity, use its state when service is running
-        if self._mapped_entity and self._hass:
-            mapped_state = self._hass.states.get(self._mapped_entity)
-            if mapped_state:
-                # Check if service is running first
-                service_running = self._is_service_running()
-                if not service_running:
-                    return MediaPlayerState.OFF
-
-                # Map the state from the mapped entity
-                if mapped_state.state == "playing":
-                    return MediaPlayerState.PLAYING
-                elif mapped_state.state == "paused":
-                    return MediaPlayerState.PAUSED
-                elif mapped_state.state in ["idle", "on"]:
-                    return MediaPlayerState.IDLE
-                elif mapped_state.state == "off":
-                    return MediaPlayerState.OFF
+        state = _map_state_from_entity(
+            self._hass,
+            self.mapped_entity,
+            self._is_service_running(),
+        )
+        if state is not None:
+            return state
 
         # Fallback to original logic
         service_running = self._is_service_running()
@@ -873,22 +863,13 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def state(self) -> MediaPlayerState:
         """Return the state of the device."""
         # If mapped to another entity, use its state when client is connected
-        if self._mapped_entity and self._hass:
-            mapped_state = self._hass.states.get(self._mapped_entity)
-            if mapped_state:
-                client = self._get_current_client()
-                if not client:
-                    return MediaPlayerState.OFF
-
-                # Map the state from the mapped entity
-                if mapped_state.state == "playing":
-                    return MediaPlayerState.PLAYING
-                elif mapped_state.state == "paused":
-                    return MediaPlayerState.PAUSED
-                elif mapped_state.state in ["idle", "on"]:
-                    return MediaPlayerState.IDLE
-                elif mapped_state.state == "off":
-                    return MediaPlayerState.OFF
+        state = _map_state_from_entity(
+            self._hass,
+            self._mapped_entity,
+            self._get_current_client(),
+        )
+        if state is not None:
+            return state
 
         # Fallback to original logic
         client = self._get_current_client()
@@ -1236,3 +1217,42 @@ def _get_supported_features(
             features |= feature
 
     return features
+
+
+def _map_state_from_entity(
+    hass,
+    mapped_entity: str,
+    is_available_func: Callable[[], bool],
+) -> MediaPlayerState | None:
+    """Map state from another entity if available.
+
+    Args:
+        hass: Home Assistant instance
+        mapped_entity: Entity ID to map from
+        is_available_func: Function that returns True if the device is available
+
+    Returns:
+        Mapped MediaPlayerState or None if no mapping available
+    """
+    if not mapped_entity or not hass:
+        return None
+
+    mapped_state = hass.states.get(mapped_entity)
+    if not mapped_state:
+        return None
+
+    # Check availability first
+    if not is_available_func():
+        return MediaPlayerState.OFF
+
+    # Map the state from the mapped entity
+    if mapped_state.state == "playing":
+        return MediaPlayerState.PLAYING
+    elif mapped_state.state == "paused":
+        return MediaPlayerState.PAUSED
+    elif mapped_state.state in ["idle", "on"]:
+        return MediaPlayerState.IDLE
+    elif mapped_state.state == "off":
+        return MediaPlayerState.OFF
+
+    return None
