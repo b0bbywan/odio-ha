@@ -19,8 +19,6 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-
-from .mixin import MappedEntityMixin
 from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
@@ -327,7 +325,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self._api_client.set_server_mute(mute)
 
 
-class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     """Representation of an Odio Audio service (audio client/player).
 
     Each audio client service (MPD, Snapcast, Spotifyd, etc.) that sends
@@ -353,8 +351,8 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         super().__init__(audio_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
-        self._entry_id = entry_id
         self._service_info = service_info
+        self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         service_name = service_info["name"]
@@ -374,7 +372,13 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         """When entity is added to hass."""
         await super().async_added_to_hass()
         self._hass = self.hass
-        # Listen to service coordinator (once)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        super()._handle_coordinator_update()
+
+        # Also listen to service coordinator
         self.async_on_remove(
             self._service_coordinator.async_add_listener(
                 self._handle_service_coordinator_update
@@ -387,17 +391,12 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         self.async_write_ha_state()
 
     @property
-    def _mapping_key(self) -> str:
-        """Return the key used in service_mappings."""
-        return f"{self._service_info['scope']}/{self._service_info['name']}"
-
-    @property
     def state(self) -> MediaPlayerState:
         """Return the state of the device."""
         # If mapped to another entity, use its state when service is running
         state = _map_state_from_entity(
             self._hass,
-            self.mapped_entity,
+            self._mapped_entity,
             self._is_service_running,
         )
         if state is not None:
@@ -452,7 +451,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
 
         # Add features from mapped entity if available
         mapped_features = self._get_mapped_attribute("supported_features")
-        return self._get_supported_features(base_features, mapped_features)
+        return _get_supported_features(base_features, mapped_features)
 
     @property
     def volume_level(self) -> float | None:
@@ -483,6 +482,76 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         return False
 
     @property
+    def media_content_id(self) -> str | None:
+        """Content ID of current playing media."""
+        return self._get_mapped_attribute("media_content_id")
+
+    @property
+    def media_content_type(self) -> str | None:
+        """Content type of current playing media."""
+        return self._get_mapped_attribute("media_content_type")
+
+    @property
+    def media_duration(self) -> int | None:
+        """Duration of current playing media in seconds."""
+        return self._get_mapped_attribute("media_duration")
+
+    @property
+    def media_position(self) -> int | None:
+        """Position of current playing media in seconds."""
+        return self._get_mapped_attribute("media_position")
+
+    @property
+    def media_position_updated_at(self):
+        """When was the position of the current playing media valid."""
+        return self._get_mapped_attribute("media_position_updated_at")
+
+    @property
+    def media_title(self) -> str | None:
+        """Title of current playing media."""
+        return self._get_mapped_attribute("media_title")
+
+    @property
+    def media_artist(self) -> str | None:
+        """Artist of current playing media."""
+        return self._get_mapped_attribute("media_artist")
+
+    @property
+    def media_album_name(self) -> str | None:
+        """Album name of current playing media."""
+        return self._get_mapped_attribute("media_album_name")
+
+    @property
+    def media_track(self) -> int | None:
+        """Track number of current playing media."""
+        return self._get_mapped_attribute("media_track")
+
+    @property
+    def media_image_url(self) -> str | None:
+        """Image url of current playing media."""
+        return self._get_mapped_attribute("entity_picture")
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Boolean if shuffle is enabled."""
+        return self._get_mapped_attribute("shuffle")
+
+    @property
+    def repeat(self) -> str | None:
+        """Return current repeat mode."""
+        return self._get_mapped_attribute("repeat")
+
+    @property
+    def source(self) -> str | None:
+        """Name of the current input source."""
+        return self._get_mapped_attribute("source")
+
+    @property
+    def source_list(self) -> list[str] | None:
+        """List of available input sources."""
+        return self._get_mapped_attribute("source_list")
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         attrs = {
@@ -510,8 +579,8 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             attrs[ATTR_HOST] = client.get("host")
             attrs[ATTR_CORKED] = client.get("corked")
 
-        if self.mapped_entity:
-            attrs["mapped_entity"] = self.mapped_entity
+        if self._mapped_entity:
+            attrs["mapped_entity"] = self._mapped_entity
 
         return attrs
 
@@ -559,6 +628,42 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         await asyncio.sleep(0.5)
         await self.coordinator.async_request_refresh()
 
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        await self._delegate_to_hass("media_play")
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        await self._delegate_to_hass("media_pause")
+
+    async def async_media_stop(self) -> None:
+        """Send stop command."""
+        await self._delegate_to_hass("media_stop")
+
+    async def async_media_next_track(self) -> None:
+        """Send next track command."""
+        await self._delegate_to_hass("media_next_track")
+
+    async def async_media_previous_track(self) -> None:
+        """Send previous track command."""
+        await self._delegate_to_hass("media_previous_track")
+
+    async def async_media_seek(self, position: float) -> None:
+        """Send seek command."""
+        await self._delegate_to_hass("media_seek", {"seek_position": position})
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Enable/disable shuffle mode."""
+        await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
+
+    async def async_set_repeat(self, repeat: str) -> None:
+        """Set repeat mode."""
+        await self._delegate_to_hass("repeat_set", {"repeat": repeat})
+
+    async def async_select_source(self, source: str) -> None:
+        """Select input source."""
+        await self._delegate_to_hass("select_source", {"source": source})
+
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         # Delegate to mapped entity if available
@@ -603,8 +708,41 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
 
         await self._api_client.set_client_mute(client_name, mute)
 
+    def _get_mapped_attribute(self, attribute: str) -> Any | None:
+        if self._mapped_entity and self._hass:
+            mapped_state = self._hass.states.get(self._mapped_entity)
+            if mapped_state:
+                return mapped_state.attributes.get(attribute)
+        return None
 
-class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+    async def _delegate_to_hass(self, service: str, data: dict | None = None) -> bool:
+        """Delegate a media_player service call to the mapped entity.
+        Raises if no mapped entity or call fails.
+        """
+        if not (self._mapped_entity and self._hass):
+            _LOGGER.debug("No mapped entity available for %s", service)
+            return False
+
+        if data is None:
+            data = {}
+
+        data.setdefault("entity_id", self._mapped_entity)
+        _LOGGER.debug("Delegating %s to %s with %s", service, self._mapped_entity, data)
+
+        try:
+            await self._hass.services.async_call(
+                "media_player",
+                service,
+                data,
+                blocking=True,
+            )
+            return True
+        except Exception as err:
+            _LOGGER.warning("Failed to delegate %s to %s: %s", service, self._mapped_entity, err)
+            return False
+
+
+class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     """Representation of a standalone audio client (e.g., PipeWire TCP tunnel).
 
     These are remote audio clients that connect directly to PulseAudio/PipeWire
@@ -627,8 +765,8 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         """Initialize the standalone client."""
         super().__init__(audio_coordinator)
         self._api_client = api_client
-        self._entry_id = entry_id
         self._server_hostname = server_hostname
+        self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         # Use client NAME as stable identifier (ID changes on reconnection)
@@ -655,11 +793,6 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
             f" (mapped to {mapped_entity})" if mapped_entity else "",
         )
 
-    @property
-    def _mapping_key(self) -> str:
-        """Return the key used in service_mappings."""
-        return f"client:{self._client_name}"
-
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
@@ -671,7 +804,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         # If mapped to another entity, use its state when client is connected
         state = _map_state_from_entity(
             self._hass,
-            self.mapped_entity,
+            self._mapped_entity,
             self._get_current_client,
         )
         if state is not None:
@@ -698,7 +831,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         base_features = MediaPlayerEntityFeature.VOLUME_MUTE | MediaPlayerEntityFeature.VOLUME_SET
         # Add features from mapped entity if available
         mapped_features = self._get_mapped_attribute("supported_features")
-        return self._get_supported_features(base_features, mapped_features)
+        return _get_supported_features(base_features, mapped_features)
 
     @property
     def volume_level(self) -> float | None:
@@ -739,8 +872,8 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
             "server_hostname": self._server_hostname,
         }
 
-        if self.mapped_entity:
-            attrs["mapped_entity"] = self.mapped_entity
+        if self._mapped_entity:
+            attrs["mapped_entity"] = self._mapped_entity
 
         if not client:
             attrs["status"] = "disconnected"
@@ -765,11 +898,89 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
 
         return attrs
 
+    # Media properties inherited from mapped entity
+    @property
+    def media_content_id(self) -> str | None:
+        """Content ID of current playing media."""
+        return self._get_mapped_attribute("media_content_id")
+
+    @property
+    def media_content_type(self) -> str | None:
+        """Content type of current playing media."""
+        return self._get_mapped_attribute("media_content_type")
+
+    @property
+    def media_duration(self) -> int | None:
+        """Duration of current playing media in seconds."""
+        return self._get_mapped_attribute("media_duration")
+
+    @property
+    def media_position(self) -> int | None:
+        """Position of current playing media in seconds."""
+        return self._get_mapped_attribute("media_position")
+
+    @property
+    def media_position_updated_at(self):
+        """When was the position of the current playing media valid."""
+        return self._get_mapped_attribute("media_position_updated_at")
+
+    @property
+    def media_title(self) -> str | None:
+        """Title of current playing media."""
+        return self._get_mapped_attribute("media_title")
+
+    @property
+    def media_artist(self) -> str | None:
+        """Artist of current playing media."""
+        return self._get_mapped_attribute("media_artist")
+
+    @property
+    def media_album_name(self) -> str | None:
+        """Album name of current playing media."""
+        return self._get_mapped_attribute("media_album_name")
+
+    @property
+    def media_track(self) -> int | None:
+        """Track number of current playing media."""
+        return self._get_mapped_attribute("media_track")
+
+    @property
+    def media_image_url(self) -> str | None:
+        """Image url of current playing media."""
+        return self._get_mapped_attribute("entity_picture")
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Boolean if shuffle is enabled."""
+        return self._get_mapped_attribute("shuffle")
+
+    @property
+    def repeat(self) -> str | None:
+        """Return current repeat mode."""
+        return self._get_mapped_attribute("repeat")
+
+    @property
+    def source(self) -> str | None:
+        """Name of the current input source."""
+        return self._get_mapped_attribute("source")
+
+    @property
+    def source_list(self) -> list[str] | None:
+        """List of available input sources."""
+        return self._get_mapped_attribute("source_list")
+
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         # Entity is always available, but state will be OFF if disconnected
         return True
+
+    def _get_mapped_attribute(self, attribute: str):
+        if self._mapped_entity and self._hass:
+            mapped_state = self._hass.states.get(self._mapped_entity)
+            if mapped_state:
+                return mapped_state.attributes.get(attribute)
+        return None
 
     def _get_current_client(self) -> dict[str, Any] | None:
         """Get the current client data from coordinator by NAME."""
@@ -820,6 +1031,108 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
             _LOGGER.error("Client has no name: %s", client)
             return
         await self._api_client.set_client_mute(client_name, mute)
+
+    # Delegated media control actions
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        await self._delegate_to_hass("media_play")
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        await self._delegate_to_hass("media_pause")
+
+    async def async_media_stop(self) -> None:
+        """Send stop command."""
+        await self._delegate_to_hass("media_stop")
+
+    async def async_media_next_track(self) -> None:
+        """Send next track command."""
+        await self._delegate_to_hass("media_next_track")
+
+    async def async_media_previous_track(self) -> None:
+        """Send previous track command."""
+        await self._delegate_to_hass("media_previous_track")
+
+    async def async_media_seek(self, position: float) -> None:
+        """Send seek command."""
+        await self._delegate_to_hass("media_seek", {"seek_position": position})
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Enable/disable shuffle mode."""
+        await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
+
+    async def async_set_repeat(self, repeat: str) -> None:
+        """Set repeat mode."""
+        await self._delegate_to_hass("repeat_set", {"repeat": repeat})
+
+    async def async_select_source(self, source: str) -> None:
+        """Select input source."""
+        await self._delegate_to_hass("select_source", {"source": source})
+
+    async def _delegate_to_hass(self, service: str, data: dict | None = None) -> bool:
+        """Delegate a media_player service call to the mapped entity.
+        Raises if no mapped entity or call fails.
+        """
+        if not (self._mapped_entity and self._hass):
+            _LOGGER.debug("No mapped entity available for %s", service)
+            return False
+
+        if data is None:
+            data = {}
+
+        data.setdefault("entity_id", self._mapped_entity)
+        _LOGGER.debug("Delegating %s to %s with %s", service, self._mapped_entity, data)
+
+        try:
+            await self._hass.services.async_call(
+                "media_player",
+                service,
+                data,
+                blocking=True,
+            )
+            return True
+        except Exception as err:
+            _LOGGER.warning("Failed to delegate %s to %s: %s", service, self._mapped_entity, err)
+            return False
+
+
+def _get_supported_features(
+    base_features: MediaPlayerEntityFeature,
+    mapped_features: MediaPlayerEntityFeature | None
+) -> MediaPlayerEntityFeature:
+    """Helper function to add mapped features to base features.
+
+    Args:
+        base_features: Base features supported by the entity
+        mapped_features: The mapped features value (can be None)
+
+    Returns:
+        MediaPlayerEntityFeature with all supported features
+    """
+    features = base_features
+
+    # Add features from mapped entity if available
+    if mapped_features is None:
+        return features
+
+    # Add relevant features from the mapped entity
+    feature_map = {
+        MediaPlayerEntityFeature.PLAY,
+        MediaPlayerEntityFeature.PAUSE,
+        MediaPlayerEntityFeature.STOP,
+        MediaPlayerEntityFeature.NEXT_TRACK,
+        MediaPlayerEntityFeature.PREVIOUS_TRACK,
+        MediaPlayerEntityFeature.SEEK,
+        MediaPlayerEntityFeature.SELECT_SOURCE,
+        MediaPlayerEntityFeature.SHUFFLE_SET,
+        MediaPlayerEntityFeature.REPEAT_SET,
+    }
+
+    for feature in feature_map:
+        if mapped_features & feature:
+            features |= feature
+
+    return features
 
 
 def _map_state_from_entity(
