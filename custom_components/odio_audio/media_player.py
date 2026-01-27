@@ -4,9 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Callable
-from urllib.parse import quote
-
-import aiohttp
 
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
@@ -20,7 +17,7 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-
+from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
     ATTR_CLIENT_ID,
@@ -32,13 +29,6 @@ from .const import (
     ATTR_SERVICE_SCOPE,
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
-    ENDPOINT_SERVER_MUTE,
-    ENDPOINT_SERVER_VOLUME,
-    ENDPOINT_CLIENT_MUTE,
-    ENDPOINT_CLIENT_VOLUME,
-    ENDPOINT_SERVICE_ENABLE,
-    ENDPOINT_SERVICE_DISABLE,
-    ENDPOINT_SERVICE_RESTART,
     SUPPORTED_SERVICES,
 )
 
@@ -54,10 +44,11 @@ async def async_setup_entry(
     coordinator_data = hass.data[DOMAIN][config_entry.entry_id]
     audio_coordinator = coordinator_data["audio_coordinator"]
     service_coordinator = coordinator_data["service_coordinator"]
-    api_url = coordinator_data["api_url"]
-    session = coordinator_data["session"]
     service_mappings = coordinator_data["service_mappings"]
-
+    api_client = OdioApiClient(
+        coordinator_data["api_url"],
+        coordinator_data["session"],
+    )
     # Get server hostname to identify remote clients
     server_hostname = None
     if service_coordinator.data:
@@ -71,8 +62,7 @@ async def async_setup_entry(
         OdioReceiverMediaPlayer(
             audio_coordinator,
             service_coordinator,
-            api_url,
-            session,
+            api_client,
             config_entry.entry_id,
         )
     ]
@@ -97,8 +87,7 @@ async def async_setup_entry(
                 entity = OdioServiceMediaPlayer(
                     audio_coordinator,
                     service_coordinator,
-                    api_url,
-                    session,
+                    api_client,
                     config_entry.entry_id,
                     service,
                     mapped_entity,
@@ -139,8 +128,7 @@ async def async_setup_entry(
 
                 entityStandalone = OdioStandaloneClientMediaPlayer(
                     audio_coordinator,
-                    api_url,
-                    session,
+                    api_client,
                     config_entry.entry_id,
                     client,
                     server_hostname,
@@ -203,8 +191,7 @@ async def async_setup_entry(
 
             entity = OdioStandaloneClientMediaPlayer(
                 audio_coordinator,
-                api_url,
-                session,
+                api_client,
                 config_entry.entry_id,
                 client,
                 server_hostname,
@@ -237,15 +224,13 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self,
         audio_coordinator: DataUpdateCoordinator,
         service_coordinator: DataUpdateCoordinator,
-        api_url: str,
-        session: aiohttp.ClientSession,
+        api_client: OdioApiClient,
         entry_id: str,
     ) -> None:
         """Initialize the receiver."""
         super().__init__(audio_coordinator)
         self._service_coordinator = service_coordinator
-        self._api_url = api_url
-        self._session = session
+        self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
@@ -258,7 +243,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             server = service_coordinator.data.get("server", {})
             if server:
                 self._attr_device_info["sw_version"] = server.get("version")
-                self._attr_device_info["configuration_url"] = api_url
+                self._attr_device_info["configuration_url"] = api_client._api_url
 
     @property
     def state(self) -> MediaPlayerState:
@@ -331,25 +316,11 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        try:
-            url = f"{self._api_url}{ENDPOINT_SERVER_VOLUME}"
-            _LOGGER.debug("Setting receiver volume to %.2f at %s", volume, url)
-            async with self._session.post(url, json={"volume": volume}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error setting receiver volume: %s", err)
+        await self._api_client.set_server_volume(volume)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
-        try:
-            url = f"{self._api_url}{ENDPOINT_SERVER_MUTE}"
-            _LOGGER.debug("Setting receiver mute to %s at %s", mute, url)
-            async with self._session.post(url, json={"muted": mute}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error muting receiver: %s", err)
+        await self._api_client.set_server_mute(mute)
 
 
 class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
@@ -369,8 +340,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self,
         audio_coordinator: DataUpdateCoordinator,
         service_coordinator: DataUpdateCoordinator,
-        api_url: str,
-        session: aiohttp.ClientSession,
+        api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
         mapped_entity: str | None = None,
@@ -378,8 +348,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         """Initialize the service."""
         super().__init__(audio_coordinator)
         self._service_coordinator = service_coordinator
-        self._api_url = api_url
-        self._session = session
+        self._api_client = api_client
         self._service_info = service_info
         self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
@@ -632,10 +601,12 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         """Turn the media player on."""
-        _LOGGER.debug("Turning on service %s/%s", self._service_info["scope"], self._service_info["name"])
+        scope = self._service_info["scope"]
+        unit = self._service_info["name"]
+        _LOGGER.debug("Turning on service %s/%s", scope, unit)
 
         # Enable the service first, then restart it
-        await self._control_service("enable")
+        await self._api_client.control_service("enable", scope, unit)
         # Wait a bit longer before refreshing to let the service start
         await asyncio.sleep(1)
         await self._service_coordinator.async_request_refresh()
@@ -644,8 +615,10 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     async def async_turn_off(self) -> None:
         """Turn the media player off."""
-        _LOGGER.debug("Turning off service %s/%s", self._service_info["scope"], self._service_info["name"])
-        await self._control_service("disable")
+        scope = self._service_info["scope"]
+        unit = self._service_info["name"]
+        _LOGGER.debug("Turning off service %s/%s", scope, unit)
+        await self._api_client.control_service("disable", scope, unit)
 
         # Wait for service to stop
         await asyncio.sleep(1)
@@ -709,15 +682,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             _LOGGER.error("Client has no name: %s", client)
             return
 
-        try:
-            encoded_name = quote(client_name, safe='')
-            url = f"{self._api_url}{ENDPOINT_CLIENT_VOLUME.format(name=encoded_name)}"
-            _LOGGER.debug("Setting volume for client '%s' to %.2f at %s", client_name, volume, url)
-            async with self._session.post(url, json={"volume": volume}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error setting volume for client '%s': %s", client_name, err)
+        await self._api_client.set_client_volume(client_name, volume)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
@@ -739,42 +704,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             _LOGGER.error("Client has no name: %s", client)
             return
 
-        try:
-            # PulseAudio utilise le name, pas l'id
-            # URL encode le nom pour gérer les espaces et caractères spéciaux
-            encoded_name = quote(client_name, safe='')
-            url = f"{self._api_url}{ENDPOINT_CLIENT_MUTE.format(name=encoded_name)}"
-            _LOGGER.debug("Muting client '%s' at %s with muted=%s", client_name, url, mute)
-            async with self._session.post(url, json={"muted": mute}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error muting client '%s': %s", client_name, err)
-
-    async def _control_service(self, action: str) -> None:
-        """Control the service (enable/disable/restart)."""
-        scope = self._service_info["scope"]
-        unit = self._service_info["name"]
-
-        endpoint_map = {
-            "enable": ENDPOINT_SERVICE_ENABLE,
-            "disable": ENDPOINT_SERVICE_DISABLE,
-            "restart": ENDPOINT_SERVICE_RESTART,
-        }
-
-        endpoint = endpoint_map.get(action)
-        if not endpoint:
-            _LOGGER.error("Unknown service action: %s", action)
-            return
-
-        try:
-            url = f"{self._api_url}{endpoint.format(scope=scope, unit=unit)}"
-            _LOGGER.debug("Controlling service %s/%s: %s at %s", scope, unit, action, url)
-            async with self._session.post(url) as response:
-                response.raise_for_status()
-                _LOGGER.info("Successfully %sd service %s/%s", action, scope, unit)
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error controlling service %s/%s (%s): %s", scope, unit, action, err)
+        await self._api_client.set_client_mute(client_name, mute)
 
     def _get_mapped_attribute(self, attribute: str) -> Any | None:
         if self._mapped_entity and self._hass:
@@ -824,8 +754,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def __init__(
         self,
         audio_coordinator: DataUpdateCoordinator,
-        api_url: str,
-        session: aiohttp.ClientSession,
+        api_client: OdioApiClient,
         entry_id: str,
         initial_client: dict[str, Any],
         server_hostname: str | None = None,
@@ -833,8 +762,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     ) -> None:
         """Initialize the standalone client."""
         super().__init__(audio_coordinator)
-        self._api_url = api_url
-        self._session = session
+        self._api_client = api_client
         self._server_hostname = server_hostname
         self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
@@ -1083,18 +1011,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             _LOGGER.error("Client has no name: %s", client)
             return
 
-        try:
-            encoded_name = quote(client_name, safe='')
-            url = f"{self._api_url}{ENDPOINT_CLIENT_VOLUME.format(name=encoded_name)}"
-            _LOGGER.debug(
-                "Setting volume for remote client '%s' (host: %s) to %.2f at %s",
-                client_name, self._client_host, volume, url,
-            )
-            async with self._session.post(url, json={"volume": volume}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error setting volume for remote client '%s': %s", client_name, err)
+        await self._api_client.set_client_volume(client_name, volume)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
@@ -1112,20 +1029,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         if not client_name:
             _LOGGER.error("Client has no name: %s", client)
             return
-
-        try:
-            # PulseAudio utilise le name, pas l'id
-            encoded_name = quote(client_name, safe='')
-            url = f"{self._api_url}{ENDPOINT_CLIENT_MUTE.format(name=encoded_name)}"
-            _LOGGER.debug(
-                "Muting remote client '%s' (host: %s) at %s with muted=%s",
-                client_name, self._client_host, url, mute,
-            )
-            async with self._session.post(url, json={"muted": mute}) as response:
-                response.raise_for_status()
-            await self.coordinator.async_request_refresh()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error muting remote client '%s': %s", client_name, err)
+        await self._api_client.set_client_mute(client_name, mute)
 
     # Delegated media control actions
     async def async_media_play(self) -> None:
