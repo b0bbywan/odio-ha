@@ -67,7 +67,7 @@ async def async_setup_entry(
     _LOGGER.debug("Server hostname: %s", server_hostname)
 
     # Create main receiver entity (represents PulseAudio/PipeWire server)
-    entities = [
+    entities: list[MediaPlayerEntity] = [
         OdioReceiverMediaPlayer(
             audio_coordinator,
             service_coordinator,
@@ -136,7 +136,7 @@ async def async_setup_entry(
                 client_mapping_key = f"client:{client_name}"
                 mapped_entity = service_mappings.get(client_mapping_key)
 
-                entity = OdioStandaloneClientMediaPlayer(
+                entityStandalone = OdioStandaloneClientMediaPlayer(
                     audio_coordinator,
                     api_url,
                     session,
@@ -145,7 +145,7 @@ async def async_setup_entry(
                     server_hostname,
                     mapped_entity,
                 )
-                entities.append(entity)
+                entities.append(entityStandalone)
 
     _LOGGER.info("Creating %d media_player entities (1 receiver + %d services + %d standalone clients)",
                  len(entities),
@@ -309,9 +309,10 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         if self.coordinator.data:
             attrs["active_clients"] = len(self.coordinator.data)
-            attrs["playing_clients"] = sum(
-                1 for client in self.coordinator.data if not client.get("corked", True)
-            )
+            attrs["playing_clients"] = len([
+                client for client in self.coordinator.data
+                if not client.get("corked", True)
+            ])
 
         if self._service_coordinator.data:
             server = self._service_coordinator.data.get("server", {})
@@ -375,7 +376,7 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self._session = session
         self._service_info = service_info
         self._mapped_entity = mapped_entity
-        self._hass = None  # Will be set in async_added_to_hass
+        self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         service_name = service_info["name"]
         scope = service_info["scope"]
@@ -418,8 +419,8 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         # If mapped to another entity, use its state when service is running
         state = _map_state_from_entity(
             self._hass,
-            self.mapped_entity,
-            self._is_service_running(),
+            self._mapped_entity,
+            self._is_service_running,
         )
         if state is not None:
             return state
@@ -827,7 +828,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self._session = session
         self._server_hostname = server_hostname
         self._mapped_entity = mapped_entity
-        self._hass = None  # Will be set in async_added_to_hass
+        self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         # Use client NAME as stable identifier (ID changes on reconnection)
         self._client_name = initial_client.get("name", "")
@@ -866,7 +867,7 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         state = _map_state_from_entity(
             self._hass,
             self._mapped_entity,
-            self._get_current_client(),
+            self._get_current_client,
         )
         if state is not None:
             return state
@@ -1221,8 +1222,8 @@ def _get_supported_features(
 
 def _map_state_from_entity(
     hass,
-    mapped_entity: str,
-    is_available_func: Callable[[], bool],
+    mapped_entity: str | None,
+    is_available_func: Callable[[], Any],
 ) -> MediaPlayerState | None:
     """Map state from another entity if available.
 
