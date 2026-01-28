@@ -350,8 +350,8 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         super().__init__(audio_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
+        self._entry_id = entry_id
         self._service_info = service_info
-        self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         service_name = service_info["name"]
@@ -366,6 +366,20 @@ class OdioServiceMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             "manufacturer": "Odio",
             "model": "PulseAudio Receiver",
         }
+
+    @property
+    def _mapped_entity(self) -> str | None:
+        """Get current mapped entity dynamically from hass.data."""
+        if not self.hass:
+            return None
+
+        coordinator_data = self.hass.data.get(DOMAIN, {}).get(self._entry_id)
+        if not coordinator_data:
+            return None
+
+        service_mappings = coordinator_data.get("service_mappings", {})
+        service_key = f"{self._service_info['scope']}/{self._service_info['name']}"
+        return service_mappings.get(service_key)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -764,8 +778,8 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         """Initialize the standalone client."""
         super().__init__(audio_coordinator)
         self._api_client = api_client
+        self._entry_id = entry_id
         self._server_hostname = server_hostname
-        self._mapped_entity = mapped_entity
         self._hass: HomeAssistant | None = None  # Will be set in async_added_to_hass
 
         # Use client NAME as stable identifier (ID changes on reconnection)
@@ -791,6 +805,20 @@ class OdioStandaloneClientMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             self._client_name, self._client_host, self._attr_unique_id,
             f" (mapped to {mapped_entity})" if mapped_entity else "",
         )
+
+    @property
+    def _mapped_entity(self) -> str | None:
+        """Get current mapped entity dynamically from hass.data."""
+        if not self.hass:
+            return None
+
+        coordinator_data = self.hass.data.get(DOMAIN, {}).get(self._entry_id)
+        if not coordinator_data:
+            return None
+
+        service_mappings = coordinator_data.get("service_mappings", {})
+        mapping_key = f"client:{self._client_name}"
+        return service_mappings.get(mapping_key)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
