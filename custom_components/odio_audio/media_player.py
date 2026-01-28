@@ -116,17 +116,16 @@ async def async_setup_entry(
             if not is_remote:
                 continue
 
-            # Skip if this client is already handled by a service entity
-            is_handled = any(
-                pattern in [client_name.lower(), app, binary]
-                for pattern in handled_client_patterns
-            )
-
-            if not is_handled and client_name:
+            if client_name:
                 # Create a standalone client entity using the client name as stable identifier
                 # Check if this client has a mapped entity
                 client_mapping_key = f"client:{client_name}"
                 mapped_entity = service_mappings.get(client_mapping_key)
+
+                _LOGGER.debug(
+                    "Remote client: name=%s, host=%s, mapping_key=%s, mapped_entity=%s, mappings=%s",
+                    client_name, client_host, client_mapping_key, mapped_entity, service_mappings
+                )
 
                 entityStandalone = OdioStandaloneClientMediaPlayer(
                     audio_coordinator,
