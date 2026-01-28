@@ -43,7 +43,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     service_scan_interval = entry.options.get(
         CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
     )
-    service_mappings = entry.data.get(CONF_SERVICE_MAPPINGS, {})
+    service_mappings = entry.options.get(
+        CONF_SERVICE_MAPPINGS,
+        entry.data.get(CONF_SERVICE_MAPPINGS, {}),
+    )
 
     _LOGGER.debug(
         "Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",

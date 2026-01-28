@@ -195,11 +195,11 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title=DEFAULT_NAME,
                 data={
                     CONF_API_URL: self._api_url,
-                    CONF_SERVICE_MAPPINGS: mappings,
                 },
                 options={
                     CONF_SCAN_INTERVAL: self._scan_interval,
                     CONF_SERVICE_SCAN_INTERVAL: self._service_scan_interval,
+                    CONF_SERVICE_MAPPINGS: mappings,
                 },
             )
 
@@ -223,11 +223,11 @@ class OdioAudioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title=DEFAULT_NAME,
                 data={
                     CONF_API_URL: self._api_url,
-                    CONF_SERVICE_MAPPINGS: {},
                 },
                 options={
                     CONF_SCAN_INTERVAL: self._scan_interval,
                     CONF_SERVICE_SCAN_INTERVAL: self._service_scan_interval,
+                    CONF_SERVICE_MAPPINGS: {},
                 },
             )
 
@@ -322,7 +322,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
             _LOGGER.debug("Processing mapping updates")
 
             # Build new service mappings from user input
-            service_mappings = dict(self._config_entry.data.get(CONF_SERVICE_MAPPINGS, {}))
+            service_mappings = dict(self._config_entry.options.get(CONF_SERVICE_MAPPINGS, {}))
 
             # Get current data from coordinator to find all mappable entities
             coordinator_data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
@@ -393,7 +393,7 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
         service_coordinator = coordinator_data["service_coordinator"]
         audio_coordinator = coordinator_data["audio_coordinator"]
-        current_mappings = self._config_entry.data.get(CONF_SERVICE_MAPPINGS, {})
+        current_mappings = self._config_entry.options.get(CONF_SERVICE_MAPPINGS, {})
 
         # Add services
         if service_coordinator.data:
