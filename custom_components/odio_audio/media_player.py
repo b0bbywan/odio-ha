@@ -48,11 +48,8 @@ async def async_setup_entry(
     coordinator_data = hass.data[DOMAIN][config_entry.entry_id]
     audio_coordinator = coordinator_data["audio_coordinator"]
     service_coordinator = coordinator_data["service_coordinator"]
-    service_mappings = coordinator_data["service_mappings"]
-    api_client = OdioApiClient(
-        coordinator_data["api_url"],
-        coordinator_data["session"],
-    )
+    service_mappings = coordinator_data["service_mappings"]  # noqa: F841
+    api_client = coordinator_data["api"]
 
     # Get server hostname to identify remote clients
     server_hostname = None

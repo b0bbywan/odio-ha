@@ -37,7 +37,7 @@ class OdioApiClient:
                     response.raise_for_status()
 
                     # Handle empty responses
-                    if response.status == 204 or not response.content_length:
+                    if response.status == 204:
                         return None
 
                     return await response.json()
@@ -75,6 +75,8 @@ class OdioApiClient:
         """Get audio clients."""
         from .const import ENDPOINT_CLIENTS
         result = await self.get(ENDPOINT_CLIENTS)
+        if result is None:
+            return []
         if not isinstance(result, list):
             raise ValueError(f"Expected list from clients endpoint, got {type(result)}")
         return result
@@ -83,6 +85,8 @@ class OdioApiClient:
         """Get systemd services."""
         from .const import ENDPOINT_SERVICES
         result = await self.get(ENDPOINT_SERVICES, timeout=15)
+        if result is None:
+            return []
         if not isinstance(result, list):
             raise ValueError(f"Expected list from services endpoint, got {type(result)}")
         return result
