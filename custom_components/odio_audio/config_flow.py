@@ -6,7 +6,6 @@ import logging
 from copy import deepcopy
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -18,6 +17,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api_client import OdioApiClient
 from .const import (
     CONF_API_URL,
     CONF_SCAN_INTERVAL,
@@ -27,9 +27,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
     DOMAIN,
-    ENDPOINT_CLIENTS,
-    ENDPOINT_SERVER,
-    ENDPOINT_SERVICES,
     SUPPORTED_SERVICES,
 )
 from .config_flow_helpers import (
@@ -71,39 +68,21 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
         InvalidResponse: If API returns invalid data.
     """
     session = async_get_clientsession(hass)
+    api = OdioApiClient(api_url, session)
 
     try:
-        # Test server endpoint
-        server_url = f"{api_url}{ENDPOINT_SERVER}"
-        async with session.get(
-            server_url, timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            if response.status != 200:
-                raise CannotConnect(f"Server returned status {response.status}")
-            server_info = await response.json()
+        server_info = await api.get_server_info()
+        services = await api.get_services()
+    except Exception as err:
+        raise CannotConnect from err
 
-        # Test services endpoint
-        services_url = f"{api_url}{ENDPOINT_SERVICES}"
-        async with session.get(
-            services_url, timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            if response.status != 200:
-                raise CannotConnect(f"Services returned status {response.status}")
+    if not isinstance(server_info, dict) or not isinstance(services, list):
+        raise InvalidResponse("Invalid API response")
 
-            text = await response.text()
-            try:
-                import json
-
-                services = json.loads(text)
-            except json.JSONDecodeError as err:
-                raise InvalidResponse(f"Invalid JSON response: {err}") from err
-
-        return {"server_info": server_info, "services": services}
-
-    except aiohttp.ClientConnectorError as err:
-        raise CannotConnect(f"Cannot connect to {api_url}") from err
-    except aiohttp.ClientError as err:
-        raise CannotConnect(f"HTTP error: {err}") from err
+    return {
+        "server_info": server_info,
+        "services": services,
+    }
 
 
 async def async_fetch_available_services(
@@ -128,30 +107,23 @@ async def async_fetch_available_services(
 async def async_fetch_remote_clients(
     hass: HomeAssistant, api_url: str
 ) -> list[dict[str, Any]]:
-    """Fetch remote clients from API.
+    """Fetch remote clients (not on server host)."""
+    session = async_get_clientsession(hass)
+    api = OdioApiClient(api_url, session)
 
-    Returns list of remote clients (not on server host).
-    """
     try:
-        info = await async_validate_api(hass, api_url)
-        server_hostname = info.get("server_info", {}).get("hostname")
-
-        session = async_get_clientsession(hass)
-        clients_url = f"{api_url}/{ENDPOINT_CLIENTS}"
-        async with session.get(
-            clients_url, timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            if response.status != 200:
-                return []
-            clients = await response.json()
-
-        return [
-            client
-            for client in clients
-            if client.get("host") and client.get("host") != server_hostname
-        ]
-    except (OdioConfigError, aiohttp.ClientError):
+        server_info = await api.get_server_info()
+        clients = await api.get_clients()
+    except Exception:
         return []
+
+    server_hostname = server_info.get("hostname")
+
+    return [
+        client
+        for client in clients
+        if client.get("host") and client.get("host") != server_hostname
+    ]
 
 
 # =============================================================================
