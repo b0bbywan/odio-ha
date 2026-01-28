@@ -95,6 +95,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry=entry,
     )
 
+    async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Handle options update."""
+        new_mappings = entry.options.get(
+            CONF_SERVICE_MAPPINGS,
+            entry.data.get(CONF_SERVICE_MAPPINGS, {})
+        )
+
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN][entry.entry_id]["service_mappings"] = new_mappings
+            _LOGGER.info("Service mappings updated: %s", new_mappings)
+
+
     # Coordinator for services (slow polling)
     async def async_update_services():
         """Fetch services data from API."""
@@ -178,7 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Don't auto-reload on options change, only on explicit reload
     # This prevents state conflicts when updating mappings
-    # entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    entry.async_on_unload(entry.add_update_listener(async_options_updated))
 
     _LOGGER.info("Odio Audio integration setup complete")
     return True
@@ -200,5 +212,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry."""
     _LOGGER.info("Reloading Odio Audio integration")
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
+    await hass.config_entries.async_schedule_reload(entry.entry_id)

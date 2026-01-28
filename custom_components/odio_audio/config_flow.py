@@ -372,17 +372,11 @@ class OdioAudioOptionsFlow(config_entries.OptionsFlow):
 
             _LOGGER.info("Updating mappings: %d total mappings", len(service_mappings))
 
-            # Update config entry data (not options, as mappings are in data)
-            new_data = dict(self._config_entry.data)
-            new_data[CONF_SERVICE_MAPPINGS] = service_mappings
+            # Update options with new mappings
+            new_options = dict(self._config_entry.options)
+            new_options[CONF_SERVICE_MAPPINGS] = service_mappings
 
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                data=new_data,
-            )
-
-            # Keep existing options unchanged
-            return self.async_create_entry(title="", data=dict(self._config_entry.options))
+            return self.async_create_entry(title="", data=new_options)
 
         # Build schema for all mappable entities (services + standalone clients)
         schema = {}
