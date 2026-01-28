@@ -5,12 +5,20 @@
         "title": "Odio Audio Configuration",
         "description": "Configure your Odio audio system",
         "data": {
-          "api_url": "API URL",
+          "api_url": "API URL"
+        },
+        "data_description": {
+          "api_url": "The base URL of your go-odio-api (e.g. http://192.168.1.100:8080)"
+        }
+      },
+      "options": {
+        "title": "Scan Settings",
+        "description": "Configure update intervals",
+        "data": {
           "scan_interval": "Audio scan interval (seconds)",
           "service_scan_interval": "Service scan interval (seconds)"
         },
         "data_description": {
-          "api_url": "The base URL of your go-odio-api (e.g. http://192.168.1.100:8080)",
           "scan_interval": "How often to update audio clients (recommended: 5s)",
           "service_scan_interval": "How often to update services (recommended: 60s)"
         }
@@ -25,6 +33,7 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to API",
+      "invalid_response": "Invalid server response",
       "unknown": "Unexpected error"
     },
     "abort": {
@@ -35,6 +44,14 @@
     "step": {
       "init": {
         "title": "Odio Audio Options",
+        "description": "What would you like to configure for {name}?",
+        "menu_options": {
+          "intervals": "Change scan intervals",
+          "mappings": "Manage entity mappings"
+        }
+      },
+      "intervals": {
+        "title": "Scan Intervals",
         "description": "Configure update intervals",
         "data": {
           "scan_interval": "Audio scan interval (seconds)",
@@ -44,7 +61,38 @@
           "scan_interval": "How often to update audio clients (recommended: 5s)",
           "service_scan_interval": "How often to update services (recommended: 60s)"
         }
+      },
+      "mappings": {
+        "title": "Entity Mappings",
+        "description": "Map your services and clients to media_player entities. Check 'Delete' to remove a mapping.",
+        "data": {
+          "system_upmpdcli.service": "upmpdcli (system)",
+          "system_upmpdcli.service_delete": "Delete upmpdcli mapping",
+          "user_mpd.service": "mpd (user)",
+          "user_mpd.service_delete": "Delete mpd mapping",
+          "user_snapclient.service": "snapclient (user)",
+          "user_snapclient.service_delete": "Delete snapclient mapping",
+          "user_squeezelite.service": "squeezelite (user)",
+          "user_squeezelite.service_delete": "Delete squeezelite mapping",
+          "user_shairport-sync.service": "shairport-sync (user)",
+          "user_shairport-sync.service_delete": "Delete shairport-sync mapping",
+          "client_rasponkyo": "Rasponkyo Client",
+          "client_rasponkyo_delete": "Delete Rasponkyo client mapping"
+        },
+        "data_description": {
+          "info": "Select an existing media_player entity for each service or client."
+        }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to API",
+      "invalid_response": "Invalid server response",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "no_api_url": "API URL not configured",
+      "no_mappable_entities": "No services or clients available to map",
+      "not_loaded": "Integration not loaded"
     }
   }
 }
