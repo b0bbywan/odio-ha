@@ -1,9 +1,8 @@
-"""Config flow for Odio Audio integration."""
+"""Config flow for Odio Audio integration"""
 
 from __future__ import annotations
 
 import logging
-import re
 from copy import deepcopy
 from typing import Any
 
@@ -17,7 +16,6 @@ from homeassistant.config_entries import (
     OptionsFlowWithReload,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
@@ -33,6 +31,12 @@ from .const import (
     ENDPOINT_SERVER,
     ENDPOINT_SERVICES,
     SUPPORTED_SERVICES,
+)
+from .config_flow_helpers import (
+    build_mapping_schema,
+    parse_mappings_from_input,
+    get_service_keys,
+    get_client_keys,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,10 +56,6 @@ class CannotConnect(OdioConfigError):
 
 class InvalidResponse(OdioConfigError):
     """Error to indicate invalid API response."""
-
-
-class NoServicesFound(OdioConfigError):
-    """Error to indicate no services were found."""
 
 
 # =============================================================================
@@ -118,9 +118,8 @@ async def async_fetch_available_services(
         return [
             svc
             for svc in info.get("services", [])
-            if svc.get("exists")
-            and svc.get("enabled")
-            and svc.get("name") in SUPPORTED_SERVICES
+            if svc.get("exists") and svc.get("enabled") and svc.get("name")
+            in SUPPORTED_SERVICES
         ]
     except OdioConfigError:
         return []
@@ -138,7 +137,6 @@ async def async_fetch_remote_clients(
         server_hostname = info.get("server_info", {}).get("hostname")
 
         session = async_get_clientsession(hass)
-        # Assuming there's an endpoint for clients - adjust as needed
         clients_url = f"{api_url}/{ENDPOINT_CLIENTS}"
         async with session.get(
             clients_url, timeout=aiohttp.ClientTimeout(total=10)
@@ -175,187 +173,6 @@ def add_suggested_values_to_schema(
                 new_key.description = {"suggested_value": suggested_values[key_str]}
         schema[new_key] = val
     return vol.Schema(schema)
-
-
-def build_service_mapping_schema(
-    services: list[dict[str, Any]],
-    current_mappings: dict[str, str] | None = None,
-) -> vol.Schema:
-    """Build schema for service entity mappings.
-
-    For existing mappings: shows entity selector + delete checkbox
-    For new mappings: shows only entity selector
-    """
-    current_mappings = current_mappings or {}
-    schema: dict[Any, Any] = {}
-
-    for service in services:
-        key = f"{service['scope']}_{service['name']}"
-        service_key = f"{service['scope']}/{service['name']}"
-        current_value = current_mappings.get(service_key)
-
-        # Entity selector (with suggested value if exists)
-        if current_value:
-            schema[
-                vol.Optional(key, description={"suggested_value": current_value})
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="media_player",
-                    multiple=False,
-                )
-            )
-            # Add delete checkbox for existing mappings
-            schema[vol.Optional(f"{key}_delete", default=False)] = selector.BooleanSelector()
-        else:
-            schema[vol.Optional(key)] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="media_player",
-                    multiple=False,
-                )
-            )
-
-    return vol.Schema(schema)
-
-
-def build_client_mapping_schema(
-    clients: list[dict[str, Any]],
-    current_mappings: dict[str, str] | None = None,
-) -> vol.Schema:
-    """Build schema for client entity mappings.
-
-    For existing mappings: shows entity selector + delete checkbox
-    For new mappings: shows only entity selector
-    """
-    current_mappings = current_mappings or {}
-    schema: dict[Any, Any] = {}
-
-    for client in clients:
-        client_name = client.get("name", "")
-        if not client_name:
-            continue
-
-        safe_name = re.sub(r"[^a-z0-9_]+", "_", client_name.lower()).strip("_")
-        key = f"client_{safe_name}"
-        client_mapping_key = f"client:{client_name}"
-        current_value = current_mappings.get(client_mapping_key)
-
-        # Entity selector (with suggested value if exists)
-        if current_value:
-            schema[
-                vol.Optional(key, description={"suggested_value": current_value})
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="media_player",
-                    multiple=False,
-                )
-            )
-            # Add delete checkbox for existing mappings
-            schema[vol.Optional(f"{key}_delete", default=False)] = selector.BooleanSelector()
-        else:
-            schema[vol.Optional(key)] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="media_player",
-                    multiple=False,
-                )
-            )
-
-    return vol.Schema(schema)
-
-
-def parse_service_mappings_from_input(
-    user_input: dict[str, Any],
-    services: list[dict[str, Any]],
-    existing_mappings: dict[str, str] | None = None,
-) -> dict[str, str]:
-    """Parse service mappings from user input.
-
-    Handles both entity selection and delete checkboxes.
-    A mapping is removed if:
-    - The delete checkbox is checked, OR
-    - The entity field is empty/None
-    """
-    # Start fresh - only include mappings that are NOT services (e.g., client mappings)
-    mappings: dict[str, str] = {}
-
-    # Keep existing mappings that are NOT services
-    if existing_mappings:
-        for key, value in existing_mappings.items():
-            is_service_mapping = any(
-                f"{svc['scope']}/{svc['name']}" == key for svc in services
-            )
-            if not is_service_mapping:
-                mappings[key] = value
-
-    # Process services from user_input
-    for service in services:
-        key = f"{service['scope']}_{service['name']}"
-        service_key = f"{service['scope']}/{service['name']}"
-        delete_key = f"{key}_delete"
-
-        # Check if user wants to delete this mapping
-        if user_input.get(delete_key, False):
-            # Don't add this mapping (effectively deletes it)
-            continue
-
-        # Add mapping if entity is selected
-        entity_value = user_input.get(key)
-        if entity_value:
-            mappings[service_key] = entity_value
-
-    return mappings
-
-
-def parse_client_mappings_from_input(
-    user_input: dict[str, Any],
-    clients: list[dict[str, Any]],
-    existing_mappings: dict[str, str] | None = None,
-) -> dict[str, str]:
-    """Parse client mappings from user input.
-
-    Handles both entity selection and delete checkboxes.
-    A mapping is removed if:
-    - The delete checkbox is checked, OR
-    - The entity field is empty/None
-
-    Only modifies mappings for clients that are currently visible in the form.
-    Preserves mappings for clients not in the current list (e.g., offline clients).
-    """
-    mappings = dict(existing_mappings or {})
-
-    # Build set of client mapping keys we're currently managing
-    managed_client_keys: set[str] = set()
-    for client in clients:
-        client_name = client.get("name", "")
-        if client_name:
-            managed_client_keys.add(f"client:{client_name}")
-
-    # Remove only the client mappings that ARE in the current clients list
-    # (preserve mappings for offline/unavailable clients)
-    for key in list(mappings.keys()):
-        if key.startswith("client:") and key in managed_client_keys:
-            del mappings[key]
-
-    # Now add client mappings from user_input (unless delete is checked)
-    for client in clients:
-        client_name = client.get("name", "")
-        if not client_name:
-            continue
-
-        safe_name = re.sub(r"[^a-z0-9_]+", "_", client_name.lower()).strip("_")
-        key = f"client_{safe_name}"
-        client_mapping_key = f"client:{client_name}"
-        delete_key = f"{key}_delete"
-
-        # Check if user wants to delete this mapping
-        if user_input.get(delete_key, False):
-            continue
-
-        # Add mapping if entity is selected
-        entity_value = user_input.get(key)
-        if entity_value:
-            mappings[client_mapping_key] = entity_value
-
-    return mappings
 
 
 # =============================================================================
@@ -415,9 +232,8 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
             self._services = [
                 svc
                 for svc in info.get("services", [])
-                if svc.get("exists")
-                and svc.get("enabled")
-                and svc.get("name") in SUPPORTED_SERVICES
+                if svc.get("exists") and svc.get("enabled") and svc.get("name")
+                in SUPPORTED_SERVICES
             ]
             _LOGGER.info("Found %d enabled services", len(self._services))
 
@@ -480,9 +296,13 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle service mapping step."""
         if user_input is not None:
-            # Parse mappings from user input
-            mappings = parse_service_mappings_from_input(
-                user_input, self._services, None
+            # Parse mappings using generic helper
+            mappings = parse_mappings_from_input(
+                user_input,
+                self._services,
+                None,
+                get_service_keys,
+                preserve_others=False,
             )
             self._options[CONF_SERVICE_MAPPINGS] = mappings
 
@@ -493,7 +313,8 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
             self._options[CONF_SERVICE_MAPPINGS] = {}
             return self._create_entry()
 
-        schema = build_service_mapping_schema(self._services)
+        # Build schema using generic helper
+        schema = build_mapping_schema(self._services, None, get_service_keys)
 
         return self.async_show_form(
             step_id="services",
@@ -521,10 +342,7 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class OdioAudioOptionsFlow(OptionsFlowWithReload):
-    """Handle options flow for Odio Audio.
-
-    Inherits from OptionsFlowWithReload for automatic reload on options change.
-    """
+    """Handle options flow for Odio Audio."""
 
     def __init__(self) -> None:
         """Initialize options flow."""
@@ -597,7 +415,7 @@ class OdioAudioOptionsFlow(OptionsFlowWithReload):
 
         return self.async_show_form(
             step_id="intervals",
-            data_schema=self.add_suggested_values_to_schema(schema, suggested),
+            data_schema=add_suggested_values_to_schema(schema, suggested),
         )
 
     async def async_step_mappings(
@@ -617,18 +435,24 @@ class OdioAudioOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             _LOGGER.debug("user_input received: %s", user_input)
             _LOGGER.debug("current_mappings before parse: %s", current_mappings)
-            _LOGGER.debug("services list: %s", [(s['scope'], s['name']) for s in self._services])
-            _LOGGER.debug("clients list: %s", [c.get('name') for c in self._clients])
 
-            # Parse service mappings
-            new_mappings = parse_service_mappings_from_input(
-                user_input, self._services, current_mappings
+            # Parse service mappings using generic helper
+            new_mappings = parse_mappings_from_input(
+                user_input,
+                self._services,
+                current_mappings,
+                get_service_keys,
+                preserve_others=True,  # Preserve client mappings
             )
             _LOGGER.debug("after service parse: %s", new_mappings)
 
-            # Parse client mappings
-            new_mappings = parse_client_mappings_from_input(
-                user_input, self._clients, new_mappings
+            # Parse client mappings using generic helper
+            new_mappings = parse_mappings_from_input(
+                user_input,
+                self._clients,
+                new_mappings,
+                get_client_keys,
+                preserve_others=True,  # Preserve offline client mappings
             )
             _LOGGER.debug("after client parse: %s", new_mappings)
 
@@ -646,13 +470,19 @@ class OdioAudioOptionsFlow(OptionsFlowWithReload):
 
         schema_dict: dict[Any, Any] = {}
 
-        # Add service selectors
-        service_schema = build_service_mapping_schema(self._services, current_mappings)
-        schema_dict.update(service_schema.schema)
+        # Add service selectors using generic helper
+        if self._services:
+            service_schema = build_mapping_schema(
+                self._services, current_mappings, get_service_keys
+            )
+            schema_dict.update(service_schema.schema)
 
-        # Add client selectors
-        client_schema = build_client_mapping_schema(self._clients, current_mappings)
-        schema_dict.update(client_schema.schema)
+        # Add client selectors using generic helper
+        if self._clients:
+            client_schema = build_mapping_schema(
+                self._clients, current_mappings, get_client_keys
+            )
+            schema_dict.update(client_schema.schema)
 
         return self.async_show_form(
             step_id="mappings",
