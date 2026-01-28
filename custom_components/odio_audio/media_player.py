@@ -103,7 +103,7 @@ async def async_setup_entry(
     # Create entities for standalone clients (e.g., PipeWire TCP tunnels)
     # These are remote clients (different host) without a local systemd service
     if audio_coordinator.data:
-        audio = service_coordinator.data.get("audio", [])
+        audio = audio_coordinator.data.get("audio", [])
         for client in audio:
             client_name = client.get("name", "")
             client_host = client.get("host", "")
