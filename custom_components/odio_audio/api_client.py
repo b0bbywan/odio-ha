@@ -43,9 +43,15 @@ class OdioApiClient:
                     return await response.json()
 
         except asyncio.TimeoutError:
-            _LOGGER.error("Timeout on %s %s", method, url)
+            # Timeout is expected when device is slow or unreachable - log as warning
+            _LOGGER.warning("Timeout connecting to %s", url)
+            raise
+        except aiohttp.ClientConnectorError as err:
+            # Connection errors are expected when device is offline - log as warning
+            _LOGGER.warning("Unable to connect to %s: %s", url, err)
             raise
         except aiohttp.ClientError as err:
+            # Other client errors (e.g., HTTP errors) are unexpected - log as error
             _LOGGER.error("Error on %s %s: %s", method, url, err)
             raise
 
