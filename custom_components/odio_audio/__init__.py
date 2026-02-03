@@ -1,8 +1,11 @@
 """The Odio Audio integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -54,6 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
+    # Track consecutive failures for exponential backoff
+    failure_counts = {"audio": 0, "services": 0}
+
     # ---------------------------------------------------------------------
     # Audio clients coordinator (fast polling)
     # ---------------------------------------------------------------------
@@ -61,8 +67,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_update_audio() -> dict[str, list]:
         try:
             clients = await api.get_clients()
+            # Reset failure count on success
+            failure_counts["audio"] = 0
             return {"audio": clients}
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            # Connection errors are expected when device is offline
+            # Implement exponential backoff with 1h max
+            failure_counts["audio"] += 1
+            retry_delay = min(scan_interval * (2 ** failure_counts["audio"]), 3600)
+            _LOGGER.debug(
+                "Connection failed (attempt %d), retrying in %ds",
+                failure_counts["audio"], retry_delay
+            )
+            raise UpdateFailed(
+                f"Unable to connect to Odio Audio API: {err}",
+                retry_after=retry_delay
+            ) from err
         except Exception as err:
+            # Unexpected errors should still be logged with full traceback
             _LOGGER.exception("Unexpected error fetching audio clients")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
@@ -83,11 +105,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             services = await api.get_services()
             server = await api.get_server_info()
+            # Reset failure count on success
+            failure_counts["services"] = 0
             return {
                 "services": services,
                 "server": server,
             }
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            # Connection errors are expected when device is offline
+            # Implement exponential backoff with 1h max
+            failure_counts["services"] += 1
+            retry_delay = min(service_scan_interval * (2 ** failure_counts["services"]), 3600)
+            _LOGGER.debug(
+                "Connection failed (attempt %d), retrying in %ds",
+                failure_counts["services"], retry_delay
+            )
+            raise UpdateFailed(
+                f"Unable to connect to Odio Audio API: {err}",
+                retry_after=retry_delay
+            ) from err
         except Exception as err:
+            # Unexpected errors should still be logged with full traceback
             _LOGGER.exception("Unexpected error fetching services/server")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
