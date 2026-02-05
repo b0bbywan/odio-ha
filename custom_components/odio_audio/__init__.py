@@ -67,9 +67,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_update_audio() -> dict[str, list]:
         try:
             clients = await api.get_clients()
+            players = await api.get_players()
             # Reset failure count on success
             failure_counts["audio"] = 0
-            return {"audio": clients}
+            return {"audio": clients, "players": players}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
             # Implement exponential backoff with 1h max
@@ -85,7 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ) from err
         except Exception as err:
             # Unexpected errors should still be logged with full traceback
-            _LOGGER.exception("Unexpected error fetching audio clients")
+            _LOGGER.exception("Unexpected error fetching audio clients/players")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     audio_coordinator = DataUpdateCoordinator(
@@ -105,13 +106,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             services = await api.get_services()
             server = await api.get_server_info()
-            players = await api.get_players()
             # Reset failure count on success
             failure_counts["services"] = 0
             return {
                 "services": services,
                 "server": server,
-                "players": players,
             }
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
@@ -128,7 +127,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ) from err
         except Exception as err:
             # Unexpected errors should still be logged with full traceback
-            _LOGGER.exception("Unexpected error fetching services/server/players")
+            _LOGGER.exception("Unexpected error fetching services/server")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     service_coordinator = DataUpdateCoordinator(

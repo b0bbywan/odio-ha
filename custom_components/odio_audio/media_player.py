@@ -96,8 +96,8 @@ async def async_setup_entry(
                 handled_client_patterns.add(service_name)
 
     # Create MPRIS media player entities
-    if service_coordinator.data:
-        players = service_coordinator.data.get("players", [])
+    if audio_coordinator.data and service_coordinator.data:
+        players = audio_coordinator.data.get("players", [])
         services = service_coordinator.data.get("services", [])
         server = service_coordinator.data.get("server", {})
 
@@ -117,7 +117,7 @@ async def async_setup_entry(
                 mapped_switch = player_to_switch.get(player_name)
                 entities.append(
                     OdioMPRISMediaPlayer(
-                        service_coordinator,
+                        audio_coordinator,
                         api_client,
                         player,
                         server,
