@@ -354,3 +354,76 @@ class MappedEntityMixin:
             api_client.set_client_mute,
             mute,
         )
+
+
+class MappedSwitchMixin:
+    """Mixin for entities that can be controlled by a switch entity.
+
+    This mixin allows a media_player (or other entity) to delegate turn_on/turn_off
+    to a switch entity. Useful for MPRIS players that need a systemd service switch
+    to start/stop the underlying application.
+
+    Subclasses must implement:
+    - _hass property: HomeAssistant instance
+    """
+
+    _hass: HomeAssistant | None
+    _mapped_switch_id: str | None = None
+
+    async def async_turn_on(self) -> None:
+        """Turn on the entity by delegating to mapped switch."""
+        if self._mapped_switch_id and self._hass:
+            _LOGGER.debug(
+                "Delegating turn_on to switch %s", self._mapped_switch_id
+            )
+            try:
+                await self._hass.services.async_call(
+                    "switch",
+                    "turn_on",
+                    {"entity_id": self._mapped_switch_id},
+                    blocking=True,
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to turn on switch %s: %s", self._mapped_switch_id, err
+                )
+        else:
+            _LOGGER.debug("No mapped switch available for turn_on")
+
+    async def async_turn_off(self) -> None:
+        """Turn off the entity by delegating to mapped switch."""
+        if self._mapped_switch_id and self._hass:
+            _LOGGER.debug(
+                "Delegating turn_off to switch %s", self._mapped_switch_id
+            )
+            try:
+                await self._hass.services.async_call(
+                    "switch",
+                    "turn_off",
+                    {"entity_id": self._mapped_switch_id},
+                    blocking=True,
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to turn off switch %s: %s", self._mapped_switch_id, err
+                )
+        else:
+            _LOGGER.debug("No mapped switch available for turn_off")
+
+    def _get_switch_supported_features(
+        self, base_features: MediaPlayerEntityFeature
+    ) -> MediaPlayerEntityFeature:
+        """Add TURN_ON/TURN_OFF features if switch is mapped.
+
+        Args:
+            base_features: Base features of the media player
+
+        Returns:
+            Features with TURN_ON/TURN_OFF added if switch is mapped
+        """
+        features = base_features
+        if self._mapped_switch_id:
+            features |= (
+                MediaPlayerEntityFeature.TURN_ON | MediaPlayerEntityFeature.TURN_OFF
+            )
+        return features
