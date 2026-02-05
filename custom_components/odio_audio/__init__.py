@@ -105,11 +105,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             services = await api.get_services()
             server = await api.get_server_info()
+            players = await api.get_players()
             # Reset failure count on success
             failure_counts["services"] = 0
             return {
                 "services": services,
                 "server": server,
+                "players": players,
             }
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
@@ -126,7 +128,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ) from err
         except Exception as err:
             # Unexpected errors should still be logged with full traceback
-            _LOGGER.exception("Unexpected error fetching services/server")
+            _LOGGER.exception("Unexpected error fetching services/server/players")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     service_coordinator = DataUpdateCoordinator(
