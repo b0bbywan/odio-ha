@@ -36,7 +36,7 @@ from .const import (
     ATTR_SERVICE_ACTIVE,
     SUPPORTED_SERVICES,
 )
-from .mixins import MediaPlayerMappedEntityMixin, MappedSwitchMixin
+from .mixins import MediaPlayerMappingMixin, SwitchMappingMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -325,7 +325,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self._service_coordinator.async_request_refresh()
 
 
-class OdioServiceMediaPlayer(MediaPlayerMappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPlayerEntity):
     """Representation of an Odio Audio service using MappedEntityMixin."""
 
     _attr_has_entity_name = True
@@ -586,7 +586,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappedEntityMixin, CoordinatorEntity, Me
         await self._api_client.set_client_mute(client_name, mute)
 
 
-class OdioStandaloneClientMediaPlayer(MediaPlayerMappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPlayerEntity):
     """Representation of a standalone audio client using MappedEntityMixin."""
 
     _attr_has_entity_name = True
@@ -820,7 +820,7 @@ def _build_player_switch_mapping(
     return mapping
 
 
-class OdioMPRISMediaPlayer(MappedSwitchMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEntity):
     """MPRIS media player entity with full native MPRIS support."""
 
     def __init__(
@@ -866,7 +866,7 @@ class OdioMPRISMediaPlayer(MappedSwitchMixin, CoordinatorEntity, MediaPlayerEnti
 
     @property
     def _hass(self):
-        """Return HomeAssistant instance for MappedSwitchMixin."""
+        """Return HomeAssistant instance for SwitchMappingMixin."""
         return self.hass
 
     @property

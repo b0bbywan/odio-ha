@@ -13,7 +13,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class MediaPlayerMappedEntityMixin:
+class MediaPlayerMappingMixin:
     """Mixin for entities that can delegate to mapped entities.
 
     Subclasses must implement:
@@ -356,7 +356,7 @@ class MediaPlayerMappedEntityMixin:
         )
 
 
-class MappedSwitchMixin:
+class SwitchMappingMixin:
     """Mixin for entities that can be controlled by a switch entity.
 
     This mixin allows a media_player (or other entity) to delegate turn_on/turn_off
