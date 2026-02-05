@@ -84,6 +84,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"Unable to connect to Odio Audio API: {err}",
                 retry_after=retry_delay
             ) from err
+        except aiohttp.ClientResponseError as err:
+            # HTTP errors (404, 500, etc.) should be handled gracefully
+            failure_counts["audio"] += 1
+            retry_delay = min(scan_interval * (2 ** failure_counts["audio"]), 3600)
+            _LOGGER.warning(
+                "HTTP error %d fetching audio data (attempt %d): %s",
+                err.status, failure_counts["audio"], err
+            )
+            raise UpdateFailed(
+                f"HTTP error {err.status}: {err.message}",
+                retry_after=retry_delay
+            ) from err
         except Exception as err:
             # Unexpected errors should still be logged with full traceback
             _LOGGER.exception("Unexpected error fetching audio clients/players")

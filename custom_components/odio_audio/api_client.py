@@ -157,12 +157,20 @@ class OdioApiClient:
     async def get_players(self) -> list[dict[str, Any]]:
         """Get MPRIS media players."""
         from .const import ENDPOINT_PLAYERS
-        result = await self.get(ENDPOINT_PLAYERS)
-        if result is None:
-            return []
-        if not isinstance(result, list):
-            raise ValueError(f"Expected list from players endpoint, got {type(result)}")
-        return result
+        try:
+            result = await self.get(ENDPOINT_PLAYERS)
+            if result is None:
+                return []
+            if not isinstance(result, list):
+                raise ValueError(f"Expected list from players endpoint, got {type(result)}")
+            return result
+        except aiohttp.ClientResponseError as err:
+            # 404 means the endpoint doesn't exist (older server version)
+            if err.status == 404:
+                _LOGGER.debug("Players endpoint not available (404) - server may not support MPRIS yet")
+                return []
+            # Re-raise other HTTP errors
+            raise
 
     async def player_play(self, player: str) -> None:
         """Send play command to MPRIS player."""
