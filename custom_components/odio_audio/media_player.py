@@ -36,7 +36,7 @@ from .const import (
     ATTR_SERVICE_ACTIVE,
     SUPPORTED_SERVICES,
 )
-from .mixins import MappedEntityMixin, MappedSwitchMixin
+from .mixins import MediaPlayerMappedEntityMixin, MappedSwitchMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Audio media player based on a config entry."""
     coordinator_data = hass.data[DOMAIN][config_entry.entry_id]
-    audio_coordinator = coordinator_data["audio_coordinator"]
+    media_coordinator = coordinator_data["media_coordinator"]
     service_coordinator = coordinator_data["service_coordinator"]
     service_mappings = coordinator_data["service_mappings"]  # noqa: F841
     api_client = coordinator_data["api"]
@@ -64,7 +64,7 @@ async def async_setup_entry(
     # Create main receiver entity
     entities: list[MediaPlayerEntity] = [
         OdioReceiverMediaPlayer(
-            audio_coordinator,
+            media_coordinator,
             service_coordinator,
             api_client,
             config_entry.entry_id,
@@ -83,7 +83,7 @@ async def async_setup_entry(
                 in SUPPORTED_SERVICES
             ):
                 serviceEntity = OdioServiceMediaPlayer(
-                    audio_coordinator,
+                    media_coordinator,
                     service_coordinator,
                     api_client,
                     config_entry.entry_id,
@@ -96,8 +96,8 @@ async def async_setup_entry(
                 handled_client_patterns.add(service_name)
 
     # Create MPRIS media player entities
-    if audio_coordinator.data and service_coordinator.data:
-        players = audio_coordinator.data.get("players", [])
+    if media_coordinator.data and service_coordinator.data:
+        players = media_coordinator.data.get("players", [])
         services = service_coordinator.data.get("services", [])
         server = service_coordinator.data.get("server", {})
 
@@ -117,7 +117,7 @@ async def async_setup_entry(
                 mapped_switch = player_to_switch.get(player_name)
                 entities.append(
                     OdioMPRISMediaPlayer(
-                        audio_coordinator,
+                        media_coordinator,
                         api_client,
                         player,
                         server,
@@ -127,8 +127,8 @@ async def async_setup_entry(
                 )
 
     # Create entities for standalone clients
-    if audio_coordinator.data:
-        audio = audio_coordinator.data.get("audio", [])
+    if media_coordinator.data:
+        audio = media_coordinator.data.get("audio", [])
         for client in audio:
             client_name = client.get("name", "")
             client_host = client.get("host", "")
@@ -140,7 +140,7 @@ async def async_setup_entry(
                 continue
 
             audioEntity = OdioStandaloneClientMediaPlayer(
-                audio_coordinator,
+                media_coordinator,
                 api_client,
                 config_entry.entry_id,
                 client,
@@ -169,12 +169,12 @@ async def async_setup_entry(
     @callback
     def _async_check_new_clients():
         """Check for new remote clients and create entities."""
-        if not audio_coordinator.data or not server_hostname:
+        if not media_coordinator.data or not server_hostname:
             return
 
         new_entities = []
 
-        for client in audio_coordinator.data.get("audio", []):
+        for client in media_coordinator.data.get("audio", []):
             client_name = client.get("name", "")
             client_host = client.get("host", "")
             app = client.get("app", "").lower()
@@ -201,7 +201,7 @@ async def async_setup_entry(
             _LOGGER.info("Detected new remote client: '%s' from host '%s'", client_name, client_host)
 
             entity = OdioStandaloneClientMediaPlayer(
-                audio_coordinator,
+                media_coordinator,
                 api_client,
                 config_entry.entry_id,
                 client,
@@ -216,7 +216,7 @@ async def async_setup_entry(
 
     # Listen for coordinator updates
     config_entry.async_on_unload(
-        audio_coordinator.async_add_listener(_async_check_new_clients)
+        media_coordinator.async_add_listener(_async_check_new_clients)
     )
 
 
@@ -228,13 +228,13 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
+        media_coordinator: DataUpdateCoordinator,
         service_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
     ) -> None:
         """Initialize the receiver."""
-        super().__init__(audio_coordinator)
+        super().__init__(media_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
@@ -325,21 +325,21 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         await self._service_coordinator.async_request_refresh()
 
 
-class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioServiceMediaPlayer(MediaPlayerMappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
     """Representation of an Odio Audio service using MappedEntityMixin."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
+        media_coordinator: DataUpdateCoordinator,
         service_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
     ) -> None:
         """Initialize the service."""
-        super().__init__(audio_coordinator)
+        super().__init__(media_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
         self._entry_id = entry_id
@@ -586,21 +586,21 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         await self._api_client.set_client_mute(client_name, mute)
 
 
-class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioStandaloneClientMediaPlayer(MediaPlayerMappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
     """Representation of a standalone audio client using MappedEntityMixin."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
+        media_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
         initial_client: dict[str, Any],
         server_hostname: str | None = None,
     ) -> None:
         """Initialize the standalone client."""
-        super().__init__(audio_coordinator)
+        super().__init__(media_coordinator)
         self._api_client = api_client
         self._entry_id = entry_id
         self._server_hostname = server_hostname

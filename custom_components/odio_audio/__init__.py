@@ -89,7 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.exception("Unexpected error fetching audio clients/players")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
-    audio_coordinator = DataUpdateCoordinator(
+    media_coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name=f"{DOMAIN}_audio",
@@ -143,13 +143,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initial refresh
     # ---------------------------------------------------------------------
 
-    await audio_coordinator.async_config_entry_first_refresh()
+    await media_coordinator.async_config_entry_first_refresh()
     await service_coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
-        "audio_coordinator": audio_coordinator,
+        "media_coordinator": media_coordinator,
         "service_coordinator": service_coordinator,
         "service_mappings": service_mappings,
     }

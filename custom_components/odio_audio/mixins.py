@@ -13,7 +13,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-class MappedEntityMixin:
+class MediaPlayerMappedEntityMixin:
     """Mixin for entities that can delegate to mapped entities.
 
     Subclasses must implement:
