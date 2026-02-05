@@ -1,4 +1,4 @@
-"""Tests for MappedEntityMixin."""
+"""Tests for MediaPlayerMappingMixin and SwitchMappingMixin."""
 import pytest
 from unittest.mock import Mock, AsyncMock
 
@@ -64,8 +64,8 @@ class MockMappedEntity:
             return False
 
 
-class TestMappedEntityMixin:
-    """Tests for MappedEntityMixin functionality."""
+class TestMediaPlayerMappingMixin:
+    """Tests for MediaPlayerMappingMixin functionality."""
 
     def test_no_mapping_returns_none(self):
         """Test that entity without mapping returns None."""
@@ -293,6 +293,131 @@ class TestStateMapping:
         # Test with is_available returning False
         # Would return OFF state
         pass  # Simplified for now
+
+
+class TestSwitchMappingMixin:
+    """Tests for SwitchMappingMixin functionality."""
+
+    @pytest.mark.asyncio
+    async def test_turn_on_with_mapped_switch(self):
+        """Test turn_on delegates to mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass, "switch.test_service")
+        await entity.async_turn_on()
+
+        hass.services.async_call.assert_called_once_with(
+            "switch",
+            "turn_on",
+            {"entity_id": "switch.test_service"},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_off_with_mapped_switch(self):
+        """Test turn_off delegates to mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass, "switch.test_service")
+        await entity.async_turn_off()
+
+        hass.services.async_call.assert_called_once_with(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.test_service"},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_on_without_mapped_switch(self):
+        """Test turn_on does nothing without mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass):
+                self._hass = hass
+                self._mapped_switch_id = None
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass)
+        await entity.async_turn_on()
+
+        hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_handles_exception(self):
+        """Test turn_on handles service call exceptions."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(side_effect=Exception("Service failed"))
+
+        entity = MockEntity(hass, "switch.test_service")
+        # Should not raise exception
+        await entity.async_turn_on()
+
+    def test_get_switch_supported_features_with_switch(self):
+        """Test that TURN_ON/OFF features are added when switch is mapped."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+        from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, switch_id):
+                self._hass = Mock()
+                self._mapped_switch_id = switch_id
+
+        entity = MockEntity("switch.test_service")
+        base_features = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+
+        features = entity._get_switch_supported_features(base_features)
+
+        assert features & MediaPlayerEntityFeature.TURN_ON
+        assert features & MediaPlayerEntityFeature.TURN_OFF
+        assert features & MediaPlayerEntityFeature.PLAY
+        assert features & MediaPlayerEntityFeature.PAUSE
+
+    def test_get_switch_supported_features_without_switch(self):
+        """Test that features are unchanged when no switch is mapped."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+        from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self):
+                self._hass = Mock()
+                self._mapped_switch_id = None
+
+        entity = MockEntity()
+        base_features = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+
+        features = entity._get_switch_supported_features(base_features)
+
+        assert not (features & MediaPlayerEntityFeature.TURN_ON)
+        assert not (features & MediaPlayerEntityFeature.TURN_OFF)
+        assert features & MediaPlayerEntityFeature.PLAY
+        assert features & MediaPlayerEntityFeature.PAUSE
 
 
 if __name__ == "__main__":
