@@ -277,14 +277,11 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        if not self.coordinator.data:
+        if not self._service_coordinator.data:
             return None
 
-        clients = self.coordinator.data.get("audio", [])
-        volumes = [client.get("volume", 0) for client in clients]
-        if volumes:
-            return sum(volumes) / len(volumes)
-        return None
+        server = self._service_coordinator.data.get("server", {})
+        return server.get("volume")
 
     @property
     def is_volume_muted(self) -> bool:
@@ -320,10 +317,12 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         await self._api_client.set_server_volume(volume)
+        await self._service_coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         await self._api_client.set_server_mute(mute)
+        await self._service_coordinator.async_request_refresh()
 
 
 class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
