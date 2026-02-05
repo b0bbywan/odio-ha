@@ -75,7 +75,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         super().__init__(coordinator)
         self._api = api
         self._service_scope = service.get("scope", "user")
-        self._service_unit = service.get("unit", "")
+        self._service_unit = service.get("name", "")
         self._entry_id = entry_id
 
         # Device info from server
@@ -113,7 +113,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         """Get current service data from coordinator."""
         services = self.coordinator.data.get("services", [])
         for service in services:
-            if service.get("scope") == self._service_scope and service.get("unit") == self._service_unit:
+            if service.get("scope") == self._service_scope and service.get("name") == self._service_unit:
                 return service
         return None
 
