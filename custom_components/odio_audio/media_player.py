@@ -240,7 +240,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         self._attr_unique_id = f"{entry_id}_receiver"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
+            "name": "Odio Receiver",
             "manufacturer": "Odio",
             "model": "PulseAudio Receiver",
         }
@@ -353,7 +353,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
         self._attr_name = f"{service_name} ({scope})"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
+            "name": "Odio Receiver",
             "manufacturer": "Odio",
             "model": "PulseAudio Receiver",
         }
@@ -616,7 +616,7 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         self._attr_name = self._client_name
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
+            "name": "Odio Receiver",
             "manufacturer": "Odio",
             "model": "PulseAudio Receiver",
         }
