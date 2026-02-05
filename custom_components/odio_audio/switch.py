@@ -114,8 +114,8 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         services = self.coordinator.data.get("services", [])
         for service in services:
             if (
-                service.get("scope") == self._service_scope
-                and service.get("unit") == self._service_unit
+                service.get("scope") == self._service_scope and
+                service.get("unit") == self._service_unit
             ):
                 return service
         return None
