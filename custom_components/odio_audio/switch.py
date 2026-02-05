@@ -86,7 +86,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         # Generate unique_id and entity_id
         # Example: switch.odio_netflix for firefox-kiosk@www.netflix.com.service
         sanitized_unit = self._service_unit.replace(".service", "").replace("@", "_").replace(".", "_")
-        self._attr_unique_id = f"{self._server_hostname}_{self._service_scope}_{sanitized_unit}"
+        self._attr_unique_id = f"{self._server_hostname}_switch_{self._service_scope}_{sanitized_unit}"
         self._attr_name = f"{self._server_name} {sanitized_unit.replace('_', ' ').title()}"
 
         _LOGGER.debug(
