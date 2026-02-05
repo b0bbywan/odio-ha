@@ -101,10 +101,10 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return DeviceInfo(
-            identifiers={(DOMAIN, self._server_hostname)},
-            name=self._server_name,
+            identifiers={(DOMAIN, f"{self._server_hostname}_services")},
+            name=f"Odio ({self._server_hostname})",
             manufacturer="Odio",
-            model="Audio Server",
+            model="Services",
             sw_version=self._server_version,
         )
 
