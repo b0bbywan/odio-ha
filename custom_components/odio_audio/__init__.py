@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -33,7 +34,23 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+@dataclass
+class OdioRuntimeData:
+    """Runtime data for the Odio Audio integration."""
+
+    api: OdioApiClient
+    media_coordinator: DataUpdateCoordinator | None
+    service_coordinator: DataUpdateCoordinator | None
+    service_mappings: dict[str, str]
+    server_info: dict[str, Any]
+    backends: dict[str, bool]
+    platforms: list[Platform]
+
+
+type OdioConfigEntry = ConfigEntry[OdioRuntimeData]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
     """Set up Odio Audio from a config entry."""
     _LOGGER.info("Setting up Odio Audio integration")
 
@@ -193,16 +210,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if has_systemd:
         platforms.append(Platform.SWITCH)
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        "api": api,
-        "media_coordinator": media_coordinator,
-        "service_coordinator": service_coordinator,
-        "service_mappings": service_mappings,
-        "server_info": server_info,
-        "backends": backends,
-        "platforms": platforms,
-    }
+    entry.runtime_data = OdioRuntimeData(
+        api=api,
+        media_coordinator=media_coordinator,
+        service_coordinator=service_coordinator,
+        service_mappings=service_mappings,
+        server_info=server_info,
+        backends=backends,
+        platforms=platforms,
+    )
 
     _LOGGER.debug("Forwarding setup to platforms: %s", platforms)
     if platforms:
@@ -212,16 +228,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
     """Unload a config entry."""
-    platforms = hass.data[DOMAIN][entry.entry_id].get("platforms", [])
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, platforms):
-        hass.data[DOMAIN].pop(entry.entry_id)
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(
+        entry, entry.runtime_data.platforms
+    )
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: DeviceEntry
+    hass: HomeAssistant, config_entry: OdioConfigEntry, device_entry: DeviceEntry
 ) -> bool:
     """Remove a device from the integration.
 
@@ -230,7 +245,7 @@ async def async_remove_config_entry_device(
     return True
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_reload_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> None:
     """Reload config entry."""
     _LOGGER.info("Reloading Odio Audio integration")
     hass.config_entries.async_schedule_reload(entry.entry_id)

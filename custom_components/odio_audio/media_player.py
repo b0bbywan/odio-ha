@@ -14,7 +14,6 @@ from homeassistant.components.media_player import (
     MediaType,
     RepeatMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,6 +22,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
+from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
@@ -64,17 +64,16 @@ def _build_receiver_device_info(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: OdioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio Audio media player based on a config entry."""
-    coordinator_data = hass.data[DOMAIN][config_entry.entry_id]
-    media_coordinator = coordinator_data["media_coordinator"]
-    service_coordinator = coordinator_data["service_coordinator"]
-    service_mappings = coordinator_data["service_mappings"]  # noqa: F841
-    api_client = coordinator_data["api"]
-    server_info = coordinator_data["server_info"]
-    backends = coordinator_data.get("backends", {})
+    data = config_entry.runtime_data
+    media_coordinator = data.media_coordinator
+    service_coordinator = data.service_coordinator
+    api_client = data.api
+    server_info = data.server_info
+    backends = data.backends
 
     # Get server hostname from /server capabilities (fetched once at startup)
     server_hostname = server_info.get("hostname", "unknown")
@@ -125,7 +124,7 @@ async def async_setup_entry(
     handled_client_patterns = set()
 
     # Create service entities
-    if service_coordinator and service_coordinator.data:
+    if media_coordinator and service_coordinator and service_coordinator.data:
         services = service_coordinator.data.get("services", [])
         for service in services:
             if (
