@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -22,18 +23,18 @@ def _build_services_device_info(
     api_version: str,
     api_url: str,
     os_version: str,
-) -> dict[str, Any]:
+) -> DeviceInfo:
     """Build device info for Services device."""
-    return {
-        "identifiers": {(DOMAIN, f"{hostname}_services")},
-        "name": f"Odio Services ({hostname})",
-        "manufacturer": "Odio",
-        "model": "Service Controller",
-        "model_id": "systemd",
-        "sw_version": api_version,
-        "hw_version": os_version,
-        "configuration_url": api_url,
-    }
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{hostname}_services")},
+        name=f"Odio Services ({hostname})",
+        manufacturer="Odio",
+        model="Service Controller",
+        model_id="systemd",
+        sw_version=api_version,
+        hw_version=os_version,
+        configuration_url=api_url,
+    )
 
 
 async def async_setup_entry(
@@ -99,7 +100,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         coordinator,
         api: OdioApiClient,
         service: dict[str, Any],
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
         """Initialize the switch."""

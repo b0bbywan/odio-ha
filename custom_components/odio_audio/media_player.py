@@ -16,6 +16,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -47,18 +48,18 @@ def _build_receiver_device_info(
     api_url: str,
     model_id: str | None,
     hw_version: str | None,
-) -> dict[str, Any]:
+) -> DeviceInfo:
     """Build device info for Receiver device."""
-    return {
-        "identifiers": {(DOMAIN, f"{hostname}_receiver")},
-        "name": f"Odio Receiver ({hostname})",
-        "manufacturer": "Odio",
-        "model": "Media Hub",
-        "model_id": model_id,
-        "sw_version": api_version,
-        "hw_version": hw_version,
-        "configuration_url": api_url,
-    }
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{hostname}_receiver")},
+        name=f"Odio Receiver ({hostname})",
+        manufacturer="Odio",
+        model="Media Hub",
+        model_id=model_id,
+        sw_version=api_version,
+        hw_version=hw_version,
+        configuration_url=api_url,
+    )
 
 
 async def async_setup_entry(
@@ -286,7 +287,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         media_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the receiver."""
         super().__init__(media_coordinator)
@@ -380,7 +381,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the service."""
         super().__init__(media_coordinator)
@@ -636,7 +637,7 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         api_client: OdioApiClient,
         entry_id: str,
         initial_client: dict[str, Any],
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the standalone client."""
         super().__init__(media_coordinator)
@@ -735,7 +736,6 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         attrs = {
             "client_name": self._client_name,
             "remote_host": self._client_host,
-            "server_hostname": self._server_hostname,
         }
 
         if self._mapped_entity:
@@ -861,7 +861,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         coordinator,
         api: OdioApiClient,
         player: dict[str, Any],
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
         server_hostname: str,
         entry_id: str,
         mapped_switch_id: str | None = None,
