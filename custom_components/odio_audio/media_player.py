@@ -236,7 +236,17 @@ async def async_setup_entry(
         new_entities: list[MediaPlayerEntity] = []
 
         # --- Check for new MPRIS players ---
-        for player in media_coordinator.data.get("players", []):
+        current_players = media_coordinator.data.get("players", [])
+        current_player_names = [p.get("name", "") for p in current_players]
+        _LOGGER.debug(
+            "Checking for new MPRIS players: %d in coordinator, %d known (%s vs %s)",
+            len(current_players),
+            len(known_mpris_players),
+            current_player_names,
+            list(known_mpris_players.keys()),
+        )
+
+        for player in current_players:
             player_name = player.get("name", "")
             if not player_name:
                 continue
