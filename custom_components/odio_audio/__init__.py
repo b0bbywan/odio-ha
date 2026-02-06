@@ -13,6 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -60,7 +61,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # -----------------------------------------------------------------
     # Fetch server capabilities once at startup
     # -----------------------------------------------------------------
-    server_info = await api.get_server_capabilities()
+    try:
+        server_info = await api.get_server_capabilities()
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        raise ConfigEntryNotReady(
+            f"Unable to connect to Odio Audio API at {api_url}: {err}"
+        ) from err
     backends = server_info.get("backends", {})
     has_pulseaudio = backends.get("pulseaudio", False)
     has_mpris = backends.get("mpris", False)

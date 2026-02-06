@@ -95,6 +95,8 @@ async def async_setup_entry(
 class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
     """Switch entity for controlling systemd user services."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator,
