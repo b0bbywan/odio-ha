@@ -57,13 +57,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = OdioApiClient(api_url, session)
 
     # -----------------------------------------------------------------
-    # Fetch server capabilities once at startup
+    # Fetch server capabilities once at startup (non-fatal)
     # -----------------------------------------------------------------
-    server_info = await api.get_server_capabilities()
+    try:
+        server_info = await api.get_server_capabilities()
+    except Exception as err:
+        _LOGGER.warning("Could not fetch server capabilities: %s - using defaults", err)
+        server_info = {}
     backends = server_info.get("backends", {})
-    has_pulseaudio = backends.get("pulseaudio", False)
-    has_mpris = backends.get("mpris", False)
-    has_systemd = backends.get("systemd", False)
+    # Default to True when capabilities are unknown (server endpoint unavailable)
+    has_pulseaudio = backends.get("pulseaudio", not backends)
+    has_mpris = backends.get("mpris", not backends)
+    has_systemd = backends.get("systemd", not backends)
 
     _LOGGER.info(
         "Server capabilities: hostname=%s, api=%s v%s, backends: pulseaudio=%s, mpris=%s, systemd=%s",
@@ -135,44 +140,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_update_services() -> dict[str, object]:
         try:
-            async with asyncio.timeout(15):
-                async with session.get(services_url) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        _LOGGER.error("Services endpoint returned %s: %s", response.status, error_text)
-                        raise UpdateFailed(f"Error fetching services: HTTP {response.status}")
-
-                    services = await response.json()
-                    _LOGGER.debug("Services fetched: %d services", len(services) if isinstance(services, list) else 0)
-
-                # Server info is supplementary - don't fail if unavailable
-                server = {}
-                try:
-                    async with session.get(server_url) as response:
-                        if response.status == 200:
-                            server = await response.json()
-                            _LOGGER.debug("Server info fetched: %s", server.get("name"))
-                        else:
-                            _LOGGER.warning(
-                                "Server endpoint returned %s - continuing without server info",
-                                response.status,
-                            )
-                except aiohttp.ClientError as server_err:
-                    _LOGGER.warning("Could not fetch server info: %s", server_err)
-
-                return {"services": services, "server": server}
-
-        except asyncio.TimeoutError as err:
-            _LOGGER.error("Timeout fetching services/server data")
-            raise UpdateFailed(f"Timeout communicating with API") from err
-
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Client error fetching services/server: %s", err)
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
-
+            services = await api.get_services() if has_systemd else []
+            failure_counts["services"] = 0
+            return {"services": services}
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            failure_counts["services"] += 1
+            retry_delay = min(service_scan_interval * (2 ** failure_counts["services"]), 3600)
+            _LOGGER.debug(
+                "Services connection failed (attempt %d), retrying in %ds",
+                failure_counts["services"], retry_delay,
+            )
+            raise UpdateFailed(
+                f"Unable to connect to Odio Audio API: {err}",
+                retry_after=retry_delay,
+            ) from err
+        except aiohttp.ClientResponseError as err:
+            failure_counts["services"] += 1
+            retry_delay = min(service_scan_interval * (2 ** failure_counts["services"]), 3600)
+            _LOGGER.warning(
+                "HTTP error %d fetching services (attempt %d): %s",
+                err.status, failure_counts["services"], err,
+            )
+            raise UpdateFailed(
+                f"HTTP error {err.status}: {err.message}",
+                retry_after=retry_delay,
+            ) from err
         except Exception as err:
-            # Unexpected errors should still be logged with full traceback
-            _LOGGER.exception("Unexpected error fetching services/server")
+            _LOGGER.exception("Unexpected error fetching services")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     service_coordinator = DataUpdateCoordinator(

@@ -73,12 +73,20 @@ class OdioApiClient:
         """Get server capabilities including available backends.
 
         Called once at startup to determine which routes to poll.
+        Returns empty dict if the endpoint is unavailable (404).
         """
         from .const import ENDPOINT_SERVER_INFO
-        result = await self.get(ENDPOINT_SERVER_INFO)
-        if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from server info endpoint, got {type(result)}")
-        return result
+        try:
+            result = await self.get(ENDPOINT_SERVER_INFO)
+            if not isinstance(result, dict):
+                _LOGGER.warning("Unexpected response from server info endpoint: %s", type(result))
+                return {}
+            return result
+        except aiohttp.ClientResponseError as err:
+            if err.status == 404:
+                _LOGGER.warning("Server info endpoint not available (404) - using defaults")
+                return {}
+            raise
 
     # Server endpoints
     async def get_server_info(self) -> dict[str, Any]:

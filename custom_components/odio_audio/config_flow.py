@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from copy import deepcopy
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -71,64 +73,18 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
     api = OdioApiClient(api_url, session)
 
     try:
-        # Test server endpoint (supplementary - don't fail if unavailable)
-        server_url = f"{api_url}{ENDPOINT_SERVER}"
-        _LOGGER.debug("Testing server endpoint: %s", server_url)
+        server_info = await api.get_server_capabilities()
+        services = await api.get_services()
+    except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+        raise CannotConnect(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error during API validation")
+        raise CannotConnect(str(err)) from err
 
-        server_info = {}
-        try:
-            async with session.get(
-                server_url,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as response:
-                _LOGGER.debug("Server endpoint status: %s", response.status)
-
-                if response.status == 200:
-                    server_info = await response.json()
-                    _LOGGER.debug("Server info received: %s", server_info)
-                else:
-                    _LOGGER.warning(
-                        "Server endpoint returned %s - continuing without server info",
-                        response.status,
-                    )
-        except aiohttp.ClientError as err:
-            _LOGGER.warning("Could not fetch server info: %s", err)
-
-        # Test services endpoint
-        services_url = f"{api_url}{ENDPOINT_SERVICES}"
-        _LOGGER.debug("Testing services endpoint: %s", services_url)
-
-        async with session.get(
-            services_url,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            _LOGGER.debug("Services endpoint status: %s", response.status)
-            _LOGGER.debug("Services endpoint content-type: %s", response.content_type)
-
-            if response.status != 200:
-                error_text = await response.text()
-                _LOGGER.error("Services endpoint returned %s: %s", response.status, error_text)
-                raise ValueError(f"Services returned status {response.status}")
-
-            # Handle both application/json and text/plain
-            text = await response.text()
-            try:
-                import json
-                services = json.loads(text)
-                _LOGGER.debug("Services received: %d services found", len(services))
-            except json.JSONDecodeError as err:
-                _LOGGER.error("Failed to parse services response as JSON: %s", text[:200])
-                raise ValueError(f"Invalid JSON response: {err}") from err
-
-        _LOGGER.info("API validation successful")
-        return {
-            "server_info": server_info,
-            "services": services,
-        }
-
-    if not isinstance(server_info, dict) or not isinstance(services, list):
+    if not isinstance(services, list):
         raise InvalidResponse("Invalid API response")
 
+    _LOGGER.info("API validation successful")
     return {
         "server_info": server_info,
         "services": services,
