@@ -219,15 +219,56 @@ async def async_setup_entry(
         if isinstance(entity, OdioStandaloneClientMediaPlayer)
     }
 
-    # Set up listener to detect new remote clients
+    # Track known MPRIS players
+    known_mpris_players: dict[str, OdioMPRISMediaPlayer] = {
+        entity._player_name: entity
+        for entity in entities
+        if isinstance(entity, OdioMPRISMediaPlayer)
+    }
+
+    # Set up listener to detect new remote clients and MPRIS players
     @callback
-    def _async_check_new_clients():
-        """Check for new remote clients and create entities."""
+    def _async_check_new_entities():
+        """Check for new remote clients and MPRIS players, create entities."""
         if not media_coordinator.data or not server_hostname:
             return
 
-        new_entities = []
+        new_entities: list[MediaPlayerEntity] = []
 
+        # --- Check for new MPRIS players ---
+        for player in media_coordinator.data.get("players", []):
+            player_name = player.get("name", "")
+            if not player_name:
+                continue
+
+            if player_name in known_mpris_players:
+                continue
+
+            _LOGGER.info("Detected new MPRIS player: '%s'", player_name)
+
+            services = (
+                service_coordinator.data.get("services", [])
+                if service_coordinator and service_coordinator.data
+                else []
+            )
+            player_to_switch = _build_player_switch_mapping(
+                [player], services, server_hostname or "odio"
+            )
+            mapped_switch = player_to_switch.get(player_name)
+
+            entity = OdioMPRISMediaPlayer(
+                media_coordinator,
+                api_client,
+                player,
+                receiver_device_info,
+                server_hostname,
+                config_entry.entry_id,
+                mapped_switch,
+            )
+            new_entities.append(entity)
+            known_mpris_players[player_name] = entity
+
+        # --- Check for new remote clients ---
         for client in media_coordinator.data.get("audio", []):
             client_name = client.get("name", "")
             client_host = client.get("host", "")
@@ -265,13 +306,13 @@ async def async_setup_entry(
             known_remote_clients[client_name] = entity
 
         if new_entities:
-            _LOGGER.info("Adding %d new remote client entities", len(new_entities))
+            _LOGGER.info("Adding %d new entities", len(new_entities))
             async_add_entities(new_entities)
 
     # Listen for coordinator updates
     if media_coordinator:
         config_entry.async_on_unload(
-            media_coordinator.async_add_listener(_async_check_new_clients)
+            media_coordinator.async_add_listener(_async_check_new_entities)
         )
 
 
