@@ -71,13 +71,21 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
     api = OdioApiClient(api_url, session)
 
     try:
-        server_info = await api.get_server_info()
         services = await api.get_services()
     except Exception as err:
         raise CannotConnect from err
 
-    if not isinstance(server_info, dict) or not isinstance(services, list):
+    if not isinstance(services, list):
         raise InvalidResponse("Invalid API response")
+
+    # /audio/server is optional – missing info just means less device details
+    server_info: dict[str, Any] = {}
+    try:
+        server_info = await api.get_server_info()
+        if not isinstance(server_info, dict):
+            server_info = {}
+    except Exception:
+        _LOGGER.debug("Could not reach /audio/server, continuing without audio server info")
 
     return {
         "server_info": server_info,
@@ -112,17 +120,24 @@ async def async_fetch_remote_clients(
     api = OdioApiClient(api_url, session)
 
     try:
-        server_info = await api.get_server_info()
         clients = await api.get_clients()
     except Exception:
         return []
 
-    server_hostname = server_info.get("hostname")
+    # /audio/server is optional – without it we can't filter by hostname
+    server_hostname = None
+    try:
+        server_info = await api.get_server_info()
+        server_hostname = server_info.get("hostname")
+    except Exception:
+        pass
 
     return [
         client
         for client in clients
-        if client.get("host") and client.get("host") != server_hostname
+        if client.get("host") and (
+            server_hostname is None or client.get("host") != server_hostname
+        )
     ]
 
 

@@ -86,7 +86,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             clients = await api.get_clients() if has_pulseaudio else []
             players = await api.get_players() if has_mpris else []
-            server = await api.get_server_info() if has_pulseaudio else {}
+            try:
+                server = await api.get_server_info() if has_pulseaudio else {}
+            except Exception:
+                _LOGGER.debug("Could not fetch /audio/server, skipping")
+                server = {}
             # Reset failure count on success
             failure_counts["audio"] = 0
             return {"audio": clients, "players": players, "server": server}
