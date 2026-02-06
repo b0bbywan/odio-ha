@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Any
 
 import aiohttp
 
@@ -80,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Only polls endpoints whose backends are available
     # ---------------------------------------------------------------------
 
-    async def async_update_audio() -> dict[str, list]:
+    async def async_update_audio() -> dict[str, Any]:
         try:
             clients = await api.get_clients() if has_pulseaudio else []
             players = await api.get_players() if has_mpris else []

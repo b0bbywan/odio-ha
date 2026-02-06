@@ -36,8 +36,8 @@ class OdioApiClient:
                 ) as response:
                     response.raise_for_status()
 
-                    # Handle empty responses
-                    if response.status == 204:
+                    # Handle empty responses (204 No Content, 202 Accepted)
+                    if response.status in (202, 204):
                         return None
 
                     return await response.json()
