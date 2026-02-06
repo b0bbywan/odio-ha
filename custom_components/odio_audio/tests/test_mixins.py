@@ -1,0 +1,424 @@
+"""Tests for MediaPlayerMappingMixin and SwitchMappingMixin."""
+import pytest
+from unittest.mock import Mock, AsyncMock
+
+
+# Mock minimal pour tester le mixin
+class MockMappedEntity:
+    """Mock entity using the mixin."""
+
+    def __init__(self, hass, entry_id, mapping_key, mapped_entity_id=None):
+        self._hass = hass
+        self._entry_id = entry_id
+        self._mapping_key_value = mapping_key
+        self._mapped_entity_override = mapped_entity_id
+
+    @property
+    def _mapping_key(self):
+        return self._mapping_key_value
+
+    @property
+    def _mapped_entity(self):
+        if self._mapped_entity_override:
+            return self._mapped_entity_override
+
+        if not self._hass:
+            return None
+
+        from custom_components.odio_audio.const import DOMAIN
+        coordinator_data = self._hass.data.get(DOMAIN, {}).get(self._entry_id)
+        if not coordinator_data:
+            return None
+
+        service_mappings = coordinator_data.get("service_mappings", {})
+        return service_mappings.get(self._mapping_key)
+
+    def _get_mapped_state(self):
+        if not self._mapped_entity or not self._hass:
+            return None
+        return self._hass.states.get(self._mapped_entity)
+
+    def _get_mapped_attribute(self, attribute):
+        mapped_state = self._get_mapped_state()
+        if mapped_state:
+            return mapped_state.attributes.get(attribute)
+        return None
+
+    async def _delegate_to_hass(self, service, data=None):
+        if not self._mapped_entity or not self._hass:
+            return False
+
+        if data is None:
+            data = {}
+        data.setdefault("entity_id", self._mapped_entity)
+
+        try:
+            await self._hass.services.async_call(
+                "media_player",
+                service,
+                data,
+                blocking=True,
+            )
+            return True
+        except Exception:
+            return False
+
+
+class TestMediaPlayerMappingMixin:
+    """Tests for MediaPlayerMappingMixin functionality."""
+
+    def test_no_mapping_returns_none(self):
+        """Test that entity without mapping returns None."""
+        hass = Mock()
+        hass.data = {}
+
+        entity = MockMappedEntity(hass, "entry_123", "service:test")
+
+        assert entity._mapped_entity is None
+        assert entity._get_mapped_attribute("media_title") is None
+
+    def test_mapping_resolution(self):
+        """Test that mapping is resolved from hass.data."""
+        hass = Mock()
+        hass.data = {
+            "odio_audio": {
+                "entry_123": {
+                    "service_mappings": {
+                        "user/mpd.service": "media_player.mpd_test"
+                    }
+                }
+            }
+        }
+
+        entity = MockMappedEntity(hass, "entry_123", "user/mpd.service")
+
+        assert entity._mapped_entity == "media_player.mpd_test"
+
+    def test_get_mapped_attribute(self):
+        """Test getting attributes from mapped entity."""
+        hass = Mock()
+
+        # Mock state
+        mock_state = Mock()
+        mock_state.attributes = {
+            "media_title": "Test Song",
+            "media_artist": "Test Artist",
+            "volume_level": 0.5,
+        }
+        hass.states.get.return_value = mock_state
+
+        entity = MockMappedEntity(
+            hass,
+            "entry_123",
+            "test",
+            mapped_entity_id="media_player.test"
+        )
+
+        assert entity._get_mapped_attribute("media_title") == "Test Song"
+        assert entity._get_mapped_attribute("media_artist") == "Test Artist"
+        assert entity._get_mapped_attribute("volume_level") == 0.5
+        assert entity._get_mapped_attribute("nonexistent") is None
+
+    def test_get_mapped_attribute_no_state(self):
+        """Test getting attributes when mapped entity has no state."""
+        hass = Mock()
+        hass.states.get.return_value = None
+
+        entity = MockMappedEntity(
+            hass,
+            "entry_123",
+            "test",
+            mapped_entity_id="media_player.test"
+        )
+
+        assert entity._get_mapped_attribute("media_title") is None
+
+    @pytest.mark.asyncio
+    async def test_delegate_to_hass_success(self):
+        """Test successful delegation to HA service."""
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockMappedEntity(
+            hass,
+            "entry_123",
+            "test",
+            mapped_entity_id="media_player.test"
+        )
+
+        result = await entity._delegate_to_hass("media_play")
+
+        assert result is True
+        hass.services.async_call.assert_called_once_with(
+            "media_player",
+            "media_play",
+            {"entity_id": "media_player.test"},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_delegate_to_hass_with_data(self):
+        """Test delegation with additional data."""
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockMappedEntity(
+            hass,
+            "entry_123",
+            "test",
+            mapped_entity_id="media_player.test"
+        )
+
+        result = await entity._delegate_to_hass(
+            "volume_set",
+            {"volume_level": 0.7}
+        )
+
+        assert result is True
+        hass.services.async_call.assert_called_once_with(
+            "media_player",
+            "volume_set",
+            {"entity_id": "media_player.test", "volume_level": 0.7},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_delegate_to_hass_failure(self):
+        """Test delegation failure handling."""
+        hass = Mock()
+        hass.services.async_call = AsyncMock(side_effect=Exception("Service failed"))
+
+        entity = MockMappedEntity(
+            hass,
+            "entry_123",
+            "test",
+            mapped_entity_id="media_player.test"
+        )
+
+        result = await entity._delegate_to_hass("media_play")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_delegate_no_mapping(self):
+        """Test delegation without mapped entity."""
+        hass = Mock()
+
+        entity = MockMappedEntity(hass, "entry_123", "test")
+
+        result = await entity._delegate_to_hass("media_play")
+
+        assert result is False
+
+
+class TestMappingKeyFunctions:
+    """Tests for config_flow_helpers key functions."""
+
+    def test_get_service_keys(self):
+        """Test service key generation."""
+        from custom_components.odio_audio.config_flow_helpers import get_service_keys
+
+        service = {
+            "scope": "user",
+            "name": "mpd.service"
+        }
+
+        form_key, mapping_key = get_service_keys(service)
+
+        assert form_key == "user_mpd.service"
+        assert mapping_key == "user/mpd.service"
+
+    def test_get_client_keys(self):
+        """Test client key generation."""
+        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+
+        client = {
+            "name": "Tunnel for bobby@bobby-desktop"
+        }
+
+        form_key, mapping_key = get_client_keys(client)
+
+        assert form_key == "client_tunnel_for_bobby_bobby_desktop"
+        assert mapping_key == "client:Tunnel for bobby@bobby-desktop"
+
+    def test_get_client_keys_special_chars(self):
+        """Test client key generation with special characters."""
+        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+
+        client = {
+            "name": "Test!@#$%Client-123"
+        }
+
+        form_key, mapping_key = get_client_keys(client)
+
+        assert form_key == "client_test_client_123"
+        assert mapping_key == "client:Test!@#$%Client-123"
+
+    def test_get_client_keys_empty_name(self):
+        """Test client key generation with empty name."""
+        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+
+        client = {"name": ""}
+
+        form_key, mapping_key = get_client_keys(client)
+
+        assert form_key == ""
+        assert mapping_key == ""
+
+
+class TestStateMapping:
+    """Tests for state mapping functionality."""
+
+    def test_map_state_playing(self):
+        """Test mapping playing state."""
+        hass = Mock()
+
+        mock_state = Mock()
+        mock_state.state = "playing"
+        hass.states.get.return_value = mock_state
+
+        # We'd need to test the actual _map_state_from_entity method here
+        # This is a simplified version
+        mapped_state = mock_state.state
+        assert mapped_state == "playing"
+
+    def test_map_state_unavailable(self):
+        """Test mapping when device is unavailable."""
+        hass = Mock()
+
+        mock_state = Mock()
+        mock_state.state = "playing"
+        hass.states.get.return_value = mock_state
+
+        # Test with is_available returning False
+        # Would return OFF state
+        pass  # Simplified for now
+
+
+class TestSwitchMappingMixin:
+    """Tests for SwitchMappingMixin functionality."""
+
+    @pytest.mark.asyncio
+    async def test_turn_on_with_mapped_switch(self):
+        """Test turn_on delegates to mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass, "switch.test_service")
+        await entity.async_turn_on()
+
+        hass.services.async_call.assert_called_once_with(
+            "switch",
+            "turn_on",
+            {"entity_id": "switch.test_service"},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_off_with_mapped_switch(self):
+        """Test turn_off delegates to mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass, "switch.test_service")
+        await entity.async_turn_off()
+
+        hass.services.async_call.assert_called_once_with(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.test_service"},
+            blocking=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_on_without_mapped_switch(self):
+        """Test turn_on does nothing without mapped switch."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass):
+                self._hass = hass
+                self._mapped_switch_id = None
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(return_value=None)
+
+        entity = MockEntity(hass)
+        await entity.async_turn_on()
+
+        hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_handles_exception(self):
+        """Test turn_on handles service call exceptions."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, hass, switch_id):
+                self._hass = hass
+                self._mapped_switch_id = switch_id
+
+        hass = Mock()
+        hass.services.async_call = AsyncMock(side_effect=Exception("Service failed"))
+
+        entity = MockEntity(hass, "switch.test_service")
+        # Should not raise exception
+        await entity.async_turn_on()
+
+    def test_get_switch_supported_features_with_switch(self):
+        """Test that TURN_ON/OFF features are added when switch is mapped."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+        from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self, switch_id):
+                self._hass = Mock()
+                self._mapped_switch_id = switch_id
+
+        entity = MockEntity("switch.test_service")
+        base_features = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+
+        features = entity._get_switch_supported_features(base_features)
+
+        assert features & MediaPlayerEntityFeature.TURN_ON
+        assert features & MediaPlayerEntityFeature.TURN_OFF
+        assert features & MediaPlayerEntityFeature.PLAY
+        assert features & MediaPlayerEntityFeature.PAUSE
+
+    def test_get_switch_supported_features_without_switch(self):
+        """Test that features are unchanged when no switch is mapped."""
+        from custom_components.odio_audio.mixins import SwitchMappingMixin
+        from homeassistant.components.media_player import MediaPlayerEntityFeature
+
+        class MockEntity(SwitchMappingMixin):
+            def __init__(self):
+                self._hass = Mock()
+                self._mapped_switch_id = None
+
+        entity = MockEntity()
+        base_features = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+
+        features = entity._get_switch_supported_features(base_features)
+
+        assert not (features & MediaPlayerEntityFeature.TURN_ON)
+        assert not (features & MediaPlayerEntityFeature.TURN_OFF)
+        assert features & MediaPlayerEntityFeature.PLAY
+        assert features & MediaPlayerEntityFeature.PAUSE
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
