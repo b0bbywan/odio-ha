@@ -84,9 +84,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             clients = await api.get_clients() if has_pulseaudio else []
             players = await api.get_players() if has_mpris else []
+            server = await api.get_server_info() if has_pulseaudio else {}
             # Reset failure count on success
             failure_counts["audio"] = 0
-            return {"audio": clients, "players": players}
+            return {"audio": clients, "players": players, "server": server}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
             # Implement exponential backoff with 1h max
@@ -133,14 +134,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_update_services() -> dict[str, object]:
         try:
-            services = await api.get_services() if has_systemd else []
-            server = await api.get_server_info() if has_pulseaudio else {}
+            services = await api.get_services()
             # Reset failure count on success
             failure_counts["services"] = 0
-            return {
-                "services": services,
-                "server": server,
-            }
+            return {"services": services}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
             # Implement exponential backoff with 1h max
@@ -166,7 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=async_update_services,
         update_interval=timedelta(seconds=service_scan_interval),
         config_entry=entry,
-    ) if has_systemd or has_pulseaudio else None
+    ) if has_systemd else None
 
     # ---------------------------------------------------------------------
     # Initial refresh
@@ -179,7 +176,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Only forward platforms that have available backends
     platforms = []
-    if has_pulseaudio or has_mpris:
+    if has_pulseaudio or has_mpris or has_systemd:
         platforms.append(Platform.MEDIA_PLAYER)
     if has_systemd:
         platforms.append(Platform.SWITCH)
