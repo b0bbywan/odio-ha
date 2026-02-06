@@ -32,7 +32,6 @@ async def async_setup_entry(
     # Get services from coordinator data
     services = service_coordinator.data.get("services", [])
 
-
     _LOGGER.debug("Setting up switches for %d services", len(services))
 
     # Create switch entities for user services only
