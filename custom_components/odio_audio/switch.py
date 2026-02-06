@@ -27,7 +27,7 @@ async def async_setup_entry(
     coordinator_data = hass.data[DOMAIN][entry.entry_id]
     service_coordinator = coordinator_data["service_coordinator"]
     api: OdioApiClient = coordinator_data["api"]
-    server_info = coordinator_data["server_info"]
+    device_info = coordinator_data["device_info"]
 
     # Get services from coordinator data
     services = service_coordinator.data.get("services", [])
@@ -48,7 +48,7 @@ async def async_setup_entry(
                     service_coordinator,
                     api,
                     service,
-                    server_info,
+                    device_info,
                     entry.entry_id,
                 )
             )
@@ -68,7 +68,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         coordinator,
         api: OdioApiClient,
         service: dict[str, Any],
-        server_info: dict[str, Any],
+        device_info: DeviceInfo,
         entry_id: str,
     ) -> None:
         """Initialize the switch."""
@@ -77,17 +77,11 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         self._service_scope = service.get("scope", "user")
         self._service_unit = service.get("name", "")
         self._entry_id = entry_id
-
-        # Device info from /server capabilities
-        self._server_name = server_info.get("api_sw", "Odio Audio")
-        self._server_hostname = server_info.get("hostname", "unknown")
-        self._server_version = server_info.get("api_version", "unknown")
+        self._attr_device_info = device_info
 
         # Generate unique_id and entity_id
-        # Example: switch.odio_netflix for firefox-kiosk@www.netflix.com.service
         sanitized_unit = self._service_unit.replace(".service", "").replace("@", "_").replace(".", "_")
-        self._attr_unique_id = f"{self._server_hostname}_switch_{self._service_scope}_{sanitized_unit}"
-        # Just use the service name, no prefix
+        self._attr_unique_id = f"{entry_id}_switch_{self._service_scope}_{sanitized_unit}"
         self._attr_name = sanitized_unit.replace("_", " ").title()
 
         _LOGGER.debug(
@@ -96,17 +90,6 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
             self._attr_name,
             self._service_scope,
             self._service_unit,
-        )
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._server_hostname}_services")},
-            name="Odio Services",
-            manufacturer="Odio",
-            model="Services",
-            sw_version=self._server_version,
         )
 
     @property

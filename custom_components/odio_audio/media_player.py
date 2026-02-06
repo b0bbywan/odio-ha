@@ -16,6 +16,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -127,6 +128,7 @@ async def async_setup_entry(
                         player,
                         server_info,
                         config_entry.entry_id,
+                        device_info,
                         mapped_switch,
                     )
                 )
@@ -239,7 +241,7 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         media_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the receiver."""
         super().__init__(media_coordinator)
@@ -333,7 +335,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
-        device_info: dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the service."""
         super().__init__(media_coordinator)
@@ -590,7 +592,7 @@ class OdioRemoteClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, Me
         entry_id: str,
         initial_client: dict[str, Any],
         server_hostname: str | None = None,
-        device_info: dict[str, Any] | None = None,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         """Initialize the remote client."""
         super().__init__(media_coordinator)
@@ -820,6 +822,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         player: dict[str, Any],
         server_info: dict[str, Any],
         entry_id: str,
+        device_info: DeviceInfo,
         mapped_switch_id: str | None = None,
     ) -> None:
         """Initialize the MPRIS media player."""
@@ -828,23 +831,21 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         self._player_name = player.get("name", "")
         self._entry_id = entry_id
         self._mapped_switch_id = mapped_switch_id
+        self._attr_device_info = device_info
 
-        # Device info from /server capabilities
-        self._server_name = server_info.get("api_sw", "Odio Audio")
-        self._server_hostname = server_info.get("hostname", "unknown")
-        self._server_version = server_info.get("api_version", "unknown")
+        hostname = server_info.get("hostname", "unknown")
 
         # Generate unique_id and entity_id
-        # Example: media_player.odio_firefox for firefox.instance123
         sanitized_name = self._player_name.replace(".", "_").replace("@", "_")
-        self._attr_unique_id = f"{self._server_hostname}_mpris_{sanitized_name}"
+        self._attr_unique_id = f"{hostname}_mpris_{sanitized_name}"
 
         # Try to get a nice name from player identity if available
         identity = player.get("identity", "")
+        server_name = server_info.get("api_sw", "Odio Audio")
         if identity:
-            self._attr_name = f"{self._server_name} {identity}"
+            self._attr_name = f"{server_name} {identity}"
         else:
-            self._attr_name = f"{self._server_name} {sanitized_name.replace('_', ' ').title()}"
+            self._attr_name = f"{server_name} {sanitized_name.replace('_', ' ').title()}"
 
         _LOGGER.debug(
             "Initialized MPRIS player: unique_id=%s, name=%s, player=%s, switch=%s",
@@ -858,17 +859,6 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
     def _hass(self):
         """Return HomeAssistant instance for SwitchMappingMixin."""
         return self.hass
-
-    @property
-    def device_info(self):
-        """Return device information."""
-        return {
-            "identifiers": {(DOMAIN, self._server_hostname)},
-            "name": self._server_name,
-            "manufacturer": "Odio",
-            "model": "Audio Server",
-            "sw_version": self._server_version,
-        }
 
     @property
     def _player_data(self) -> dict[str, Any] | None:

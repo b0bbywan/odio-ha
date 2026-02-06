@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -183,15 +184,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Build device info from /server capabilities
     hostname = server_info.get("hostname", "unknown")
-    device_info = {
-        "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": f"Odio ({hostname})",
-        "manufacturer": "Odio",
-        "model": server_info.get("os_platform", "Audio Server"),
-        "sw_version": server_info.get("api_version"),
-        "hw_version": server_info.get("os_version"),
-        "configuration_url": api_url,
-    }
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=f"Odio ({hostname})",
+        manufacturer="Odio",
+        model=server_info.get("os_platform", "Audio Server"),
+        sw_version=server_info.get("api_version"),
+        hw_version=server_info.get("os_version"),
+        configuration_url=api_url,
+    )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
