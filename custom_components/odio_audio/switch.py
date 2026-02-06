@@ -6,12 +6,12 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import DOMAIN
 
@@ -39,14 +39,14 @@ def _build_services_device_info(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: OdioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio service switches from a config entry."""
-    coordinator_data = hass.data[DOMAIN][entry.entry_id]
-    service_coordinator = coordinator_data["service_coordinator"]
-    api: OdioApiClient = coordinator_data["api"]
-    server_info = coordinator_data["server_info"]
+    data = entry.runtime_data
+    service_coordinator = data.service_coordinator
+    api: OdioApiClient = data.api
+    server_info = data.server_info
 
     # Build services device info
     hostname = server_info.get("hostname", "unknown")
@@ -62,6 +62,10 @@ async def async_setup_entry(
     )
 
     # Get services from coordinator data
+    if not service_coordinator or not service_coordinator.data:
+        _LOGGER.debug("No service coordinator data available, skipping switches")
+        return
+
     services = service_coordinator.data.get("services", [])
 
     _LOGGER.debug("Setting up switches for %d services", len(services))
