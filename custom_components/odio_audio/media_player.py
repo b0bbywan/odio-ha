@@ -52,30 +52,30 @@ async def async_setup_entry(
     service_coordinator = coordinator_data["service_coordinator"]
     service_mappings = coordinator_data["service_mappings"]  # noqa: F841
     api_client = coordinator_data["api"]
+    server_info = coordinator_data["server_info"]
 
-    # Get server hostname to identify remote clients
-    server_hostname = None
-    if service_coordinator.data:
-        server_info = service_coordinator.data.get("server", {})
-        server_hostname = server_info.get("hostname")
-
+    # Get server hostname from /server capabilities (fetched once at startup)
+    server_hostname = server_info.get("hostname")
     _LOGGER.debug("Server hostname: %s", server_hostname)
 
-    # Create main receiver entity
-    entities: list[MediaPlayerEntity] = [
-        OdioReceiverMediaPlayer(
-            media_coordinator,
-            service_coordinator,
-            api_client,
-            config_entry.entry_id,
+    entities: list[MediaPlayerEntity] = []
+
+    # Create main receiver entity (only if we have audio data)
+    if media_coordinator:
+        entities.append(
+            OdioReceiverMediaPlayer(
+                media_coordinator,
+                api_client,
+                config_entry.entry_id,
+                server_info,
+            )
         )
-    ]
 
     # Track which clients are handled by services
     handled_client_patterns = set()
 
     # Create service entities
-    if service_coordinator.data:
+    if service_coordinator and service_coordinator.data:
         services = service_coordinator.data.get("services", [])
         for service in services:
             if (
@@ -96,16 +96,19 @@ async def async_setup_entry(
                 handled_client_patterns.add(service_name)
 
     # Create MPRIS media player entities
-    if media_coordinator.data and service_coordinator.data:
+    if media_coordinator and media_coordinator.data:
         players = media_coordinator.data.get("players", [])
-        services = service_coordinator.data.get("services", [])
-        server = service_coordinator.data.get("server", {})
+        services = (
+            service_coordinator.data.get("services", [])
+            if service_coordinator and service_coordinator.data
+            else []
+        )
 
         if players:
             _LOGGER.debug("Setting up MPRIS players: %d found", len(players))
             # Build mapping from player name to potential switch entity_id
             player_to_switch = _build_player_switch_mapping(
-                players, services, server.get("hostname", "odio")
+                players, services, server_hostname or "odio"
             )
 
             for player in players:
@@ -120,14 +123,14 @@ async def async_setup_entry(
                         media_coordinator,
                         api_client,
                         player,
-                        server,
+                        server_info,
                         config_entry.entry_id,
                         mapped_switch,
                     )
                 )
 
     # Create entities for standalone clients
-    if media_coordinator.data:
+    if media_coordinator and media_coordinator.data:
         audio = media_coordinator.data.get("audio", [])
         for client in audio:
             client_name = client.get("name", "")
@@ -215,9 +218,10 @@ async def async_setup_entry(
             async_add_entities(new_entities)
 
     # Listen for coordinator updates
-    config_entry.async_on_unload(
-        media_coordinator.async_add_listener(_async_check_new_clients)
-    )
+    if media_coordinator:
+        config_entry.async_on_unload(
+            media_coordinator.async_add_listener(_async_check_new_clients)
+        )
 
 
 class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
@@ -229,13 +233,12 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     def __init__(
         self,
         media_coordinator: DataUpdateCoordinator,
-        service_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
+        server_info: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the receiver."""
         super().__init__(media_coordinator)
-        self._service_coordinator = service_coordinator
         self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
         self._attr_device_info = {
@@ -243,13 +246,11 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
             "name": "Odio Receiver",
             "manufacturer": "Odio",
             "model": "PulseAudio Receiver",
+            "configuration_url": api_client._api_url,
         }
 
-        if service_coordinator.data:
-            server = service_coordinator.data.get("server", {})
-            if server:
-                self._attr_device_info["sw_version"] = server.get("version")
-                self._attr_device_info["configuration_url"] = api_client._api_url
+        if server_info:
+            self._attr_device_info["sw_version"] = server_info.get("api_version")
 
     @property
     def state(self) -> MediaPlayerState:
@@ -277,10 +278,10 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        if not self._service_coordinator.data:
+        if not self.coordinator.data:
             return None
 
-        server = self._service_coordinator.data.get("server", {})
+        server = self.coordinator.data.get("server", {})
         return server.get("volume")
 
     @property
@@ -305,8 +306,8 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
                 if not client.get("corked", True)
             ])
 
-        if self._service_coordinator.data:
-            server = self._service_coordinator.data.get("server", {})
+        if self.coordinator.data:
+            server = self.coordinator.data.get("server", {})
             if server:
                 attrs["server_name"] = server.get("name")
                 attrs["server_hostname"] = server.get("hostname")
@@ -317,12 +318,12 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         await self._api_client.set_server_volume(volume)
-        await self._service_coordinator.async_request_refresh()
+        await self.coordinator.async_request_refresh()
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         await self._api_client.set_server_mute(mute)
-        await self._service_coordinator.async_request_refresh()
+        await self.coordinator.async_request_refresh()
 
 
 class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPlayerEntity):
@@ -828,7 +829,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         coordinator,
         api: OdioApiClient,
         player: dict[str, Any],
-        server: dict[str, Any],
+        server_info: dict[str, Any],
         entry_id: str,
         mapped_switch_id: str | None = None,
     ) -> None:
@@ -839,10 +840,10 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         self._entry_id = entry_id
         self._mapped_switch_id = mapped_switch_id
 
-        # Device info from server
-        self._server_name = server.get("name", "Odio Audio")
-        self._server_hostname = server.get("hostname", "unknown")
-        self._server_version = server.get("version", "unknown")
+        # Device info from /server capabilities
+        self._server_name = server_info.get("api_sw", "Odio Audio")
+        self._server_hostname = server_info.get("hostname", "unknown")
+        self._server_version = server_info.get("api_version", "unknown")
 
         # Generate unique_id and entity_id
         # Example: media_player.odio_firefox for firefox.instance123

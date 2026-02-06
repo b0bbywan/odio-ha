@@ -15,6 +15,7 @@ DEFAULT_SERVICE_SCAN_INTERVAL: Final = 60  # secondes pour services
 DEFAULT_NAME: Final = "Odio Audio"
 
 # API Endpoints
+ENDPOINT_SERVER_INFO: Final = "/server"
 ENDPOINT_SERVER: Final = "/audio/server"
 ENDPOINT_CLIENTS: Final = "/audio/clients"
 ENDPOINT_SERVICES: Final = "/services"

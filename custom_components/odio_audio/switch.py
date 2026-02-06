@@ -27,10 +27,10 @@ async def async_setup_entry(
     coordinator_data = hass.data[DOMAIN][entry.entry_id]
     service_coordinator = coordinator_data["service_coordinator"]
     api: OdioApiClient = coordinator_data["api"]
+    server_info = coordinator_data["server_info"]
 
     # Get services from coordinator data
     services = service_coordinator.data.get("services", [])
-    server = service_coordinator.data.get("server", {})
 
     _LOGGER.debug("Setting up switches for %d services", len(services))
 
@@ -48,7 +48,7 @@ async def async_setup_entry(
                     service_coordinator,
                     api,
                     service,
-                    server,
+                    server_info,
                     entry.entry_id,
                 )
             )
@@ -68,7 +68,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         coordinator,
         api: OdioApiClient,
         service: dict[str, Any],
-        server: dict[str, Any],
+        server_info: dict[str, Any],
         entry_id: str,
     ) -> None:
         """Initialize the switch."""
@@ -78,10 +78,10 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         self._service_unit = service.get("name", "")
         self._entry_id = entry_id
 
-        # Device info from server
-        self._server_name = server.get("name", "Odio Audio")
-        self._server_hostname = server.get("hostname", "unknown")
-        self._server_version = server.get("version", "unknown")
+        # Device info from /server capabilities
+        self._server_name = server_info.get("api_sw", "Odio Audio")
+        self._server_hostname = server_info.get("hostname", "unknown")
+        self._server_version = server_info.get("api_version", "unknown")
 
         # Generate unique_id and entity_id
         # Example: switch.odio_netflix for firefox-kiosk@www.netflix.com.service
