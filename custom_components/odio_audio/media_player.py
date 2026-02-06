@@ -53,6 +53,7 @@ async def async_setup_entry(
     service_mappings = coordinator_data["service_mappings"]  # noqa: F841
     api_client = coordinator_data["api"]
     server_info = coordinator_data["server_info"]
+    device_info = coordinator_data["device_info"]
 
     # Get server hostname from /server capabilities (fetched once at startup)
     server_hostname = server_info.get("hostname")
@@ -67,7 +68,7 @@ async def async_setup_entry(
                 media_coordinator,
                 api_client,
                 config_entry.entry_id,
-                server_info,
+                device_info,
             )
         )
 
@@ -88,6 +89,7 @@ async def async_setup_entry(
                     api_client,
                     config_entry.entry_id,
                     service,
+                    device_info,
                 )
                 entities.append(serviceEntity)
 
@@ -148,6 +150,7 @@ async def async_setup_entry(
                 config_entry.entry_id,
                 client,
                 server_hostname,
+                device_info,
             )
             entities.append(audioEntity)
 
@@ -209,6 +212,7 @@ async def async_setup_entry(
                 config_entry.entry_id,
                 client,
                 server_hostname,
+                device_info,
             )
             new_entities.append(entity)
             known_remote_clients[client_name] = entity
@@ -235,22 +239,13 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         media_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
-        server_info: dict[str, Any] | None = None,
+        device_info: dict[str, Any],
     ) -> None:
         """Initialize the receiver."""
         super().__init__(media_coordinator)
         self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-            "configuration_url": api_client._api_url,
-        }
-
-        if server_info:
-            self._attr_device_info["sw_version"] = server_info.get("api_version")
+        self._attr_device_info = device_info
 
     @property
     def state(self) -> MediaPlayerState:
@@ -338,6 +333,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
+        device_info: dict[str, Any],
     ) -> None:
         """Initialize the service."""
         super().__init__(media_coordinator)
@@ -352,12 +348,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
 
         self._attr_unique_id = f"{entry_id}_service_{scope}_{service_name}"
         self._attr_name = f"{service_name} ({scope})"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-        }
+        self._attr_device_info = device_info
 
     @property
     def _mapping_key(self) -> str:
@@ -599,6 +590,7 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         entry_id: str,
         initial_client: dict[str, Any],
         server_hostname: str | None = None,
+        device_info: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the standalone client."""
         super().__init__(media_coordinator)
@@ -615,12 +607,7 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         safe_name = re.sub(r"[^a-z0-9_]+", "_", self._client_name.lower()).strip("_")
         self._attr_unique_id = f"{entry_id}_remote_{safe_name}"
         self._attr_name = self._client_name
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-        }
+        self._attr_device_info = device_info
 
         _LOGGER.debug(
             "Created standalone client entity for '%s' from host '%s' with unique_id '%s'",

@@ -181,6 +181,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if has_systemd:
         platforms.append(Platform.SWITCH)
 
+    # Build device info from /server capabilities
+    device_info = {
+        "identifiers": {(DOMAIN, entry.entry_id)},
+        "name": server_info.get("hostname", "Odio Audio"),
+        "manufacturer": "Odio",
+        "model": server_info.get("os_platform", "Audio Server"),
+        "sw_version": server_info.get("api_version"),
+        "configuration_url": api_url,
+    }
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
@@ -190,6 +200,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "server_info": server_info,
         "backends": backends,
         "platforms": platforms,
+        "device_info": device_info,
     }
 
     _LOGGER.debug("Forwarding setup to platforms: %s", platforms)
