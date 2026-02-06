@@ -45,6 +45,14 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
    - Par exemple : associer `user/mpd.service` à `media_player.music_player_daemon`
    - **Avantages** : L'entité Odio hérite de toutes les capacités de l'entité associée (play/pause, next, album art, etc.)
 
+### Suppression
+
+1. Allez dans **Paramètres** → **Appareils et services** → **Odio Audio**
+2. Cliquez sur les **⋮** (trois points) à côté de l'intégration
+3. Cliquez sur **Supprimer**
+
+Vous pouvez aussi supprimer un appareil individuel (Receiver ou Services) depuis sa page dans **Appareils** en cliquant sur **Supprimer l'appareil**.
+
 ### Reconfiguration (associations après coup)
 
 Vous pouvez modifier les associations à tout moment :

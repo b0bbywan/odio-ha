@@ -856,6 +856,8 @@ def _build_player_switch_mapping(
 class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEntity):
     """MPRIS media player entity with full native MPRIS support."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator,
