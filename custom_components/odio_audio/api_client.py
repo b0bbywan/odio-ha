@@ -50,8 +50,11 @@ class OdioApiClient:
             # Connection errors are expected when device is offline - log as warning
             _LOGGER.warning("Unable to connect to %s: %s", url, err)
             raise
+        except aiohttp.ClientResponseError:
+            # HTTP errors (404, 500, etc.) - let callers decide severity
+            raise
         except aiohttp.ClientError as err:
-            # Other client errors (e.g., HTTP errors) are unexpected - log as error
+            # Other client errors are unexpected
             _LOGGER.error("Error on %s %s: %s", method, url, err)
             raise
 

@@ -5,7 +5,10 @@ import asyncio
 import logging
 from typing import Any
 
+import aiohttp
+
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -133,48 +136,31 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
             "load_state": service.get("load_state"),
         }
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the service on (start)."""
-        _LOGGER.info("Starting service: %s/%s", self._service_scope, self._service_unit)
+    async def _control_service(self, action: str) -> None:
+        """Control the service and refresh state."""
+        service_id = f"{self._service_scope}/{self._service_unit}"
+        _LOGGER.info("%s service: %s", action.capitalize(), service_id)
         try:
             await self._api.control_service(
-                "start",
+                action,
                 self._service_scope,
                 self._service_unit,
             )
-            # Wait for state to update
-            await asyncio.sleep(1.0)
-            await self.coordinator.async_request_refresh()
-            # Additional delay to let coordinator update
-            await asyncio.sleep(0.5)
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to start service %s/%s: %s",
-                self._service_scope,
-                self._service_unit,
-                err,
-            )
-            raise
+        except aiohttp.ClientResponseError as err:
+            raise HomeAssistantError(
+                f"Failed to {action} {service_id}: HTTP {err.status}"
+            ) from err
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            raise HomeAssistantError(
+                f"Cannot reach API to {action} {service_id}: {err}"
+            ) from err
+        await asyncio.sleep(1.0)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the service on (start)."""
+        await self._control_service("start")
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the service off (stop)."""
-        _LOGGER.info("Stopping service: %s/%s", self._service_scope, self._service_unit)
-        try:
-            await self._api.control_service(
-                "stop",
-                self._service_scope,
-                self._service_unit,
-            )
-            # Wait for state to update
-            await asyncio.sleep(1.0)
-            await self.coordinator.async_request_refresh()
-            # Additional delay to let coordinator update
-            await asyncio.sleep(0.5)
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to stop service %s/%s: %s",
-                self._service_scope,
-                self._service_unit,
-                err,
-            )
-            raise
+        await self._control_service("stop")
