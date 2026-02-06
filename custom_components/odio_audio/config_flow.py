@@ -39,23 +39,28 @@ async def validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any]:
     session = async_get_clientsession(hass)
 
     try:
-        # Test server endpoint
+        # Test server endpoint (supplementary - don't fail if unavailable)
         server_url = f"{api_url}{ENDPOINT_SERVER}"
         _LOGGER.debug("Testing server endpoint: %s", server_url)
 
-        async with session.get(
-            server_url,
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as response:
-            _LOGGER.debug("Server endpoint status: %s", response.status)
+        server_info = {}
+        try:
+            async with session.get(
+                server_url,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                _LOGGER.debug("Server endpoint status: %s", response.status)
 
-            if response.status != 200:
-                error_text = await response.text()
-                _LOGGER.error("Server endpoint returned %s: %s", response.status, error_text)
-                raise ValueError(f"Server returned status {response.status}")
-
-            server_info = await response.json()
-            _LOGGER.debug("Server info received: %s", server_info)
+                if response.status == 200:
+                    server_info = await response.json()
+                    _LOGGER.debug("Server info received: %s", server_info)
+                else:
+                    _LOGGER.warning(
+                        "Server endpoint returned %s - continuing without server info",
+                        response.status,
+                    )
+        except aiohttp.ClientError as err:
+            _LOGGER.warning("Could not fetch server info: %s", err)
 
         # Test services endpoint
         services_url = f"{api_url}{ENDPOINT_SERVICES}"

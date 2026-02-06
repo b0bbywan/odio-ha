@@ -110,14 +110,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     services = await response.json()
                     _LOGGER.debug("Services fetched: %d services", len(services) if isinstance(services, list) else 0)
 
-                async with session.get(server_url) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        _LOGGER.error("Server endpoint returned %s: %s", response.status, error_text)
-                        raise UpdateFailed(f"Error fetching server info: HTTP {response.status}")
-
-                    server = await response.json()
-                    _LOGGER.debug("Server info fetched: %s", server.get("name"))
+                # Server info is supplementary - don't fail if unavailable
+                server = {}
+                try:
+                    async with session.get(server_url) as response:
+                        if response.status == 200:
+                            server = await response.json()
+                            _LOGGER.debug("Server info fetched: %s", server.get("name"))
+                        else:
+                            _LOGGER.warning(
+                                "Server endpoint returned %s - continuing without server info",
+                                response.status,
+                            )
+                except aiohttp.ClientError as server_err:
+                    _LOGGER.warning("Could not fetch server info: %s", server_err)
 
                 return {"services": services, "server": server}
 
