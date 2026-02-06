@@ -68,6 +68,18 @@ class OdioApiClient:
         """Make POST request."""
         return await self._request("POST", endpoint, json_data=data, timeout=timeout)
 
+    # Server capabilities (called once at startup)
+    async def get_server_capabilities(self) -> dict[str, Any]:
+        """Get server capabilities including available backends.
+
+        Called once at startup to determine which routes to poll.
+        """
+        from .const import ENDPOINT_SERVER_INFO
+        result = await self.get(ENDPOINT_SERVER_INFO)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from server info endpoint, got {type(result)}")
+        return result
+
     # Server endpoints
     async def get_server_info(self) -> dict[str, Any]:
         """Get server information."""

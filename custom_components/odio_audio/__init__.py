@@ -29,8 +29,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER, Platform.SWITCH]
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Odio Audio from a config entry."""
@@ -57,17 +55,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
+    # -----------------------------------------------------------------
+    # Fetch server capabilities once at startup
+    # -----------------------------------------------------------------
+    server_info = await api.get_server_capabilities()
+    backends = server_info.get("backends", {})
+    has_pulseaudio = backends.get("pulseaudio", False)
+    has_mpris = backends.get("mpris", False)
+    has_systemd = backends.get("systemd", False)
+
+    _LOGGER.info(
+        "Server capabilities: hostname=%s, api=%s v%s, backends: pulseaudio=%s, mpris=%s, systemd=%s",
+        server_info.get("hostname"),
+        server_info.get("api_sw"),
+        server_info.get("api_version"),
+        has_pulseaudio, has_mpris, has_systemd,
+    )
+
     # Track consecutive failures for exponential backoff
     failure_counts = {"audio": 0, "services": 0}
 
     # ---------------------------------------------------------------------
     # Audio clients coordinator (fast polling)
+    # Only polls endpoints whose backends are available
     # ---------------------------------------------------------------------
 
     async def async_update_audio() -> dict[str, list]:
         try:
-            clients = await api.get_clients()
-            players = await api.get_players()
+            clients = await api.get_clients() if has_pulseaudio else []
+            players = await api.get_players() if has_mpris else []
             # Reset failure count on success
             failure_counts["audio"] = 0
             return {"audio": clients, "players": players}
@@ -108,16 +124,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=async_update_audio,
         update_interval=timedelta(seconds=scan_interval),
         config_entry=entry,
-    )
+    ) if has_pulseaudio or has_mpris else None
 
     # ---------------------------------------------------------------------
     # Services coordinator (slow polling)
+    # Only polls endpoints whose backends are available
     # ---------------------------------------------------------------------
 
     async def async_update_services() -> dict[str, object]:
         try:
-            services = await api.get_services()
-            server = await api.get_server_info()
+            services = await api.get_services() if has_systemd else []
+            server = await api.get_server_info() if has_pulseaudio else {}
             # Reset failure count on success
             failure_counts["services"] = 0
             return {
@@ -149,14 +166,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=async_update_services,
         update_interval=timedelta(seconds=service_scan_interval),
         config_entry=entry,
-    )
+    ) if has_systemd or has_pulseaudio else None
 
     # ---------------------------------------------------------------------
     # Initial refresh
     # ---------------------------------------------------------------------
 
-    await media_coordinator.async_config_entry_first_refresh()
-    await service_coordinator.async_config_entry_first_refresh()
+    if media_coordinator:
+        await media_coordinator.async_config_entry_first_refresh()
+    if service_coordinator:
+        await service_coordinator.async_config_entry_first_refresh()
+
+    # Only forward platforms that have available backends
+    platforms = []
+    if has_pulseaudio or has_mpris:
+        platforms.append(Platform.MEDIA_PLAYER)
+    if has_systemd:
+        platforms.append(Platform.SWITCH)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -164,10 +190,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "media_coordinator": media_coordinator,
         "service_coordinator": service_coordinator,
         "service_mappings": service_mappings,
+        "server_info": server_info,
+        "backends": backends,
+        "platforms": platforms,
     }
 
-    _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _LOGGER.debug("Forwarding setup to platforms: %s", platforms)
+    if platforms:
+        await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
     _LOGGER.info("Odio Audio integration setup complete")
     return True
@@ -175,7 +205,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+    platforms = hass.data[DOMAIN][entry.entry_id].get("platforms", [])
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, platforms):
         hass.data[DOMAIN].pop(entry.entry_id)
     return unload_ok
 
