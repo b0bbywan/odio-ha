@@ -41,6 +41,26 @@ from .mixins import MediaPlayerMappingMixin, SwitchMappingMixin
 _LOGGER = logging.getLogger(__name__)
 
 
+def _build_receiver_device_info(
+    hostname: str,
+    api_version: str,
+    api_url: str,
+    model_id: str | None,
+    hw_version: str | None,
+) -> dict[str, Any]:
+    """Build device info for Receiver device."""
+    return {
+        "identifiers": {(DOMAIN, f"{hostname}_receiver")},
+        "name": f"Odio Receiver ({hostname})",
+        "manufacturer": "Odio",
+        "model": "Media Hub",
+        "model_id": model_id,
+        "sw_version": api_version,
+        "hw_version": hw_version,
+        "configuration_url": api_url,
+    }
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -53,10 +73,39 @@ async def async_setup_entry(
     service_mappings = coordinator_data["service_mappings"]  # noqa: F841
     api_client = coordinator_data["api"]
     server_info = coordinator_data["server_info"]
+    backends = coordinator_data.get("backends", {})
 
     # Get server hostname from /server capabilities (fetched once at startup)
-    server_hostname = server_info.get("hostname")
+    server_hostname = server_info.get("hostname", "unknown")
+    api_version = server_info.get("api_version", "unknown")
+    api_url = api_client._api_url
     _LOGGER.debug("Server hostname: %s", server_hostname)
+
+    # Build receiver device model_id from available backends
+    backends_list = []
+    if backends.get("pulseaudio"):
+        backends_list.append("pulseaudio")
+    if backends.get("mpris"):
+        backends_list.append("mpris")
+    receiver_model_id = "+".join(backends_list) if backends_list else None
+
+    # Get receiver hw_version from /audio/server (kind + version)
+    receiver_hw_version = None
+    if media_coordinator and media_coordinator.data:
+        server_data = media_coordinator.data.get("server", {})
+        server_kind = server_data.get("kind", "")
+        server_version = server_data.get("version", "")
+        if server_kind:
+            receiver_hw_version = f"{server_kind} {server_version}"
+
+    # Build receiver device info (shared by all media player entities)
+    receiver_device_info = _build_receiver_device_info(
+        server_hostname,
+        api_version,
+        api_url,
+        receiver_model_id,
+        receiver_hw_version,
+    )
 
     entities: list[MediaPlayerEntity] = []
 
@@ -67,7 +116,7 @@ async def async_setup_entry(
                 media_coordinator,
                 api_client,
                 config_entry.entry_id,
-                server_info,
+                receiver_device_info,
             )
         )
 
@@ -88,6 +137,7 @@ async def async_setup_entry(
                     api_client,
                     config_entry.entry_id,
                     service,
+                    receiver_device_info,
                 )
                 entities.append(serviceEntity)
 
@@ -123,7 +173,8 @@ async def async_setup_entry(
                         media_coordinator,
                         api_client,
                         player,
-                        server_info,
+                        receiver_device_info,
+                        server_hostname,
                         config_entry.entry_id,
                         mapped_switch,
                     )
@@ -147,7 +198,7 @@ async def async_setup_entry(
                 api_client,
                 config_entry.entry_id,
                 client,
-                server_hostname,
+                receiver_device_info,
             )
             entities.append(audioEntity)
 
@@ -208,7 +259,7 @@ async def async_setup_entry(
                 api_client,
                 config_entry.entry_id,
                 client,
-                server_hostname,
+                receiver_device_info,
             )
             new_entities.append(entity)
             known_remote_clients[client_name] = entity
@@ -235,22 +286,13 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         media_coordinator: DataUpdateCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
-        server_info: dict[str, Any] | None = None,
+        device_info: dict[str, Any],
     ) -> None:
         """Initialize the receiver."""
         super().__init__(media_coordinator)
         self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-            "configuration_url": api_client._api_url,
-        }
-
-        if server_info:
-            self._attr_device_info["sw_version"] = server_info.get("api_version")
+        self._attr_device_info = device_info
 
     @property
     def state(self) -> MediaPlayerState:
@@ -338,6 +380,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
+        device_info: dict[str, Any],
     ) -> None:
         """Initialize the service."""
         super().__init__(media_coordinator)
@@ -352,12 +395,7 @@ class OdioServiceMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity, MediaPl
 
         self._attr_unique_id = f"{entry_id}_service_{scope}_{service_name}"
         self._attr_name = f"{service_name} ({scope})"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-        }
+        self._attr_device_info = device_info
 
     @property
     def _mapping_key(self) -> str:
@@ -598,14 +636,14 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         api_client: OdioApiClient,
         entry_id: str,
         initial_client: dict[str, Any],
-        server_hostname: str | None = None,
+        device_info: dict[str, Any],
     ) -> None:
         """Initialize the standalone client."""
         super().__init__(media_coordinator)
         self._api_client = api_client
         self._entry_id = entry_id
-        self._server_hostname = server_hostname
         self._hass: HomeAssistant | None = None
+        self._attr_device_info = device_info
 
         # Use client NAME as stable identifier
         self._client_name = initial_client.get("name", "")
@@ -615,12 +653,6 @@ class OdioStandaloneClientMediaPlayer(MediaPlayerMappingMixin, CoordinatorEntity
         safe_name = re.sub(r"[^a-z0-9_]+", "_", self._client_name.lower()).strip("_")
         self._attr_unique_id = f"{entry_id}_remote_{safe_name}"
         self._attr_name = self._client_name
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-        }
 
         _LOGGER.debug(
             "Created standalone client entity for '%s' from host '%s' with unique_id '%s'",
@@ -829,7 +861,8 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         coordinator,
         api: OdioApiClient,
         player: dict[str, Any],
-        server_info: dict[str, Any],
+        device_info: dict[str, Any],
+        server_hostname: str,
         entry_id: str,
         mapped_switch_id: str | None = None,
     ) -> None:
@@ -837,13 +870,10 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         super().__init__(coordinator)
         self._api = api
         self._player_name = player.get("name", "")
+        self._server_hostname = server_hostname
         self._entry_id = entry_id
         self._mapped_switch_id = mapped_switch_id
-
-        # Device info from /server capabilities
-        self._server_name = server_info.get("api_sw", "Odio Audio")
-        self._server_hostname = server_info.get("hostname", "unknown")
-        self._server_version = server_info.get("api_version", "unknown")
+        self._attr_device_info = device_info
 
         # Generate unique_id and entity_id
         # Example: media_player.odio_firefox for firefox.instance123
@@ -853,9 +883,9 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         # Try to get a nice name from player identity if available
         identity = player.get("identity", "")
         if identity:
-            self._attr_name = f"{self._server_name} {identity}"
+            self._attr_name = identity
         else:
-            self._attr_name = f"{self._server_name} {sanitized_name.replace('_', ' ').title()}"
+            self._attr_name = sanitized_name.replace("_", " ").title()
 
         _LOGGER.debug(
             "Initialized MPRIS player: unique_id=%s, name=%s, player=%s, switch=%s",
@@ -869,17 +899,6 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
     def _hass(self):
         """Return HomeAssistant instance for SwitchMappingMixin."""
         return self.hass
-
-    @property
-    def device_info(self):
-        """Return device information."""
-        return {
-            "identifiers": {(DOMAIN, self._server_hostname)},
-            "name": self._server_name,
-            "manufacturer": "Odio",
-            "model": "Audio Server",
-            "sw_version": self._server_version,
-        }
 
     @property
     def _player_data(self) -> dict[str, Any] | None:

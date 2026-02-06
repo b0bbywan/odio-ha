@@ -8,7 +8,6 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -16,6 +15,25 @@ from .api_client import OdioApiClient
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _build_services_device_info(
+    hostname: str,
+    api_version: str,
+    api_url: str,
+    os_version: str,
+) -> dict[str, Any]:
+    """Build device info for Services device."""
+    return {
+        "identifiers": {(DOMAIN, f"{hostname}_services")},
+        "name": f"Odio Services ({hostname})",
+        "manufacturer": "Odio",
+        "model": "Service Controller",
+        "model_id": "systemd",
+        "sw_version": api_version,
+        "hw_version": os_version,
+        "configuration_url": api_url,
+    }
 
 
 async def async_setup_entry(
@@ -28,6 +46,19 @@ async def async_setup_entry(
     service_coordinator = coordinator_data["service_coordinator"]
     api: OdioApiClient = coordinator_data["api"]
     server_info = coordinator_data["server_info"]
+
+    # Build services device info
+    hostname = server_info.get("hostname", "unknown")
+    api_version = server_info.get("api_version", "unknown")
+    os_version = server_info.get("os_version", "unknown")
+    api_url = api._api_url
+
+    services_device_info = _build_services_device_info(
+        hostname,
+        api_version,
+        api_url,
+        os_version,
+    )
 
     # Get services from coordinator data
     services = service_coordinator.data.get("services", [])
@@ -48,7 +79,7 @@ async def async_setup_entry(
                     service_coordinator,
                     api,
                     service,
-                    server_info,
+                    services_device_info,
                     entry.entry_id,
                 )
             )
@@ -68,7 +99,7 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         coordinator,
         api: OdioApiClient,
         service: dict[str, Any],
-        server_info: dict[str, Any],
+        device_info: dict[str, Any],
         entry_id: str,
     ) -> None:
         """Initialize the switch."""
@@ -77,16 +108,19 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         self._service_scope = service.get("scope", "user")
         self._service_unit = service.get("name", "")
         self._entry_id = entry_id
+        self._attr_device_info = device_info
 
-        # Device info from /server capabilities
-        self._server_name = server_info.get("api_sw", "Odio Audio")
-        self._server_hostname = server_info.get("hostname", "unknown")
-        self._server_version = server_info.get("api_version", "unknown")
+        # Extract hostname from device_info identifiers for unique_id
+        hostname = "unknown"
+        for domain, identifier in device_info.get("identifiers", set()):
+            if domain == DOMAIN and identifier.endswith("_services"):
+                hostname = identifier.replace("_services", "")
+                break
 
         # Generate unique_id and entity_id
         # Example: switch.odio_netflix for firefox-kiosk@www.netflix.com.service
         sanitized_unit = self._service_unit.replace(".service", "").replace("@", "_").replace(".", "_")
-        self._attr_unique_id = f"{self._server_hostname}_switch_{self._service_scope}_{sanitized_unit}"
+        self._attr_unique_id = f"{hostname}_switch_{self._service_scope}_{sanitized_unit}"
         # Just use the service name, no prefix
         self._attr_name = sanitized_unit.replace("_", " ").title()
 
@@ -96,17 +130,6 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
             self._attr_name,
             self._service_scope,
             self._service_unit,
-        )
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._server_hostname}_services")},
-            name="Odio Services",
-            manufacturer="Odio",
-            model="Services",
-            sw_version=self._server_version,
         )
 
     @property
