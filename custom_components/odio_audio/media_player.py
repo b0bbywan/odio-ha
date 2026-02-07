@@ -16,6 +16,7 @@ from homeassistant.components.media_player import (
     RepeatMode,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -357,12 +358,11 @@ def _build_player_switch_mapping(
     services: list[dict[str, Any]],
     hostname: str,
 ) -> dict[str, str]:
-    """Build mapping from MPRIS player bus_name to switch entity_id.
+    """Build mapping from MPRIS player bus_name to switch unique_id.
 
-    Uses the player identity (e.g. "Spotify", "Music Player Daemon") and the
-    app name extracted from the bus_name to find a matching systemd user
-    service.  When multiple services match (e.g. several firefox-kiosk@…
-    instances), the mapping is skipped to avoid incorrect associations.
+    Uses the player identity and app name to find a matching systemd user
+    service.  When multiple services match, the mapping is skipped.
+    Returns unique_ids (not entity_ids) — resolved via entity registry at runtime.
     """
     mapping: dict[str, str] = {}
 
@@ -375,8 +375,10 @@ def _build_player_switch_mapping(
 
         app_name = _extract_mpris_app_name(bus_name).lower()
         identity = player.get("identity", "").lower()
-        # First word of identity is usually the app (e.g. "spotify", "mozilla")
-        identity_keyword = identity.split()[0] if identity else ""
+        # All meaningful tokens from identity (e.g. "kodi", "media", "player")
+        identity_tokens = [
+            t for t in re.split(r'[\s\-_]+', identity) if len(t) >= 3
+        ] if identity else []
 
         media_url = player.get("metadata", {}).get("xesam:url", "").lower()
 
@@ -393,20 +395,20 @@ def _build_player_switch_mapping(
                     matches.append(unit)
                 continue
 
-            # Simple service: match by app name or identity keyword
+            # Simple service: match by app name or any identity token
             if app_name and app_name in unit_base:
                 matches.append(unit)
-            elif identity_keyword and identity_keyword in unit_base:
+            elif any(token in unit_base for token in identity_tokens):
                 matches.append(unit)
 
         if len(matches) == 1:
             unit = matches[0]
             sanitized = unit.replace(".service", "").replace("@", "_").replace(".", "_")
-            switch_entity_id = f"switch.{hostname}_{sanitized}"
-            mapping[bus_name] = switch_entity_id
+            switch_uid = f"{hostname}_switch_user_{sanitized}"
+            mapping[bus_name] = switch_uid
             _LOGGER.debug(
-                "Mapped player %s (%s) to switch %s",
-                bus_name, identity, switch_entity_id,
+                "Mapped player %s (%s) to switch uid %s",
+                bus_name, identity, switch_uid,
             )
         elif len(matches) > 1:
             _LOGGER.debug(
@@ -1021,7 +1023,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         device_info: DeviceInfo,
         server_hostname: str,
         entry_id: str,
-        mapped_switch_id: str | None = None,
+        mapped_switch_uid: str | None = None,
     ) -> None:
         """Initialize the MPRIS media player."""
         super().__init__(coordinator)
@@ -1029,7 +1031,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         self._player_name = player.get("bus_name", "")
         self._server_hostname = server_hostname
         self._entry_id = entry_id
-        self._mapped_switch_id = mapped_switch_id
+        self._mapped_switch_uid = mapped_switch_uid
         self._attr_device_info = device_info
 
         # Generate unique_id from bus_name
@@ -1044,12 +1046,25 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
             self._attr_name = _extract_mpris_app_name(self._player_name).replace("_", " ").title()
 
         _LOGGER.debug(
-            "Initialized MPRIS player: unique_id=%s, name=%s, bus_name=%s, switch=%s",
+            "Initialized MPRIS player: unique_id=%s, name=%s, bus_name=%s, switch_uid=%s",
             self._attr_unique_id,
             self._attr_name,
             self._player_name,
-            self._mapped_switch_id,
+            self._mapped_switch_uid,
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Resolve switch unique_id to entity_id once added to HA."""
+        await super().async_added_to_hass()
+        if self._mapped_switch_uid:
+            registry = er.async_get(self.hass)
+            self._mapped_switch_id = registry.async_get_entity_id(
+                "switch", DOMAIN, self._mapped_switch_uid,
+            )
+            _LOGGER.debug(
+                "Resolved switch uid %s → %s",
+                self._mapped_switch_uid, self._mapped_switch_id,
+            )
 
     @property
     def _hass(self):
