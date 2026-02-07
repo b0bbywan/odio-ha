@@ -378,11 +378,22 @@ def _build_player_switch_mapping(
         # First word of identity is usually the app (e.g. "spotify", "mozilla")
         identity_keyword = identity.split()[0] if identity else ""
 
+        media_url = player.get("metadata", {}).get("xesam:url", "").lower()
+
         matches: list[str] = []
         for service in user_services:
             unit = service.get("unit", "") or service.get("name", "")
             unit_base = unit.split(".service")[0].lower()
 
+            # Template service (e.g. firefox-kiosk@www.youtube.com):
+            # match by URL domain from metadata.xesam:url
+            if "@" in unit_base:
+                instance = unit_base.split("@", 1)[1]
+                if instance and media_url and instance in media_url:
+                    matches.append(unit)
+                continue
+
+            # Simple service: match by app name or identity keyword
             if app_name and app_name in unit_base:
                 matches.append(unit)
             elif identity_keyword and identity_keyword in unit_base:
@@ -1148,7 +1159,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
         if player and player.get("metadata"):
             length_us = player["metadata"].get("mpris:length")
             if length_us is not None:
-                return int(length_us / 1_000_000)
+                return int(length_us) // 1_000_000
         return None
 
     @property
