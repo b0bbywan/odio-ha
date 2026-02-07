@@ -1175,7 +1175,8 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
     @property
     def media_position_updated_at(self):
         """When was the position of the current playing media valid."""
-        return self.coordinator.last_updated
+        from homeassistant.util import dt as dt_util
+        return dt_util.utcnow()
 
     @property
     def media_title(self) -> str | None:
