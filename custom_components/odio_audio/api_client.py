@@ -84,20 +84,32 @@ class OdioApiClient:
     async def get_server_info(self) -> dict[str, Any]:
         """Get server information."""
         from .const import ENDPOINT_SERVER
-        result = await self.get(ENDPOINT_SERVER)
-        if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
-        return result
+        try:
+            result = await self.get(ENDPOINT_SERVER)
+            if not isinstance(result, dict):
+                raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+            return result
+        except aiohttp.ClientResponseError as err:
+            if err.status == 404:
+                _LOGGER.debug("Audio server endpoint not available (404)")
+                return {}
+            raise
 
     async def get_clients(self) -> list[dict[str, Any]]:
         """Get audio clients."""
         from .const import ENDPOINT_CLIENTS
-        result = await self.get(ENDPOINT_CLIENTS)
-        if result is None:
-            return []
-        if not isinstance(result, list):
-            raise ValueError(f"Expected list from clients endpoint, got {type(result)}")
-        return result
+        try:
+            result = await self.get(ENDPOINT_CLIENTS)
+            if result is None:
+                return []
+            if not isinstance(result, list):
+                raise ValueError(f"Expected list from clients endpoint, got {type(result)}")
+            return result
+        except aiohttp.ClientResponseError as err:
+            if err.status == 404:
+                _LOGGER.debug("Audio clients endpoint not available (404)")
+                return []
+            raise
 
     async def get_services(self) -> list[dict[str, Any]]:
         """Get systemd services."""

@@ -8,8 +8,6 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 
-from .const import DOMAIN
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -32,16 +30,15 @@ class MediaPlayerMappingMixin:
 
     @property
     def _mapped_entity(self) -> str | None:
-        """Get current mapped entity dynamically from hass.data."""
+        """Get current mapped entity dynamically from config entry runtime_data."""
         if not self._hass:
             return None
 
-        coordinator_data = self._hass.data.get(DOMAIN, {}).get(self._entry_id)
-        if not coordinator_data:
+        entry = self._hass.config_entries.async_get_entry(self._entry_id)
+        if not entry or not hasattr(entry, "runtime_data"):
             return None
 
-        service_mappings = coordinator_data.get("service_mappings", {})
-        return service_mappings.get(self._mapping_key)
+        return entry.runtime_data.service_mappings.get(self._mapping_key)
 
     def _get_mapped_state(self):
         """Get the state object of the mapped entity."""

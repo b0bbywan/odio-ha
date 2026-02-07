@@ -1,0 +1,26 @@
+rules:
+  # ===== Bronze =====
+  action-setup:
+    status: exempt
+    comment: |
+      No custom service actions registered.
+      Only standard platform actions (media_player, switch).
+  appropriate-polling: done
+  brands:
+    status: exempt
+    comment: Custom integration distributed via HACS, not in HA core.
+  common-modules: done
+  config-flow-test-coverage: todo
+  config-flow: done
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
