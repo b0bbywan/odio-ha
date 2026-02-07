@@ -3,19 +3,38 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Platform setup context and helpers
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class _SwitchContext:
+    """Shared context for switch platform setup."""
+
+    coordinator: DataUpdateCoordinator
+    api: OdioApiClient
+    device_info: DeviceInfo
+    entry_id: str
 
 
 def _build_services_device_info(
@@ -37,63 +56,86 @@ def _build_services_device_info(
     )
 
 
+def _build_switch_context(
+    entry: OdioConfigEntry,
+    coordinator: DataUpdateCoordinator,
+) -> _SwitchContext:
+    """Build shared switch context from config entry runtime data."""
+    data = entry.runtime_data
+    server_info = data.server_info
+
+    hostname = server_info.get("hostname", "unknown")
+    api_version = server_info.get("api_version", "unknown")
+    os_version = server_info.get("os_version", "unknown")
+
+    device_info = _build_services_device_info(
+        hostname, api_version, data.api._api_url, os_version,
+    )
+
+    return _SwitchContext(
+        coordinator=coordinator,
+        api=data.api,
+        device_info=device_info,
+        entry_id=entry.entry_id,
+    )
+
+
+def _create_service_switches(ctx: _SwitchContext) -> list[OdioServiceSwitch]:
+    """Create switch entities for user-scoped systemd services."""
+    services = ctx.coordinator.data.get("services", [])
+    entities: list[OdioServiceSwitch] = []
+
+    for service in services:
+        if service.get("scope") != "user":
+            continue
+
+        _LOGGER.debug(
+            "Creating switch for service: %s/%s",
+            service.get("scope"),
+            service.get("unit"),
+        )
+        entities.append(
+            OdioServiceSwitch(
+                ctx.coordinator,
+                ctx.api,
+                service,
+                ctx.device_info,
+                ctx.entry_id,
+            )
+        )
+
+    return entities
+
+
+# =============================================================================
+# Platform entry point
+# =============================================================================
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: OdioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio service switches from a config entry."""
-    data = entry.runtime_data
-    service_coordinator = data.service_coordinator
-    api: OdioApiClient = data.api
-    server_info = data.server_info
-
-    # Build services device info
-    hostname = server_info.get("hostname", "unknown")
-    api_version = server_info.get("api_version", "unknown")
-    os_version = server_info.get("os_version", "unknown")
-    api_url = api._api_url
-
-    services_device_info = _build_services_device_info(
-        hostname,
-        api_version,
-        api_url,
-        os_version,
-    )
-
-    # Get services from coordinator data
-    if not service_coordinator or not service_coordinator.data:
+    coordinator = entry.runtime_data.service_coordinator
+    if not coordinator or not coordinator.data:
         _LOGGER.debug("No service coordinator data available, skipping switches")
         return
 
-    services = service_coordinator.data.get("services", [])
-
-    _LOGGER.debug("Setting up switches for %d services", len(services))
-
-    # Create switch entities for user services only
-    entities = []
-    for service in services:
-        scope = service.get("scope", "")
-        unit = service.get("unit", "")
-
-        # Only create switches for user services
-        if scope == "user":
-            _LOGGER.debug("Creating switch for service: %s/%s", scope, unit)
-            entities.append(
-                OdioServiceSwitch(
-                    service_coordinator,
-                    api,
-                    service,
-                    services_device_info,
-                    entry.entry_id,
-                )
-            )
+    ctx = _build_switch_context(entry, coordinator)
+    entities = _create_service_switches(ctx)
 
     if entities:
         async_add_entities(entities)
         _LOGGER.info("Added %d service switch entities", len(entities))
     else:
         _LOGGER.debug("No user services found to create switches")
+
+
+# =============================================================================
+# Entity: Systemd service switch
+# =============================================================================
 
 
 class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
@@ -125,10 +167,8 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
                 break
 
         # Generate unique_id and entity_id
-        # Example: switch.odio_netflix for firefox-kiosk@www.netflix.com.service
         sanitized_unit = self._service_unit.replace(".service", "").replace("@", "_").replace(".", "_")
         self._attr_unique_id = f"{hostname}_switch_{self._service_scope}_{sanitized_unit}"
-        # Just use the service name, no prefix
         self._attr_name = sanitized_unit.replace("_", " ").title()
 
         _LOGGER.debug(
@@ -155,7 +195,6 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
         if not service:
             return False
 
-        # Service is "on" if it's running (active_state == "active")
         active_state = service.get("active_state", "inactive")
         return active_state == "active"
 
@@ -189,10 +228,8 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
                 self._service_scope,
                 self._service_unit,
             )
-            # Wait for state to update
             await asyncio.sleep(1.0)
             await self.coordinator.async_request_refresh()
-            # Additional delay to let coordinator update
             await asyncio.sleep(0.5)
         except Exception as err:
             _LOGGER.error(
@@ -212,10 +249,8 @@ class OdioServiceSwitch(CoordinatorEntity, SwitchEntity):
                 self._service_scope,
                 self._service_unit,
             )
-            # Wait for state to update
             await asyncio.sleep(1.0)
             await self.coordinator.async_request_refresh()
-            # Additional delay to let coordinator update
             await asyncio.sleep(0.5)
         except Exception as err:
             _LOGGER.error(
