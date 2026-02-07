@@ -1175,7 +1175,7 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
     @property
     def media_position_updated_at(self):
         """When was the position of the current playing media valid."""
-        return self.coordinator.last_update_success_time
+        return self.coordinator.last_updated
 
     @property
     def media_title(self) -> str | None:
