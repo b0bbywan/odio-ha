@@ -359,34 +359,49 @@ def _build_player_switch_mapping(
 ) -> dict[str, str]:
     """Build mapping from MPRIS player bus_name to switch entity_id.
 
-    Attempts to match each player's application name (extracted from the D-Bus
-    bus name) against systemd user service unit names.
+    Uses the player identity (e.g. "Spotify", "Music Player Daemon") and the
+    app name extracted from the bus_name to find a matching systemd user
+    service.  When multiple services match (e.g. several firefox-kiosk@…
+    instances), the mapping is skipped to avoid incorrect associations.
     """
     mapping: dict[str, str] = {}
+
+    user_services = [s for s in services if s.get("scope") == "user"]
 
     for player in players:
         bus_name = player.get("bus_name", "")
         if not bus_name:
             continue
 
-        app_name = _extract_mpris_app_name(bus_name)
+        app_name = _extract_mpris_app_name(bus_name).lower()
+        identity = player.get("identity", "").lower()
+        # First word of identity is usually the app (e.g. "spotify", "mozilla")
+        identity_keyword = identity.split()[0] if identity else ""
 
-        for service in services:
-            if service.get("scope") != "user":
-                continue
-
+        matches: list[str] = []
+        for service in user_services:
             unit = service.get("unit", "") or service.get("name", "")
-            unit_prefix = unit.split(".")[0].split("@")[0].split("-")[0]
+            unit_base = unit.split(".service")[0].lower()
 
-            if app_name == unit_prefix or unit_prefix in app_name:
-                sanitized = unit.replace(".service", "").replace("@", "_").replace(".", "_")
-                switch_entity_id = f"switch.{hostname}_{sanitized}"
-                mapping[bus_name] = switch_entity_id
-                _LOGGER.debug(
-                    "Mapped player %s to switch %s (service: %s)",
-                    bus_name, switch_entity_id, unit,
-                )
-                break
+            if app_name and app_name in unit_base:
+                matches.append(unit)
+            elif identity_keyword and identity_keyword in unit_base:
+                matches.append(unit)
+
+        if len(matches) == 1:
+            unit = matches[0]
+            sanitized = unit.replace(".service", "").replace("@", "_").replace(".", "_")
+            switch_entity_id = f"switch.{hostname}_{sanitized}"
+            mapping[bus_name] = switch_entity_id
+            _LOGGER.debug(
+                "Mapped player %s (%s) to switch %s",
+                bus_name, identity, switch_entity_id,
+            )
+        elif len(matches) > 1:
+            _LOGGER.debug(
+                "Skipping auto-map for %s (%s): %d ambiguous service matches (%s)",
+                bus_name, identity, len(matches), matches,
+            )
 
     return mapping
 
@@ -1033,6 +1048,8 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
     @property
     def _player_data(self) -> dict[str, Any] | None:
         """Get current player data from coordinator."""
+        if not self.coordinator.data:
+            return None
         players = self.coordinator.data.get("players", [])
         for player in players:
             if player.get("bus_name") == self._player_name:
@@ -1041,15 +1058,13 @@ class OdioMPRISMediaPlayer(SwitchMappingMixin, CoordinatorEntity, MediaPlayerEnt
 
     @property
     def available(self) -> bool:
-        """Return True if entity is available."""
-        # Check if mapped switch exists and if so, whether service is running
-        if self._mapped_switch_id:
-            # Check if switch is on (service running)
-            switch_state = self.hass.states.get(self._mapped_switch_id)
-            if not switch_state or switch_state.state != "on":
-                return False
+        """Return True if entity is available.
 
-        # Check if player exists in coordinator data
+        Availability is based solely on whether the player is reported by the
+        coordinator.  The mapped switch only adds turn_on/turn_off features;
+        it must not gate availability (auto-mapping can be wrong or the switch
+        may lag behind the actual player state).
+        """
         return self.coordinator.last_update_success and self._player_data is not None
 
     @property
