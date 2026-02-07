@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .api_client import OdioApiClient
 from .const import (
@@ -89,13 +90,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     has_mpris = backends.get("mpris", False)
     has_systemd = backends.get("systemd", False)
 
+    hostname = server_info.get("hostname")
     _LOGGER.info(
         "Server capabilities: hostname=%s, api=%s v%s, backends: pulseaudio=%s, mpris=%s, systemd=%s",
-        server_info.get("hostname"),
+        hostname,
         server_info.get("api_sw"),
         server_info.get("api_version"),
         has_pulseaudio, has_mpris, has_systemd,
     )
+
+    # Update config entry title with actual server hostname
+    if hostname:
+        hass.config_entries.async_update_entry(entry, title=f"Odio Server ({hostname})")
 
     # Track consecutive failures for exponential backoff
     failure_counts = {"audio": 0, "services": 0}
@@ -116,7 +122,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
                 server = {}
             # Reset failure count on success
             failure_counts["audio"] = 0
-            return {"audio": clients, "players": players, "server": server}
+            return {
+                "audio": clients,
+                "players": players,
+                "server": server,
+                "position_updated_at": dt_util.utcnow(),
+            }
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             # Connection errors are expected when device is offline
             # Implement exponential backoff with 1h max
