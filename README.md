@@ -20,6 +20,16 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
 
 ### Via HACS (recommandé)
 
+The preferred way to setup the Odio platform is by enabling the discovery component.
+
+Add Livebox module via HACS
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=b0bbywan&repository=odio-ha&category=integration)
+
+Add your device via the Integration menu
+
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=odio_audio)
+
 1. Assurez-vous que [HACS](https://hacs.xyz/) est installé
 2. Ajoutez ce dépôt comme dépôt personnalisé dans HACS
 3. Recherchez "Odio Audio" dans HACS
