@@ -1,4 +1,4 @@
-# custom_components/odio_audio/api_client.py
+# custom_components/odio_remote/api_client.py
 
 import asyncio
 import logging
@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class OdioApiClient:
-    """Client for Odio Audio API."""
+    """Client for Odio Remote API."""
 
     def __init__(self, api_url: str, session: aiohttp.ClientSession):
         """Initialize the API client."""
@@ -70,11 +70,19 @@ class OdioApiClient:
 
     # Server endpoints
     async def get_server_info(self) -> dict[str, Any]:
-        """Get server information."""
+        """Get system-wide server info (hostname, backends, api_version, etc.)."""
+        from .const import ENDPOINT_SYSTEM_SERVER
+        result = await self.get(ENDPOINT_SYSTEM_SERVER)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+        return result
+
+    async def get_audio_server_info(self) -> dict[str, Any]:
+        """Get PulseAudio/PipeWire server info (requires pulseaudio backend)."""
         from .const import ENDPOINT_SERVER
         result = await self.get(ENDPOINT_SERVER)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+            raise ValueError(f"Expected dict from audio server endpoint, got {type(result)}")
         return result
 
     async def get_clients(self) -> list[dict[str, Any]]:

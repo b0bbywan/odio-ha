@@ -1,4 +1,4 @@
-"""Media player platform for Odio Audio."""
+"""Media player platform for Odio Remote."""
 from __future__ import annotations
 
 import asyncio
@@ -13,10 +13,11 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import OdioAudioConfigEntry
+from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
@@ -29,7 +30,6 @@ from .const import (
     ATTR_SERVICE_SCOPE,
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
-    SUPPORTED_SERVICES,
 )
 from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .mixins import MappedEntityMixin
@@ -39,26 +39,24 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: OdioAudioConfigEntry,
+    config_entry: OdioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Odio Audio media player based on a config entry."""
+    """Set up Odio Remote media player based on a config entry."""
     runtime_data = config_entry.runtime_data
     audio_coordinator = runtime_data.audio_coordinator
     service_coordinator = runtime_data.service_coordinator
     api_client = runtime_data.api
+    server_info = runtime_data.server_info
 
-    # Get server hostname to identify remote clients
-    server_hostname = None
-    if service_coordinator.data:
-        server_info = service_coordinator.data.get("server", {})
-        server_hostname = server_info.get("hostname")
-
+    # Get server hostname from the static server_info fetched at setup
+    server_hostname = server_info.get("hostname")
     _LOGGER.debug("Server hostname: %s", server_hostname)
 
-    # Create main receiver entity
+    # Create main receiver entity (always present)
     entities: list[MediaPlayerEntity] = [
         OdioReceiverMediaPlayer(
+            server_info,
             audio_coordinator,
             service_coordinator,
             api_client,
@@ -69,20 +67,21 @@ async def async_setup_entry(
     # Track which clients are handled by services
     handled_client_patterns = set()
 
-    # Create service entities
-    if service_coordinator.data:
+    # Create service entities (only when systemd backend is enabled)
+    # Only services that have been mapped by the user are exposed as entities
+    service_mappings = runtime_data.service_mappings
+    if service_coordinator is not None and service_coordinator.data:
         services = service_coordinator.data.get("services", [])
         for service in services:
-            if (
-                service.get("exists") and service.get("enabled") and service["name"]
-                in SUPPORTED_SERVICES
-            ):
+            mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+            if service.get("exists") and mapping_key in service_mappings:
                 serviceEntity = OdioServiceMediaPlayer(
                     audio_coordinator,
                     service_coordinator,
                     api_client,
                     config_entry.entry_id,
                     service,
+                    server_hostname,
                 )
                 entities.append(serviceEntity)
 
@@ -90,8 +89,8 @@ async def async_setup_entry(
                 service_name = service["name"].replace(".service", "").lower()
                 handled_client_patterns.add(service_name)
 
-    # Create entities for standalone clients
-    if audio_coordinator.data:
+    # Create entities for standalone clients (only when pulseaudio backend is enabled)
+    if audio_coordinator is not None and audio_coordinator.data:
         audio = audio_coordinator.data.get("audio", [])
         for client in audio:
             client_name = client.get("name", "")
@@ -121,129 +120,153 @@ async def async_setup_entry(
 
     async_add_entities(entities)
 
-    # Track known standalone clients
-    known_remote_clients = {
-        entity._client_name: entity
-        for entity in entities
-        if isinstance(entity, OdioStandaloneClientMediaPlayer)
-    }
+    # Set up listener to detect new remote clients (only when audio coordinator exists)
+    if audio_coordinator is not None:
+        # Track known standalone clients
+        known_remote_clients = {
+            entity._client_name: entity
+            for entity in entities
+            if isinstance(entity, OdioStandaloneClientMediaPlayer)
+        }
 
-    # Set up listener to detect new remote clients
-    @callback
-    def _async_check_new_clients():
-        """Check for new remote clients and create entities."""
-        if not audio_coordinator.data or not server_hostname:
-            return
+        @callback
+        def _async_check_new_clients():
+            """Check for new remote clients and create entities."""
+            if not audio_coordinator.data or not server_hostname:
+                return
 
-        new_entities = []
+            new_entities = []
 
-        for client in audio_coordinator.data.get("audio", []):
-            client_name = client.get("name", "")
-            client_host = client.get("host", "")
-            app = client.get("app", "").lower()
-            binary = client.get("binary", "").lower()
+            for client in audio_coordinator.data.get("audio", []):
+                client_name = client.get("name", "")
+                client_host = client.get("host", "")
+                app = client.get("app", "").lower()
+                binary = client.get("binary", "").lower()
 
-            # Only process remote clients
-            is_remote = client_host and client_host != server_hostname
-            if not is_remote or not client_name:
-                continue
+                # Only process remote clients
+                is_remote = client_host and client_host != server_hostname
+                if not is_remote or not client_name:
+                    continue
 
-            # Skip if we already have an entity
-            if client_name in known_remote_clients:
-                continue
+                # Skip if we already have an entity
+                if client_name in known_remote_clients:
+                    continue
 
-            # Skip if handled by a service
-            is_handled = any(
-                pattern in [client_name.lower(), app, binary]
-                for pattern in handled_client_patterns
-            )
-            if is_handled:
-                continue
+                # Skip if handled by a service
+                is_handled = any(
+                    pattern in [client_name.lower(), app, binary]
+                    for pattern in handled_client_patterns
+                )
+                if is_handled:
+                    continue
 
-            # Create new entity
-            _LOGGER.info("Detected new remote client: '%s' from host '%s'", client_name, client_host)
+                # Create new entity
+                _LOGGER.info("Detected new remote client: '%s' from host '%s'", client_name, client_host)
 
-            entity = OdioStandaloneClientMediaPlayer(
-                audio_coordinator,
-                api_client,
-                config_entry.entry_id,
-                client,
-                server_hostname,
-            )
-            new_entities.append(entity)
-            known_remote_clients[client_name] = entity
+                entity = OdioStandaloneClientMediaPlayer(
+                    audio_coordinator,
+                    api_client,
+                    config_entry.entry_id,
+                    client,
+                    server_hostname,
+                )
+                new_entities.append(entity)
+                known_remote_clients[client_name] = entity
 
-        if new_entities:
-            _LOGGER.info("Adding %d new remote client entities", len(new_entities))
-            async_add_entities(new_entities)
+            if new_entities:
+                _LOGGER.info("Adding %d new remote client entities", len(new_entities))
+                async_add_entities(new_entities)
 
-    # Listen for coordinator updates
-    config_entry.async_on_unload(
-        audio_coordinator.async_add_listener(_async_check_new_clients)
-    )
+        # Listen for coordinator updates
+        config_entry.async_on_unload(
+            audio_coordinator.async_add_listener(_async_check_new_clients)
+        )
 
 
-class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
-    """Representation of the main Odio Audio receiver."""
+class OdioReceiverMediaPlayer(MediaPlayerEntity):
+    """Representation of the main Odio Remote receiver (the Odio instance)."""
 
     _attr_has_entity_name = True
     _attr_name = None
 
     def __init__(
         self,
-        audio_coordinator: OdioAudioCoordinator,
-        service_coordinator: OdioServiceCoordinator,
+        server_info: dict[str, Any],
+        audio_coordinator: OdioAudioCoordinator | None,
+        service_coordinator: OdioServiceCoordinator | None,
         api_client: OdioApiClient,
         entry_id: str,
     ) -> None:
         """Initialize the receiver."""
-        super().__init__(audio_coordinator)
+        self._server_info = server_info
+        self._audio_coordinator = audio_coordinator
         self._service_coordinator = service_coordinator
         self._api_client = api_client
         self._attr_unique_id = f"{entry_id}_receiver"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
-            "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
-        }
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=f"Odio Remote ({server_info.get('hostname', entry_id)})",
+            manufacturer="Odio",
+            sw_version=server_info.get("api_version"),
+            hw_version=server_info.get("os_version"),
+            configuration_url=f"{api_client._api_url}/ui",
+        )
 
-        if service_coordinator.data:
-            server = service_coordinator.data.get("server", {})
-            if server:
-                self._attr_device_info["sw_version"] = server.get("version")
-                self._attr_device_info["configuration_url"] = api_client._api_url
+    async def async_added_to_hass(self) -> None:
+        """Register listeners on available coordinators."""
+        await super().async_added_to_hass()
+        if self._audio_coordinator is not None:
+            self.async_on_remove(
+                self._audio_coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        if self._service_coordinator is not None:
+            self.async_on_remove(
+                self._service_coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from coordinators."""
+        self.async_write_ha_state()
+
+    def _get_backends(self) -> dict[str, bool]:
+        """Return backends dict from static server_info."""
+        return self._server_info.get("backends", {})
 
     @property
     def state(self) -> MediaPlayerState:
         """Return the state of the device."""
-        if not self.coordinator.data:
-            return MediaPlayerState.OFF
+        backends = self._get_backends()
 
-        clients = self.coordinator.data.get("audio", [])
-        # Check if any client is playing
-        for client in clients:
-            if not client.get("corked", True):
+        if backends.get("pulseaudio") and self._audio_coordinator is not None:
+            if not self._audio_coordinator.data:
+                return MediaPlayerState.IDLE
+            clients = self._audio_coordinator.data.get("audio", [])
+            if any(not c.get("corked", True) for c in clients):
                 return MediaPlayerState.PLAYING
-
-        # Check if any clients exist
-        if self.coordinator.data:
             return MediaPlayerState.IDLE
 
-        return MediaPlayerState.OFF
+        # No audio backend: IDLE when Odio is reachable (setup succeeded)
+        return MediaPlayerState.IDLE
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
-        return MediaPlayerEntityFeature.VOLUME_SET | MediaPlayerEntityFeature.VOLUME_MUTE
+        if self._get_backends().get("pulseaudio"):
+            return MediaPlayerEntityFeature.VOLUME_SET | MediaPlayerEntityFeature.VOLUME_MUTE
+        return MediaPlayerEntityFeature(0)
 
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        if not self.coordinator.data:
+        if self._audio_coordinator is None or not self._audio_coordinator.data:
             return None
 
-        clients = self.coordinator.data.get("audio", [])
+        clients = self._audio_coordinator.data.get("audio", [])
         volumes = [client.get("volume", 0) for client in clients]
         if volumes:
             return sum(volumes) / len(volumes)
@@ -252,31 +275,25 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
     @property
     def is_volume_muted(self) -> bool:
         """Boolean if volume is currently muted."""
-        if not self.coordinator.data:
+        if self._audio_coordinator is None or not self._audio_coordinator.data:
             return False
 
-        clients = self.coordinator.data.get("audio", [])
+        clients = self._audio_coordinator.data.get("audio", [])
         return any(client.get("muted", False) for client in clients)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        attrs = {}
+        attrs: dict[str, Any] = {
+            "backends": self._server_info.get("backends", {}),
+        }
 
-        if self.coordinator.data:
-            clients = self.coordinator.data.get("audio", [])
+        if self._audio_coordinator is not None and self._audio_coordinator.data:
+            clients = self._audio_coordinator.data.get("audio", [])
             attrs["active_clients"] = len(clients)
             attrs["playing_clients"] = len([
-                client for client in clients
-                if not client.get("corked", True)
+                c for c in clients if not c.get("corked", True)
             ])
-
-        if self._service_coordinator.data:
-            server = self._service_coordinator.data.get("server", {})
-            if server:
-                attrs["server_name"] = server.get("name")
-                attrs["server_hostname"] = server.get("hostname")
-                attrs["default_sink"] = server.get("default_sink")
 
         return attrs
 
@@ -290,20 +307,23 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
 
 class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
-    """Representation of an Odio Audio service using MappedEntityMixin."""
+    """Representation of an Odio Remote service using MappedEntityMixin."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        audio_coordinator: OdioAudioCoordinator,
+        audio_coordinator: OdioAudioCoordinator | None,
         service_coordinator: OdioServiceCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
+        server_hostname: str | None = None,
     ) -> None:
         """Initialize the service."""
-        super().__init__(audio_coordinator)
+        # Use audio_coordinator as primary (fast updates) when available,
+        # fall back to service_coordinator so CoordinatorEntity always has one.
+        super().__init__(audio_coordinator or service_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
         self._service_info = service_info
@@ -315,9 +335,8 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         self._attr_name = f"{service_name} ({scope})"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
+            "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
         }
 
     @property
@@ -353,7 +372,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             return MediaPlayerState.OFF
 
         # Check if service has an active audio client
-        if self.coordinator.data:
+        if self.coordinator is not None and self.coordinator.data:
             service_name = self._service_info["name"].replace(".service", "")
             clients = self.coordinator.data.get("audio", [])
 
@@ -457,7 +476,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
 
     def _get_client(self) -> dict[str, Any] | None:
         """Get the audio client for this service."""
-        if not self.coordinator.data:
+        if self.coordinator is None or not self.coordinator.data:
             return None
 
         service_name = self._service_info["name"].replace(".service", "")
@@ -481,8 +500,9 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         await self._api_client.control_service("enable", scope, unit)
         await asyncio.sleep(1)
         await self._service_coordinator.async_request_refresh()
-        await asyncio.sleep(0.5)
-        await self.coordinator.async_request_refresh()
+        if self.coordinator is not None:
+            await asyncio.sleep(0.5)
+            await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
         """Turn the media player off."""
@@ -493,8 +513,9 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
 
         await asyncio.sleep(1)
         await self._service_coordinator.async_request_refresh()
-        await asyncio.sleep(0.5)
-        await self.coordinator.async_request_refresh()
+        if self.coordinator is not None:
+            await asyncio.sleep(0.5)
+            await self.coordinator.async_request_refresh()
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
@@ -571,9 +592,8 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         self._attr_name = self._client_name
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Odio Audio Receiver",
+            "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
-            "model": "Media Hub",
         }
 
         _LOGGER.debug(

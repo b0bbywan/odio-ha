@@ -28,7 +28,7 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
 
 ### Installation manuelle
 
-1. Copiez le dossier `custom_components/odio_audio` dans votre dossier `config/custom_components/`
+1. Copiez le dossier `custom_components/odio_remote` dans votre dossier `config/custom_components/`
 2. Redémarrez Home Assistant
 
 ## Configuration
@@ -215,7 +215,7 @@ automation:
     action:
       - service: media_player.volume_set
         target:
-          entity_id: media_player.odio_audio_receiver
+          entity_id: media_player.odio_remote_receiver
         data:
           volume_level: 0.5
 
@@ -229,7 +229,7 @@ automation:
     action:
       - service: media_player.volume_mute
         target:
-          entity_id: media_player.odio_audio_receiver
+          entity_id: media_player.odio_remote_receiver
         data:
           is_volume_muted: true
 
@@ -371,7 +371,7 @@ Si vous voyez une erreur comme `Attempt to decode JSON with unexpected mimetype:
 Avant de configurer dans Home Assistant, testez votre API avec le script fourni :
 
 ```bash
-cd /config/custom_components/odio_audio
+cd /config/custom_components/odio_remote
 python test_api_connection.py http://VOTRE_IP:8018
 ```
 
@@ -407,9 +407,9 @@ Ajoutez ceci dans votre `configuration.yaml` et redémarrez HA :
 logger:
   default: warning
   logs:
-    custom_components.odio_audio: debug
-    custom_components.odio_audio.config_flow: debug
-    custom_components.odio_audio.media_player: debug
+    custom_components.odio_remote: debug
+    custom_components.odio_remote.config_flow: debug
+    custom_components.odio_remote.media_player: debug
 ```
 
 ### Problème : "Cannot connect to API" lors du setup
@@ -445,7 +445,7 @@ logger:
 - Réduisez les intervalles de scan dans les options de l'intégration
 - Vérifiez les logs :
   ```
-  grep "odio_audio" home-assistant.log | tail -50
+  grep "odio_remote" home-assistant.log | tail -50
   ```
 
 ### Erreur "Timeout communicating with API"
@@ -460,7 +460,7 @@ Pour voir TOUTES les requêtes HTTP :
 logger:
   default: warning
   logs:
-    custom_components.odio_audio: debug
+    custom_components.odio_remote: debug
     homeassistant.helpers.aiohttp_client: debug
 ```
 

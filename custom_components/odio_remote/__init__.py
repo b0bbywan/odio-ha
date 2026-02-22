@@ -1,8 +1,9 @@
-"""The Odio Audio integration."""
+"""The Odio Remote integration."""
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -27,21 +28,22 @@ PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
 
 
 @dataclass
-class OdioAudioRuntimeData:
-    """Runtime data for the Odio Audio integration."""
+class OdioRemoteRuntimeData:
+    """Runtime data for the Odio Remote integration."""
 
     api: OdioApiClient
-    audio_coordinator: OdioAudioCoordinator
-    service_coordinator: OdioServiceCoordinator
+    server_info: dict[str, Any]
+    audio_coordinator: OdioAudioCoordinator | None
+    service_coordinator: OdioServiceCoordinator | None
     service_mappings: dict[str, str]
 
 
-type OdioAudioConfigEntry = ConfigEntry[OdioAudioRuntimeData]
+type OdioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) -> bool:
-    """Set up Odio Audio from a config entry."""
-    _LOGGER.info("Setting up Odio Audio integration")
+async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
+    """Set up Odio Remote from a config entry."""
+    _LOGGER.info("Setting up Odio Remote integration")
 
     api_url = entry.data[CONF_API_URL]
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -61,16 +63,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) ->
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    audio_coordinator = OdioAudioCoordinator(hass, entry, api, scan_interval)
-    service_coordinator = OdioServiceCoordinator(
-        hass, entry, api, service_scan_interval
-    )
+    # Fetch system info once at setup — determines which backends/coordinators to create
+    server_info = await api.get_server_info()
+    backends = server_info.get("backends", {})
+    _LOGGER.debug("Detected backends: %s", backends)
 
-    await audio_coordinator.async_config_entry_first_refresh()
-    await service_coordinator.async_config_entry_first_refresh()
+    audio_coordinator: OdioAudioCoordinator | None = None
+    if backends.get("pulseaudio"):
+        audio_coordinator = OdioAudioCoordinator(hass, entry, api, scan_interval)
+        await audio_coordinator.async_config_entry_first_refresh()
+        _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
 
-    entry.runtime_data = OdioAudioRuntimeData(
+    service_coordinator: OdioServiceCoordinator | None = None
+    if backends.get("systemd"):
+        service_coordinator = OdioServiceCoordinator(
+            hass, entry, api, service_scan_interval
+        )
+        await service_coordinator.async_config_entry_first_refresh()
+        _LOGGER.debug("Service coordinator created (systemd backend enabled)")
+
+    entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
+        server_info=server_info,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
         service_mappings=service_mappings,
@@ -79,19 +93,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) ->
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    _LOGGER.info("Odio Audio integration setup complete")
+    _LOGGER.info("Odio Remote integration setup complete")
     return True
 
 
 async def async_unload_entry(
-    hass: HomeAssistant, entry: OdioAudioConfigEntry
+    hass: HomeAssistant, entry: OdioConfigEntry
 ) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: OdioAudioConfigEntry, device_entry: DeviceEntry
+    hass: HomeAssistant, config_entry: OdioConfigEntry, device_entry: DeviceEntry
 ) -> bool:
     """Remove a device from the integration."""
     return True

@@ -1,4 +1,4 @@
-"""Coordinators for the Odio Audio integration."""
+"""Coordinators for the Odio Remote integration."""
 from __future__ import annotations
 
 import asyncio
@@ -62,7 +62,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
                 retry_delay,
             )
             raise UpdateFailed(
-                f"Unable to connect to Odio Audio API: {err}",
+                f"Unable to connect to Odio Remote API: {err}",
                 retry_after=retry_delay,
             ) from err
         except Exception as err:
@@ -71,7 +71,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
 
 
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator for service and server data (slow polling)."""
+    """Coordinator for systemd service data (slow polling)."""
 
     config_entry: ConfigEntry
 
@@ -95,15 +95,11 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._scan_interval = scan_interval
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch services and server info from API."""
+        """Fetch systemd services from API."""
         try:
             services = await self.api.get_services()
-            server = await self.api.get_server_info()
             self._failure_count = 0
-            return {
-                "services": services,
-                "server": server,
-            }
+            return {"services": services}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             self._failure_count += 1
             retry_delay = min(
@@ -115,9 +111,9 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 retry_delay,
             )
             raise UpdateFailed(
-                f"Unable to connect to Odio Audio API: {err}",
+                f"Unable to connect to Odio Remote API: {err}",
                 retry_after=retry_delay,
             ) from err
         except Exception as err:
-            _LOGGER.exception("Unexpected error fetching services/server")
+            _LOGGER.exception("Unexpected error fetching services")
             raise UpdateFailed(f"Unexpected error: {err}") from err

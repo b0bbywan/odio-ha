@@ -1,4 +1,4 @@
-"""Config flow for Odio Audio integration"""
+"""Config flow for Odio Remote integration"""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
     DOMAIN,
-    SUPPORTED_SERVICES,
 )
 from .config_flow_helpers import (
     build_mapping_schema,
@@ -63,6 +62,9 @@ class InvalidResponse(OdioConfigError):
 async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any]:
     """Validate the API connection and return server info and services.
 
+    Calls GET /server to check connectivity and discover enabled backends.
+    If the systemd backend is enabled, also fetches services.
+
     Raises:
         CannotConnect: If connection fails.
         InvalidResponse: If API returns invalid data.
@@ -72,12 +74,22 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
 
     try:
         server_info = await api.get_server_info()
-        services = await api.get_services()
     except Exception as err:
         raise CannotConnect from err
 
-    if not isinstance(server_info, dict) or not isinstance(services, list):
+    if not isinstance(server_info, dict):
         raise InvalidResponse("Invalid API response")
+
+    backends = server_info.get("backends", {})
+    services: list[dict[str, Any]] = []
+
+    if backends.get("systemd"):
+        try:
+            services = await api.get_services()
+        except Exception as err:
+            raise CannotConnect from err
+        if not isinstance(services, list):
+            raise InvalidResponse("Invalid services response")
 
     return {
         "server_info": server_info,
@@ -97,8 +109,7 @@ async def async_fetch_available_services(
         return [
             svc
             for svc in info.get("services", [])
-            if svc.get("exists") and svc.get("enabled") and svc.get("name")
-            in SUPPORTED_SERVICES
+            if svc.get("exists")
         ]
     except OdioConfigError:
         return []
@@ -107,12 +118,22 @@ async def async_fetch_available_services(
 async def async_fetch_remote_clients(
     hass: HomeAssistant, api_url: str
 ) -> list[dict[str, Any]]:
-    """Fetch remote clients (not on server host)."""
+    """Fetch remote clients (not on server host).
+
+    Only fetches audio clients if the pulseaudio backend is enabled.
+    """
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
     try:
         server_info = await api.get_server_info()
+    except Exception:
+        return []
+
+    if not server_info.get("backends", {}).get("pulseaudio"):
+        return []
+
+    try:
         clients = await api.get_clients()
     except Exception:
         return []
@@ -174,8 +195,8 @@ STEP_OPTIONS_DATA_SCHEMA = vol.Schema(
 # =============================================================================
 
 
-class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Odio Audio."""
+class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Odio Remote."""
 
     VERSION = 1
 
@@ -188,9 +209,9 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> OdioAudioOptionsFlow:
+    def async_get_options_flow(config_entry: ConfigEntry) -> OdioOptionsFlow:
         """Get the options flow for this handler."""
-        return OdioAudioOptionsFlow()
+        return OdioOptionsFlow()
 
     async def _async_validate_api_url(self, api_url: str) -> dict[str, str]:
         """Validate API URL and populate services.
@@ -204,10 +225,9 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
             self._services = [
                 svc
                 for svc in info.get("services", [])
-                if svc.get("exists") and svc.get("enabled") and svc.get("name")
-                in SUPPORTED_SERVICES
+                if svc.get("exists")
             ]
-            _LOGGER.info("Found %d enabled services", len(self._services))
+            _LOGGER.info("Found %d existing services", len(self._services))
 
         except CannotConnect:
             errors["base"] = "cannot_connect"
@@ -313,8 +333,8 @@ class OdioAudioConfigFlow(ConfigFlow, domain=DOMAIN):
 # =============================================================================
 
 
-class OdioAudioOptionsFlow(OptionsFlowWithReload):
-    """Handle options flow for Odio Audio."""
+class OdioOptionsFlow(OptionsFlowWithReload):
+    """Handle options flow for Odio Remote."""
 
     def __init__(self) -> None:
         """Initialize options flow."""
