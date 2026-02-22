@@ -1,16 +1,16 @@
-"""Tests for Odio Audio config flow."""
+"""Tests for Odio Remote config flow."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.odio_audio.config_flow import (
-    OdioAudioConfigFlow,
-    OdioAudioOptionsFlow,
+from custom_components.odio_remote.config_flow import (
+    OdioConfigFlow,
+    OdioOptionsFlow,
     CannotConnect,
     InvalidResponse,
 )
-from custom_components.odio_audio.const import (
+from custom_components.odio_remote.const import (
     CONF_API_URL,
     CONF_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
@@ -31,7 +31,7 @@ MOCK_API_INFO = {
 
 def _create_config_flow():
     """Create a config flow instance with mocked internals."""
-    flow = OdioAudioConfigFlow()
+    flow = OdioConfigFlow()
     flow.hass = MagicMock()
     flow.flow_id = "test_flow"
     flow.handler = DOMAIN
@@ -44,7 +44,7 @@ def _create_config_flow():
 
 def _create_options_flow(data=None, options=None):
     """Create an options flow instance with mocked config entry."""
-    flow = OdioAudioOptionsFlow()
+    flow = OdioOptionsFlow()
     flow.flow_id = "test_options_flow"
     flow.handler = "test_entry_id"
     flow.context = {"source": "options"}
@@ -57,7 +57,7 @@ def _create_options_flow(data=None, options=None):
         CONF_SERVICE_SCAN_INTERVAL: DEFAULT_SERVICE_SCAN_INTERVAL,
         CONF_SERVICE_MAPPINGS: {},
     }
-    mock_entry.title = "Odio Audio"
+    mock_entry.title = "Odio Remote"
     mock_entry.entry_id = "test_entry_id"
 
     # config_entry is a property that calls hass.config_entries.async_get_known_entry
@@ -89,7 +89,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
     async def test_success_transitions_to_options(self, mock_validate):
@@ -108,7 +108,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         side_effect=CannotConnect,
     )
     async def test_cannot_connect_error(self, mock_validate):
@@ -125,7 +125,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         side_effect=InvalidResponse("bad"),
     )
     async def test_invalid_response_error(self, mock_validate):
@@ -142,7 +142,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         side_effect=RuntimeError("something unexpected"),
     )
     async def test_unknown_error(self, mock_validate):
@@ -159,7 +159,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
     async def test_already_configured_aborts(self, mock_validate):
@@ -180,7 +180,7 @@ class TestConfigFlowUser:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
     async def test_unique_id_set_to_api_url(self, mock_validate):
@@ -323,7 +323,7 @@ class TestConfigFlowFullPath:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
     async def test_full_flow_no_services(self, mock_validate):
@@ -351,7 +351,7 @@ class TestConfigFlowFullPath:
 
         # No services → entry created directly
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["title"] == "Odio Audio"
+        assert result["title"] == "Odio Remote"
         assert result["data"] == {CONF_API_URL: "http://test:8018"}
         assert result["options"][CONF_SCAN_INTERVAL] == 10
         assert result["options"][CONF_SERVICE_SCAN_INTERVAL] == 120
@@ -359,7 +359,7 @@ class TestConfigFlowFullPath:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_validate_api",
+        "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
     async def test_full_flow_with_services(self, mock_validate):
@@ -483,11 +483,11 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
     async def test_abort_no_mappable_entities(self, mock_clients, mock_services):
@@ -503,13 +503,13 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
     async def test_show_form_with_services(self, mock_clients, mock_services):
@@ -526,11 +526,11 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[
             {"name": "RemoteClient", "host": "remote-host"},
         ],
@@ -548,13 +548,13 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
     async def test_update_mappings(self, mock_clients, mock_services):
@@ -578,13 +578,13 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
     async def test_delete_mapping(self, mock_clients, mock_services):
@@ -611,13 +611,13 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[
             {"name": "RemoteClient", "host": "remote-host"},
         ],
@@ -646,13 +646,13 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_available_services",
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ],
     )
     @patch(
-        "custom_components.odio_audio.config_flow.async_fetch_remote_clients",
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
     async def test_preserves_offline_client_mappings(self, mock_clients, mock_services):
@@ -688,17 +688,17 @@ class TestValidationHelpers:
     """Tests for config flow validation helper functions."""
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
     async def test_async_validate_api_success(self, mock_session):
         """Test successful API validation."""
-        from custom_components.odio_audio.config_flow import async_validate_api
+        from custom_components.odio_remote.config_flow import async_validate_api
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
         mock_api_instance.get_services = AsyncMock(return_value=MOCK_SERVICES)
 
         with patch(
-            "custom_components.odio_audio.config_flow.OdioApiClient",
+            "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
             result = await async_validate_api(MagicMock(), "http://test:8018")
@@ -707,10 +707,10 @@ class TestValidationHelpers:
         assert result["services"] == MOCK_SERVICES
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
     async def test_async_validate_api_connection_error(self, mock_session):
         """Test API validation with connection error."""
-        from custom_components.odio_audio.config_flow import async_validate_api
+        from custom_components.odio_remote.config_flow import async_validate_api
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(
@@ -718,17 +718,17 @@ class TestValidationHelpers:
         )
 
         with patch(
-            "custom_components.odio_audio.config_flow.OdioApiClient",
+            "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
             with pytest.raises(CannotConnect):
                 await async_validate_api(MagicMock(), "http://bad:8018")
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
     async def test_async_validate_api_invalid_response(self, mock_session):
         """Test API validation with invalid response types."""
-        from custom_components.odio_audio.config_flow import async_validate_api
+        from custom_components.odio_remote.config_flow import async_validate_api
 
         mock_api_instance = MagicMock()
         # server_info returns a list instead of dict
@@ -736,17 +736,17 @@ class TestValidationHelpers:
         mock_api_instance.get_services = AsyncMock(return_value=MOCK_SERVICES)
 
         with patch(
-            "custom_components.odio_audio.config_flow.OdioApiClient",
+            "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
             with pytest.raises(InvalidResponse):
                 await async_validate_api(MagicMock(), "http://test:8018")
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
     async def test_async_fetch_remote_clients(self, mock_session):
         """Test fetching remote clients filters by hostname."""
-        from custom_components.odio_audio.config_flow import async_fetch_remote_clients
+        from custom_components.odio_remote.config_flow import async_fetch_remote_clients
 
         all_clients = MOCK_CLIENTS + MOCK_REMOTE_CLIENTS
 
@@ -755,7 +755,7 @@ class TestValidationHelpers:
         mock_api_instance.get_clients = AsyncMock(return_value=all_clients)
 
         with patch(
-            "custom_components.odio_audio.config_flow.OdioApiClient",
+            "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
             result = await async_fetch_remote_clients(MagicMock(), "http://test:8018")
@@ -765,10 +765,10 @@ class TestValidationHelpers:
         assert result[0]["name"] == "RemoteClient"
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
     async def test_async_fetch_remote_clients_error(self, mock_session):
         """Test fetching remote clients returns empty on error."""
-        from custom_components.odio_audio.config_flow import async_fetch_remote_clients
+        from custom_components.odio_remote.config_flow import async_fetch_remote_clients
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(
@@ -776,7 +776,7 @@ class TestValidationHelpers:
         )
 
         with patch(
-            "custom_components.odio_audio.config_flow.OdioApiClient",
+            "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
             result = await async_fetch_remote_clients(MagicMock(), "http://bad:8018")

@@ -10,7 +10,7 @@ class TestOdioApiClient:
     @pytest.mark.asyncio
     async def test_get_success(self):
         """Test successful GET request."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -25,7 +25,7 @@ class TestOdioApiClient:
     @pytest.mark.asyncio
     async def test_get_empty_response(self):
         """Test GET request with empty response (204)."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -40,7 +40,7 @@ class TestOdioApiClient:
     @pytest.mark.asyncio
     async def test_post_success(self):
         """Test successful POST request."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -58,8 +58,48 @@ class TestOdioApiClientEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_server_info(self):
-        """Test get_server_info endpoint."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        """Test get_server_info endpoint (GET /server — system info + backends)."""
+        from custom_components.odio_remote.api_client import OdioApiClient
+
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get(
+                    "http://test:8018/server",
+                    payload={
+                        "hostname": "test-server",
+                        "os_version": "Debian GNU/Linux 13 (trixie)",
+                        "api_sw": "odio-api",
+                        "api_version": "v0.6.0",
+                        "backends": {"pulseaudio": True, "systemd": True},
+                    }
+                )
+
+                result = await api.get_server_info()
+
+                assert result["hostname"] == "test-server"
+                assert result["api_version"] == "v0.6.0"
+                assert result["backends"]["pulseaudio"] is True
+
+    @pytest.mark.asyncio
+    async def test_get_server_info_invalid_response(self):
+        """Test get_server_info with invalid response type."""
+        from custom_components.odio_remote.api_client import OdioApiClient
+
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/server", payload=["not", "a", "dict"])
+
+                with pytest.raises(ValueError, match="Expected dict"):
+                    await api.get_server_info()
+
+    @pytest.mark.asyncio
+    async def test_get_audio_server_info(self):
+        """Test get_audio_server_info endpoint (GET /audio/server — PulseAudio info)."""
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -74,15 +114,15 @@ class TestOdioApiClientEndpoints:
                     }
                 )
 
-                result = await api.get_server_info()
+                result = await api.get_audio_server_info()
 
                 assert result["name"] == "pulseaudio"
                 assert result["hostname"] == "test-server"
 
     @pytest.mark.asyncio
-    async def test_get_server_info_invalid_response(self):
-        """Test get_server_info with invalid response type."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+    async def test_get_audio_server_info_invalid_response(self):
+        """Test get_audio_server_info with invalid response type."""
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -91,12 +131,12 @@ class TestOdioApiClientEndpoints:
                 m.get("http://test:8018/audio/server", payload=["not", "a", "dict"])
 
                 with pytest.raises(ValueError, match="Expected dict"):
-                    await api.get_server_info()
+                    await api.get_audio_server_info()
 
     @pytest.mark.asyncio
     async def test_get_clients(self):
         """Test get_clients endpoint."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -118,7 +158,7 @@ class TestOdioApiClientEndpoints:
     @pytest.mark.asyncio
     async def test_get_clients_empty(self):
         """Test get_clients with empty response."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -134,7 +174,7 @@ class TestOdioApiClientEndpoints:
     @pytest.mark.asyncio
     async def test_get_clients_invalid_response(self):
         """Test get_clients with invalid response type."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -148,7 +188,7 @@ class TestOdioApiClientEndpoints:
     @pytest.mark.asyncio
     async def test_get_services(self):
         """Test get_services endpoint."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -174,7 +214,7 @@ class TestOdioApiClientVolumeControl:
     @pytest.mark.asyncio
     async def test_set_server_volume(self):
         """Test set_server_volume."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -190,7 +230,7 @@ class TestOdioApiClientVolumeControl:
     @pytest.mark.asyncio
     async def test_set_server_mute(self):
         """Test set_server_mute."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -205,7 +245,7 @@ class TestOdioApiClientVolumeControl:
     @pytest.mark.asyncio
     async def test_set_client_volume(self):
         """Test set_client_volume with URL encoding."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -221,7 +261,7 @@ class TestOdioApiClientVolumeControl:
     @pytest.mark.asyncio
     async def test_set_client_mute(self):
         """Test set_client_mute."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -236,7 +276,7 @@ class TestOdioApiClientVolumeControl:
     @pytest.mark.asyncio
     async def test_set_client_volume_special_chars(self):
         """Test set_client_volume with special characters in name."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -256,7 +296,7 @@ class TestOdioApiClientServiceControl:
     @pytest.mark.asyncio
     async def test_control_service_enable(self):
         """Test control_service enable."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -271,7 +311,7 @@ class TestOdioApiClientServiceControl:
     @pytest.mark.asyncio
     async def test_control_service_disable(self):
         """Test control_service disable."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -286,7 +326,7 @@ class TestOdioApiClientServiceControl:
     @pytest.mark.asyncio
     async def test_control_service_restart(self):
         """Test control_service restart."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
@@ -301,7 +341,7 @@ class TestOdioApiClientServiceControl:
     @pytest.mark.asyncio
     async def test_control_service_invalid_action(self):
         """Test control_service with invalid action."""
-        from custom_components.odio_audio.api_client import OdioApiClient
+        from custom_components.odio_remote.api_client import OdioApiClient
 
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)

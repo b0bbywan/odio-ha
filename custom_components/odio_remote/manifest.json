@@ -1,6 +1,6 @@
 {
-  "domain": "odio_audio",
-  "name": "Odio Audio",
+  "domain": "odio_remote",
+  "name": "Odio Remote",
   "codeowners": ["@b0bbywan"],
   "config_flow": true,
   "dependencies": [],

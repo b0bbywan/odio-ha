@@ -1,7 +1,7 @@
-"""Constants for the Odio Audio integration."""
+"""Constants for the Odio Remote integration."""
 from typing import Final
 
-DOMAIN: Final = "odio_audio"
+DOMAIN: Final = "odio_remote"
 
 # Config Flow
 CONF_API_URL: Final = "api_url"
@@ -12,10 +12,11 @@ CONF_SERVICE_MAPPINGS: Final = "service_mappings"
 # Defaults
 DEFAULT_SCAN_INTERVAL: Final = 5  # secondes pour audio
 DEFAULT_SERVICE_SCAN_INTERVAL: Final = 60  # secondes pour services
-DEFAULT_NAME: Final = "Odio Audio"
+DEFAULT_NAME: Final = "Odio Remote"
 
 # API Endpoints
-ENDPOINT_SERVER: Final = "/audio/server"
+ENDPOINT_SYSTEM_SERVER: Final = "/server"       # System info + backends
+ENDPOINT_SERVER: Final = "/audio/server"        # PulseAudio server (mute/volume only)
 ENDPOINT_CLIENTS: Final = "/audio/clients"
 ENDPOINT_SERVICES: Final = "/services"
 ENDPOINT_SERVER_MUTE: Final = "/audio/server/mute"
