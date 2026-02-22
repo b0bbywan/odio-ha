@@ -8,6 +8,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -263,6 +264,59 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
+        )
+
+    async def async_step_zeroconf(
+        self, discovery_info: ZeroconfServiceInfo
+    ) -> ConfigFlowResult:
+        """Handle zeroconf discovery."""
+        _LOGGER.debug(
+            "Zeroconf discovery: host=%s addresses=%s port=%s hostname=%s",
+            discovery_info.host,
+            discovery_info.addresses,
+            discovery_info.port,
+            discovery_info.hostname,
+        )
+        # Prefer IPv4 — API only supports IPv4; IPv6 addresses contain ":"
+        host = next(
+            (addr for addr in discovery_info.addresses if ":" not in addr),
+            discovery_info.host,
+        )
+        if host != discovery_info.host:
+            _LOGGER.debug(
+                "Zeroconf: picked IPv4 %s over host %s", host, discovery_info.host
+            )
+        port = discovery_info.port
+        api_url = f"http://{host}:{port}"
+
+        await self.async_set_unique_id(api_url)
+        self._abort_if_unique_id_configured()
+
+        self._data[CONF_API_URL] = api_url
+
+        # Strip .local. suffix for human-readable display
+        hostname = discovery_info.hostname.rstrip(".").removesuffix(".local")
+        self.context["title_placeholders"] = {"host": hostname or host}
+
+        _LOGGER.debug("Zeroconf: will configure api_url=%s", api_url)
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm the discovered Odio instance."""
+        if user_input is not None:
+            errors = await self._async_validate_api_url(self._data[CONF_API_URL])
+            if errors:
+                return self.async_abort(reason="cannot_connect")
+            return await self.async_step_options()
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            description_placeholders={
+                "host": self.context["title_placeholders"]["host"],
+                "api_url": self._data[CONF_API_URL],
+            },
         )
 
     async def async_step_options(
