@@ -1,6 +1,4 @@
 """Shared test fixtures for Odio Audio tests."""
-import pytest
-
 # Standard mock server info response
 MOCK_SERVER_INFO = {
     "name": "pulseaudio",

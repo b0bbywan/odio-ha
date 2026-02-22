@@ -238,7 +238,7 @@ class TestConfigFlowOptions:
         flow = _create_config_flow()
         flow._services = []
 
-        result = await flow.async_step_options(user_input={})
+        await flow.async_step_options(user_input={})
 
         assert flow._options[CONF_SCAN_INTERVAL] == DEFAULT_SCAN_INTERVAL
         assert flow._options[CONF_SERVICE_SCAN_INTERVAL] == DEFAULT_SERVICE_SCAN_INTERVAL

@@ -1,6 +1,6 @@
 """Tests for MappedEntityMixin."""
 import pytest
-from unittest.mock import Mock, AsyncMock, PropertyMock
+from unittest.mock import Mock, AsyncMock
 from dataclasses import dataclass
 
 
