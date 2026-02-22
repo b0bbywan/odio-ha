@@ -2,17 +2,13 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
 
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
-
-    from .coordinator import OdioAudioCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,8 +23,8 @@ class MappedEntityMixin:
     - _mapping_key property: returns the key for looking up mappings
     """
 
-    coordinator: OdioAudioCoordinator
-    hass: HomeAssistant
+    coordinator: Any
+    hass: Any
 
     @property
     def _mapping_key(self) -> str:
