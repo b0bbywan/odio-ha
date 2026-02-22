@@ -573,7 +573,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
             "identifiers": {(DOMAIN, entry_id)},
             "name": "Odio Audio Receiver",
             "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
+            "model": "Media Hub",
         }
 
         _LOGGER.debug(
