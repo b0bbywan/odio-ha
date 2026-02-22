@@ -262,14 +262,16 @@ class MappedEntityMixin:
             return MediaPlayerState.OFF
 
         # Map the state from the mapped entity
+        # Note: we intentionally do NOT map "off" here — the mapped entity
+        # being "off" doesn't mean our entity should be off (e.g. MPD entity
+        # reports "off" when idle, but the systemd service is still running).
+        # Let the caller's fallback logic decide the correct state.
         if mapped_state.state == "playing":
             return MediaPlayerState.PLAYING
-        elif mapped_state.state == "paused":
+        if mapped_state.state == "paused":
             return MediaPlayerState.PAUSED
-        elif mapped_state.state in ["idle", "on"]:
+        if mapped_state.state in ("idle", "on"):
             return MediaPlayerState.IDLE
-        elif mapped_state.state == "off":
-            return MediaPlayerState.OFF
 
         return None
 
