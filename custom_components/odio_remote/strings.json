@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configuration Odio Audio",
-        "description": "Configurez votre système audio Odio",
+        "title": "Configuration Odio Remote",
+        "description": "Configurez votre télécommande multimédia Odio",
         "data": {
           "api_url": "URL de l'API"
         },
@@ -43,7 +43,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Options Odio Audio",
+        "title": "Options Odio Remote",
         "description": "Que souhaitez-vous configurer pour {name} ?",
         "menu_options": {
           "intervals": "Modifier les intervalles de scan",

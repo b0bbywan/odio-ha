@@ -1,10 +1,18 @@
-"""Shared test fixtures for Odio Audio tests."""
-# Standard mock server info response
+"""Shared test fixtures for Odio Remote tests."""
+# Standard mock server info response (from GET /server)
 MOCK_SERVER_INFO = {
-    "name": "pulseaudio",
     "hostname": "odio-server",
-    "version": "15.0",
-    "default_sink": "alsa_output.pci-0000_00_1b.0.analog-stereo",
+    "os_platform": "linux/amd64",
+    "os_version": "Debian GNU/Linux 13 (trixie)",
+    "api_sw": "odio-api",
+    "api_version": "v0.1.0-test",
+    "backends": {
+        "power": False,
+        "mpris": True,
+        "pulseaudio": True,
+        "systemd": True,
+        "zeroconf": False,
+    },
 }
 
 # Standard mock services response
