@@ -2,13 +2,10 @@
 import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,14 +13,12 @@ _LOGGER = logging.getLogger(__name__)
 class MappedEntityMixin:
     """Mixin for entities that can delegate to mapped entities.
 
+    Expects to be used alongside CoordinatorEntity, which provides
+    self.coordinator and self.hass.
+
     Subclasses must implement:
     - _mapping_key property: returns the key for looking up mappings
-    - _hass property: HomeAssistant instance
-    - _entry_id property: config entry ID
     """
-
-    _hass: HomeAssistant | None
-    _entry_id: str
 
     @property
     def _mapping_key(self) -> str:
@@ -32,22 +27,18 @@ class MappedEntityMixin:
 
     @property
     def _mapped_entity(self) -> str | None:
-        """Get current mapped entity dynamically from hass.data."""
-        if not self._hass:
+        """Get current mapped entity from runtime data."""
+        try:
+            runtime_data = self.coordinator.config_entry.runtime_data
+            return runtime_data.service_mappings.get(self._mapping_key)
+        except (AttributeError, TypeError):
             return None
-
-        coordinator_data = self._hass.data.get(DOMAIN, {}).get(self._entry_id)
-        if not coordinator_data:
-            return None
-
-        service_mappings = coordinator_data.get("service_mappings", {})
-        return service_mappings.get(self._mapping_key)
 
     def _get_mapped_state(self):
         """Get the state object of the mapped entity."""
-        if not self._mapped_entity or not self._hass:
+        if not self._mapped_entity or not self.hass:
             return None
-        return self._hass.states.get(self._mapped_entity)
+        return self.hass.states.get(self._mapped_entity)
 
     def _get_mapped_attribute(self, attribute: str) -> Any | None:
         """Get an attribute from the mapped entity."""
@@ -102,7 +93,7 @@ class MappedEntityMixin:
         Returns:
             True if delegation succeeded, False otherwise
         """
-        if not self._mapped_entity or not self._hass:
+        if not self._mapped_entity or not self.hass:
             _LOGGER.debug("No mapped entity available for %s", service)
             return False
 
@@ -113,7 +104,7 @@ class MappedEntityMixin:
         _LOGGER.debug("Delegating %s to %s with %s", service, self._mapped_entity, data)
 
         try:
-            await self._hass.services.async_call(
+            await self.hass.services.async_call(
                 "media_player",
                 service,
                 data,
@@ -253,12 +244,10 @@ class MappedEntityMixin:
         Returns:
             Mapped MediaPlayerState or None if no mapping available
         """
-        from homeassistant.components.media_player import MediaPlayerState
-
-        if not self._mapped_entity or not self._hass:
+        if not self._mapped_entity or not self.hass:
             return None
 
-        mapped_state = self._hass.states.get(self._mapped_entity)
+        mapped_state = self.hass.states.get(self._mapped_entity)
         if not mapped_state:
             return None
 
@@ -306,8 +295,6 @@ class MappedEntityMixin:
         # Fallback to PulseAudio client control
         client_name = get_client_name_func()
         if not client_name:
-            import logging
-            _LOGGER = logging.getLogger(__name__)
             _LOGGER.warning("Cannot %s: no client name available", service_name)
             return
 
