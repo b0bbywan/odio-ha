@@ -51,7 +51,7 @@ def _create_options_flow(data=None, options=None):
 
     # Mock config entry
     mock_entry = MagicMock()
-    mock_entry.data = data or {CONF_API_URL: "http://test:8080"}
+    mock_entry.data = data or {CONF_API_URL: "http://test:8018"}
     mock_entry.options = options or {
         CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
         CONF_SERVICE_SCAN_INTERVAL: DEFAULT_SERVICE_SCAN_INTERVAL,
@@ -97,13 +97,13 @@ class TestConfigFlowUser:
         flow = _create_config_flow()
 
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
 
         # Should transition to options step (show form)
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "options"
-        assert flow._data[CONF_API_URL] == "http://test:8080"
+        assert flow._data[CONF_API_URL] == "http://test:8018"
         mock_validate.assert_called_once()
 
     @pytest.mark.asyncio
@@ -116,7 +116,7 @@ class TestConfigFlowUser:
         flow = _create_config_flow()
 
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://bad-host:8080"}
+            user_input={CONF_API_URL: "http://bad-host:8018"}
         )
 
         assert result["type"] is FlowResultType.FORM
@@ -133,7 +133,7 @@ class TestConfigFlowUser:
         flow = _create_config_flow()
 
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
 
         assert result["type"] is FlowResultType.FORM
@@ -150,7 +150,7 @@ class TestConfigFlowUser:
         flow = _create_config_flow()
 
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
 
         assert result["type"] is FlowResultType.FORM
@@ -173,7 +173,7 @@ class TestConfigFlowUser:
 
         with pytest.raises(AbortFlow) as exc_info:
             await flow.async_step_user(
-                user_input={CONF_API_URL: "http://test:8080"}
+                user_input={CONF_API_URL: "http://test:8018"}
             )
 
         assert exc_info.value.reason == "already_configured"
@@ -188,10 +188,10 @@ class TestConfigFlowUser:
         flow = _create_config_flow()
 
         await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
 
-        flow.async_set_unique_id.assert_called_once_with("http://test:8080")
+        flow.async_set_unique_id.assert_called_once_with("http://test:8018")
 
 
 # =============================================================================
@@ -254,14 +254,14 @@ class TestConfigFlowServices:
     async def test_no_services_creates_entry(self):
         """Test that entry is created directly when no services available."""
         flow = _create_config_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
         flow._services = []
 
         result = await flow.async_step_services(user_input=None)
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["data"] == {CONF_API_URL: "http://test:8080"}
+        assert result["data"] == {CONF_API_URL: "http://test:8018"}
         assert result["options"][CONF_SERVICE_MAPPINGS] == {}
 
     @pytest.mark.asyncio
@@ -282,7 +282,7 @@ class TestConfigFlowServices:
     async def test_creates_entry_with_mappings(self):
         """Test entry creation with service mappings."""
         flow = _create_config_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
         flow._services = [
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -301,7 +301,7 @@ class TestConfigFlowServices:
     async def test_creates_entry_empty_mappings(self):
         """Test entry creation when user skips all mappings."""
         flow = _create_config_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
         flow._services = [
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -337,7 +337,7 @@ class TestConfigFlowFullPath:
         }
 
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
         assert result["step_id"] == "options"
 
@@ -352,7 +352,7 @@ class TestConfigFlowFullPath:
         # No services → entry created directly
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert result["title"] == "Odio Audio"
-        assert result["data"] == {CONF_API_URL: "http://test:8080"}
+        assert result["data"] == {CONF_API_URL: "http://test:8018"}
         assert result["options"][CONF_SCAN_INTERVAL] == 10
         assert result["options"][CONF_SERVICE_SCAN_INTERVAL] == 120
         assert result["options"][CONF_SERVICE_MAPPINGS] == {}
@@ -368,7 +368,7 @@ class TestConfigFlowFullPath:
 
         # Step 1: User provides API URL
         result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
+            user_input={CONF_API_URL: "http://test:8018"}
         )
         assert result["step_id"] == "options"
 
@@ -493,7 +493,7 @@ class TestOptionsFlowMappings:
     async def test_abort_no_mappable_entities(self, mock_clients, mock_services):
         """Test abort when no services or clients are available."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SERVICE_MAPPINGS: {}}
 
         result = await flow.async_step_mappings(user_input=None)
@@ -515,7 +515,7 @@ class TestOptionsFlowMappings:
     async def test_show_form_with_services(self, mock_clients, mock_services):
         """Test that mappings form is shown when services exist."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SERVICE_MAPPINGS: {}}
 
         result = await flow.async_step_mappings(user_input=None)
@@ -538,7 +538,7 @@ class TestOptionsFlowMappings:
     async def test_show_form_with_clients(self, mock_clients, mock_services):
         """Test that mappings form is shown when clients exist."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {CONF_SERVICE_MAPPINGS: {}}
 
         result = await flow.async_step_mappings(user_input=None)
@@ -560,7 +560,7 @@ class TestOptionsFlowMappings:
     async def test_update_mappings(self, mock_clients, mock_services):
         """Test updating service mappings."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
             CONF_SCAN_INTERVAL: 5,
             CONF_SERVICE_SCAN_INTERVAL: 60,
@@ -590,7 +590,7 @@ class TestOptionsFlowMappings:
     async def test_delete_mapping(self, mock_clients, mock_services):
         """Test deleting an existing mapping via delete checkbox."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
             CONF_SCAN_INTERVAL: 5,
             CONF_SERVICE_SCAN_INTERVAL: 60,
@@ -625,7 +625,7 @@ class TestOptionsFlowMappings:
     async def test_mixed_services_and_clients(self, mock_clients, mock_services):
         """Test mapping both services and clients."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
             CONF_SCAN_INTERVAL: 5,
             CONF_SERVICE_SCAN_INTERVAL: 60,
@@ -658,7 +658,7 @@ class TestOptionsFlowMappings:
     async def test_preserves_offline_client_mappings(self, mock_clients, mock_services):
         """Test that mappings for offline clients are preserved."""
         flow = _create_options_flow()
-        flow._data = {CONF_API_URL: "http://test:8080"}
+        flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
             CONF_SCAN_INTERVAL: 5,
             CONF_SERVICE_SCAN_INTERVAL: 60,
@@ -701,7 +701,7 @@ class TestValidationHelpers:
             "custom_components.odio_audio.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
-            result = await async_validate_api(MagicMock(), "http://test:8080")
+            result = await async_validate_api(MagicMock(), "http://test:8018")
 
         assert result["server_info"] == MOCK_SERVER_INFO
         assert result["services"] == MOCK_SERVICES
@@ -722,7 +722,7 @@ class TestValidationHelpers:
             return_value=mock_api_instance,
         ):
             with pytest.raises(CannotConnect):
-                await async_validate_api(MagicMock(), "http://bad:8080")
+                await async_validate_api(MagicMock(), "http://bad:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
@@ -740,7 +740,7 @@ class TestValidationHelpers:
             return_value=mock_api_instance,
         ):
             with pytest.raises(InvalidResponse):
-                await async_validate_api(MagicMock(), "http://test:8080")
+                await async_validate_api(MagicMock(), "http://test:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_audio.config_flow.async_get_clientsession")
@@ -758,7 +758,7 @@ class TestValidationHelpers:
             "custom_components.odio_audio.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
-            result = await async_fetch_remote_clients(MagicMock(), "http://test:8080")
+            result = await async_fetch_remote_clients(MagicMock(), "http://test:8018")
 
         # Only the remote client (not on "odio-server") should be returned
         assert len(result) == 1
@@ -779,7 +779,7 @@ class TestValidationHelpers:
             "custom_components.odio_audio.config_flow.OdioApiClient",
             return_value=mock_api_instance,
         ):
-            result = await async_fetch_remote_clients(MagicMock(), "http://bad:8080")
+            result = await async_fetch_remote_clients(MagicMock(), "http://bad:8018")
 
         assert result == []
 

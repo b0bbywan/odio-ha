@@ -8,7 +8,7 @@
           "api_url": "URL de l'API"
         },
         "data_description": {
-          "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8080)"
+          "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8018)"
         }
       },
       "options": {
