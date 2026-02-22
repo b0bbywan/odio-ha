@@ -11,7 +11,8 @@ from homeassistant.components.media_player import (
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+    from .coordinator import OdioAudioCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class MappedEntityMixin:
     - _mapping_key property: returns the key for looking up mappings
     """
 
-    coordinator: DataUpdateCoordinator
+    coordinator: OdioAudioCoordinator
     hass: HomeAssistant
 
     @property
