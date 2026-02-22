@@ -23,6 +23,10 @@
           "service_scan_interval": "How often to update services (recommended: 60s)"
         }
       },
+      "zeroconf_confirm": {
+        "title": "Odio Remote discovered",
+        "description": "Odio Remote was found on your network at **{host}** ({api_url}). Do you want to add it?"
+      },
       "services": {
         "title": "Service Mapping",
         "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities.",
@@ -37,7 +41,8 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This API is already configured"
+      "already_configured": "This API is already configured",
+      "cannot_connect": "Cannot connect to API"
     }
   },
   "options": {
