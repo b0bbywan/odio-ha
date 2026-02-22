@@ -8,6 +8,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -266,6 +267,43 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
+        )
+
+    async def async_step_zeroconf(
+        self, discovery_info: ZeroconfServiceInfo
+    ) -> ConfigFlowResult:
+        """Handle zeroconf discovery."""
+        host = discovery_info.host
+        port = discovery_info.port
+        api_url = f"http://{host}:{port}"
+
+        await self.async_set_unique_id(api_url)
+        self._abort_if_unique_id_configured()
+
+        self._data[CONF_API_URL] = api_url
+
+        # Strip .local. suffix for human-readable display
+        hostname = discovery_info.hostname.rstrip(".").removesuffix(".local")
+        self.context["title_placeholders"] = {"host": hostname or host}
+
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm the discovered Odio instance."""
+        if user_input is not None:
+            errors = await self._async_validate_api_url(self._data[CONF_API_URL])
+            if errors:
+                return self.async_abort(reason="cannot_connect")
+            return await self.async_step_options()
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            description_placeholders={
+                "host": self.context["title_placeholders"]["host"],
+                "api_url": self._data[CONF_API_URL],
+            },
         )
 
     async def async_step_options(

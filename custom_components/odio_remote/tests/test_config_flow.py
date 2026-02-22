@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.odio_remote.config_flow import (
@@ -677,6 +678,109 @@ class TestOptionsFlowMappings:
         assert mappings["user/mpd.service"] == "media_player.mpd"
         # Offline client mapping preserved
         assert mappings["client:OfflineClient"] == "media_player.offline"
+
+
+# =============================================================================
+# Config Flow: zeroconf discovery
+# =============================================================================
+
+
+def _create_zeroconf_info(host="192.168.1.100", port=8018, hostname="htpc.local."):
+    """Create a mock ZeroconfServiceInfo."""
+    info = MagicMock(spec=ZeroconfServiceInfo)
+    info.host = host
+    info.port = port
+    info.hostname = hostname
+    return info
+
+
+class TestConfigFlowZeroconf:
+    """Tests for the zeroconf discovery path of the config flow."""
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_shows_confirm_form(self):
+        """Discovery shows confirmation form."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info()
+
+        result = await flow.async_step_zeroconf(discovery_info)
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "zeroconf_confirm"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_validate_api",
+        return_value=MOCK_API_INFO,
+    )
+    async def test_zeroconf_confirm_proceeds_to_options(self, mock_validate):
+        """Confirmation calls validate and transitions to options."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info()
+
+        # Discover first
+        await flow.async_step_zeroconf(discovery_info)
+
+        # Then confirm
+        result = await flow.async_step_zeroconf_confirm(user_input={})
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "options"
+        mock_validate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_aborts_if_already_configured(self):
+        """Already-configured URL causes abort."""
+        from homeassistant.data_entry_flow import AbortFlow
+
+        flow = _create_config_flow()
+        flow._abort_if_unique_id_configured = MagicMock(
+            side_effect=AbortFlow("already_configured")
+        )
+        discovery_info = _create_zeroconf_info()
+
+        with pytest.raises(AbortFlow) as exc_info:
+            await flow.async_step_zeroconf(discovery_info)
+
+        assert exc_info.value.reason == "already_configured"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_validate_api",
+        side_effect=CannotConnect,
+    )
+    async def test_zeroconf_confirm_aborts_on_cannot_connect(self, mock_validate):
+        """Validation failure at confirm step aborts with cannot_connect."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info()
+
+        await flow.async_step_zeroconf(discovery_info)
+
+        result = await flow.async_step_zeroconf_confirm(user_input={})
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "cannot_connect"
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_hostname_display(self):
+        """hostname .local. suffix is stripped for display."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info(hostname="htpc.local.")
+
+        await flow.async_step_zeroconf(discovery_info)
+
+        assert flow.context["title_placeholders"]["host"] == "htpc"
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_sets_api_url(self):
+        """Discovered host and port are combined into API URL."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info(host="10.0.0.5", port=9000)
+
+        await flow.async_step_zeroconf(discovery_info)
+
+        assert flow._data["api_url"] == "http://10.0.0.5:9000"
+        flow.async_set_unique_id.assert_called_once_with("http://10.0.0.5:9000")
 
 
 # =============================================================================
