@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Any
 
 import aiohttp
 
@@ -69,7 +70,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
 
-class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, object]]):
+class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for service and server data (slow polling)."""
 
     config_entry: ConfigEntry
@@ -93,7 +94,7 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, object]]):
         self._failure_count = 0
         self._scan_interval = scan_interval
 
-    async def _async_update_data(self) -> dict[str, object]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Fetch services and server info from API."""
         try:
             services = await self.api.get_services()

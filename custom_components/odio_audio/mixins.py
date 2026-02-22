@@ -1,11 +1,17 @@
 """Mixin for entities that can delegate to mapped media_player entities."""
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +25,9 @@ class MappedEntityMixin:
     Subclasses must implement:
     - _mapping_key property: returns the key for looking up mappings
     """
+
+    coordinator: DataUpdateCoordinator
+    hass: HomeAssistant
 
     @property
     def _mapping_key(self) -> str:
