@@ -153,7 +153,7 @@ def add_suggested_values_to_schema(
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_API_URL, default="http://localhost:8080"): str,
+        vol.Required(CONF_API_URL, default="http://localhost:8018"): str,
     }
 )
 

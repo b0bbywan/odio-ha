@@ -12,14 +12,11 @@ from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import OdioAudioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
@@ -34,6 +31,7 @@ from .const import (
     ATTR_SERVICE_ACTIVE,
     SUPPORTED_SERVICES,
 )
+from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .mixins import MappedEntityMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,15 +39,14 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: OdioAudioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio Audio media player based on a config entry."""
-    coordinator_data = hass.data[DOMAIN][config_entry.entry_id]
-    audio_coordinator = coordinator_data["audio_coordinator"]
-    service_coordinator = coordinator_data["service_coordinator"]
-    service_mappings = coordinator_data["service_mappings"]  # noqa: F841
-    api_client = coordinator_data["api"]
+    runtime_data = config_entry.runtime_data
+    audio_coordinator = runtime_data.audio_coordinator
+    service_coordinator = runtime_data.service_coordinator
+    api_client = runtime_data.api
 
     # Get server hostname to identify remote clients
     server_hostname = None
@@ -194,8 +191,8 @@ class OdioReceiverMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
-        service_coordinator: DataUpdateCoordinator,
+        audio_coordinator: OdioAudioCoordinator,
+        service_coordinator: OdioServiceCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
     ) -> None:
@@ -299,8 +296,8 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
-        service_coordinator: DataUpdateCoordinator,
+        audio_coordinator: OdioAudioCoordinator,
+        service_coordinator: OdioServiceCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
@@ -309,9 +306,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         super().__init__(audio_coordinator)
         self._service_coordinator = service_coordinator
         self._api_client = api_client
-        self._entry_id = entry_id
         self._service_info = service_info
-        self._hass: HomeAssistant | None = None
 
         service_name = service_info["name"]
         scope = service_info["scope"]
@@ -329,11 +324,6 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
     def _mapping_key(self) -> str:
         """Return the key used in service_mappings."""
         return f"{self._service_info['scope']}/{self._service_info['name']}"
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self._hass = self.hass
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -560,7 +550,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
 
     def __init__(
         self,
-        audio_coordinator: DataUpdateCoordinator,
+        audio_coordinator: OdioAudioCoordinator,
         api_client: OdioApiClient,
         entry_id: str,
         initial_client: dict[str, Any],
@@ -569,9 +559,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         """Initialize the standalone client."""
         super().__init__(audio_coordinator)
         self._api_client = api_client
-        self._entry_id = entry_id
         self._server_hostname = server_hostname
-        self._hass: HomeAssistant | None = None
 
         # Use client NAME as stable identifier
         self._client_name = initial_client.get("name", "")
@@ -585,7 +573,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
             "identifiers": {(DOMAIN, entry_id)},
             "name": "Odio Audio Receiver",
             "manufacturer": "Odio",
-            "model": "PulseAudio Receiver",
+            "model": "Media Hub",
         }
 
         _LOGGER.debug(
@@ -599,11 +587,6 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
     def _mapping_key(self) -> str:
         """Return the key used in service_mappings."""
         return f"client:{self._client_name}"
-
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self._hass = self.hass
 
     @property
     def state(self) -> MediaPlayerState:
@@ -718,7 +701,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         def get_client_name():
-            client = self._get_client()
+            client = self._get_current_client()
             return client.get("name") if client else None
 
         await self._set_volume_with_fallback(volume, get_client_name, self._api_client)
@@ -726,7 +709,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         def get_client_name():
-            client = self._get_client()
+            client = self._get_current_client()
             return client.get("name") if client else None
 
         await self._mute_with_fallback(mute, get_client_name, self._api_client)

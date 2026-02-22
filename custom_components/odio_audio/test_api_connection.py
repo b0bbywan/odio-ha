@@ -94,7 +94,7 @@ async def test_connection(api_url: str):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python test_api_connection.py <api_url>")
-        print("Example: python test_api_connection.py http://192.168.1.100:8080")
+        print("Example: python test_api_connection.py http://192.168.1.100:8018")
         sys.exit(1)
 
     api_url = sys.argv[1].rstrip('/')

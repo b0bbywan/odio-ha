@@ -36,7 +36,7 @@ Intégration HACS pour contrôler votre système audio PulseAudio via l'API go-o
 1. Allez dans **Paramètres** → **Appareils et services**
 2. Cliquez sur **Ajouter une intégration**
 3. Recherchez "Odio Audio"
-4. Entrez l'URL de votre API go-odio-api (ex: `http://192.168.1.100:8080`)
+4. Entrez l'URL de votre API go-odio-api (ex: `http://192.168.1.100:8018`)
 5. Configurez les intervalles de scan :
    - **Audio scan interval** : 5 secondes (recommandé) - fréquence de mise à jour des clients audio
    - **Service scan interval** : 60 secondes (recommandé) - fréquence de mise à jour des services
@@ -372,16 +372,16 @@ Avant de configurer dans Home Assistant, testez votre API avec le script fourni 
 
 ```bash
 cd /config/custom_components/odio_audio
-python test_api_connection.py http://VOTRE_IP:8080
+python test_api_connection.py http://VOTRE_IP:8018
 ```
 
 **Ce que vous devriez voir :**
 ```
-Testing connection to: http://192.168.1.6:8080
+Testing connection to: http://192.168.1.6:8018
 ------------------------------------------------------------
 
 1. Testing /audio/server endpoint...
-   URL: http://192.168.1.6:8080/audio/server
+   URL: http://192.168.1.6:8018/audio/server
    Status: 200
    Content-Type: text/plain; charset=utf-8  # ⚠️ Devrait être application/json
    Raw response: {"kind":"pulseaudio","name":"pulseaudio",...
@@ -417,15 +417,15 @@ logger:
 **Causes possibles :**
 
 1. **URL incorrecte** : Vérifiez que l'URL est complète
-   - ✓ Correct : `http://192.168.1.100:8080`
-   - ✗ Incorrect : `192.168.1.100:8080` (manque http://)
-   - ✗ Incorrect : `http://192.168.1.100:8080/` (slash final)
+   - ✓ Correct : `http://192.168.1.100:8018`
+   - ✗ Incorrect : `192.168.1.100:8018` (manque http://)
+   - ✗ Incorrect : `http://192.168.1.100:8018/` (slash final)
 
 2. **API non accessible depuis Home Assistant** :
    ```bash
    # Depuis le serveur Home Assistant, testez :
-   curl http://VOTRE_IP:8080/audio/server
-   curl http://VOTRE_IP:8080/services
+   curl http://VOTRE_IP:8018/audio/server
+   curl http://VOTRE_IP:8018/services
    ```
 
 3. **Firewall** : Assurez-vous que le port est ouvert
@@ -441,7 +441,7 @@ logger:
   ```
 
 ### Les états ne se mettent pas à jour
-- Vérifiez la connectivité à l'API : `curl http://IP:8080/audio/clients`
+- Vérifiez la connectivité à l'API : `curl http://IP:8018/audio/clients`
 - Réduisez les intervalles de scan dans les options de l'intégration
 - Vérifiez les logs :
   ```
@@ -450,7 +450,7 @@ logger:
 
 ### Erreur "Timeout communicating with API"
 - Augmentez les timeouts dans le code (actuellement 10s pour audio, 15s pour services)
-- Vérifiez que votre serveur répond rapidement : `time curl http://IP:8080/services`
+- Vérifiez que votre serveur répond rapidement : `time curl http://IP:8018/services`
 
 ### Debug avancé
 

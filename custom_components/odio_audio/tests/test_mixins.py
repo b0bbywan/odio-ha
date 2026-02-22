@@ -1,15 +1,38 @@
 """Tests for MappedEntityMixin."""
 import pytest
 from unittest.mock import Mock, AsyncMock
+from dataclasses import dataclass
 
 
-# Mock minimal pour tester le mixin
+@dataclass
+class MockRuntimeData:
+    """Mock runtime data."""
+
+    service_mappings: dict
+
+
+class MockConfigEntry:
+    """Mock config entry with runtime_data."""
+
+    def __init__(self, service_mappings=None):
+        self.runtime_data = MockRuntimeData(
+            service_mappings=service_mappings or {},
+        )
+
+
+class MockCoordinator:
+    """Mock coordinator with config_entry."""
+
+    def __init__(self, config_entry=None):
+        self.config_entry = config_entry or MockConfigEntry()
+
+
 class MockMappedEntity:
-    """Mock entity using the mixin."""
+    """Mock entity using the mixin pattern (mirrors CoordinatorEntity + MappedEntityMixin)."""
 
-    def __init__(self, hass, entry_id, mapping_key, mapped_entity_id=None):
-        self._hass = hass
-        self._entry_id = entry_id
+    def __init__(self, hass, coordinator, mapping_key, mapped_entity_id=None):
+        self.hass = hass
+        self.coordinator = coordinator
         self._mapping_key_value = mapping_key
         self._mapped_entity_override = mapped_entity_id
 
@@ -21,22 +44,16 @@ class MockMappedEntity:
     def _mapped_entity(self):
         if self._mapped_entity_override:
             return self._mapped_entity_override
-
-        if not self._hass:
+        try:
+            runtime_data = self.coordinator.config_entry.runtime_data
+            return runtime_data.service_mappings.get(self._mapping_key)
+        except (AttributeError, TypeError):
             return None
-
-        from custom_components.odio_audio.const import DOMAIN
-        coordinator_data = self._hass.data.get(DOMAIN, {}).get(self._entry_id)
-        if not coordinator_data:
-            return None
-
-        service_mappings = coordinator_data.get("service_mappings", {})
-        return service_mappings.get(self._mapping_key)
 
     def _get_mapped_state(self):
-        if not self._mapped_entity or not self._hass:
+        if not self._mapped_entity or not self.hass:
             return None
-        return self._hass.states.get(self._mapped_entity)
+        return self.hass.states.get(self._mapped_entity)
 
     def _get_mapped_attribute(self, attribute):
         mapped_state = self._get_mapped_state()
@@ -45,7 +62,7 @@ class MockMappedEntity:
         return None
 
     async def _delegate_to_hass(self, service, data=None):
-        if not self._mapped_entity or not self._hass:
+        if not self._mapped_entity or not self.hass:
             return False
 
         if data is None:
@@ -53,7 +70,7 @@ class MockMappedEntity:
         data.setdefault("entity_id", self._mapped_entity)
 
         try:
-            await self._hass.services.async_call(
+            await self.hass.services.async_call(
                 "media_player",
                 service,
                 data,
@@ -70,27 +87,22 @@ class TestMappedEntityMixin:
     def test_no_mapping_returns_none(self):
         """Test that entity without mapping returns None."""
         hass = Mock()
-        hass.data = {}
+        coordinator = MockCoordinator(MockConfigEntry(service_mappings={}))
 
-        entity = MockMappedEntity(hass, "entry_123", "service:test")
+        entity = MockMappedEntity(hass, coordinator, "service:test")
 
         assert entity._mapped_entity is None
         assert entity._get_mapped_attribute("media_title") is None
 
     def test_mapping_resolution(self):
-        """Test that mapping is resolved from hass.data."""
+        """Test that mapping is resolved from runtime data."""
         hass = Mock()
-        hass.data = {
-            "odio_audio": {
-                "entry_123": {
-                    "service_mappings": {
-                        "user/mpd.service": "media_player.mpd_test"
-                    }
-                }
-            }
-        }
+        config_entry = MockConfigEntry(
+            service_mappings={"user/mpd.service": "media_player.mpd_test"}
+        )
+        coordinator = MockCoordinator(config_entry)
 
-        entity = MockMappedEntity(hass, "entry_123", "user/mpd.service")
+        entity = MockMappedEntity(hass, coordinator, "user/mpd.service")
 
         assert entity._mapped_entity == "media_player.mpd_test"
 
@@ -107,11 +119,12 @@ class TestMappedEntityMixin:
         }
         hass.states.get.return_value = mock_state
 
+        coordinator = MockCoordinator()
         entity = MockMappedEntity(
             hass,
-            "entry_123",
+            coordinator,
             "test",
-            mapped_entity_id="media_player.test"
+            mapped_entity_id="media_player.test",
         )
 
         assert entity._get_mapped_attribute("media_title") == "Test Song"
@@ -124,11 +137,12 @@ class TestMappedEntityMixin:
         hass = Mock()
         hass.states.get.return_value = None
 
+        coordinator = MockCoordinator()
         entity = MockMappedEntity(
             hass,
-            "entry_123",
+            coordinator,
             "test",
-            mapped_entity_id="media_player.test"
+            mapped_entity_id="media_player.test",
         )
 
         assert entity._get_mapped_attribute("media_title") is None
@@ -139,11 +153,12 @@ class TestMappedEntityMixin:
         hass = Mock()
         hass.services.async_call = AsyncMock(return_value=None)
 
+        coordinator = MockCoordinator()
         entity = MockMappedEntity(
             hass,
-            "entry_123",
+            coordinator,
             "test",
-            mapped_entity_id="media_player.test"
+            mapped_entity_id="media_player.test",
         )
 
         result = await entity._delegate_to_hass("media_play")
@@ -162,16 +177,17 @@ class TestMappedEntityMixin:
         hass = Mock()
         hass.services.async_call = AsyncMock(return_value=None)
 
+        coordinator = MockCoordinator()
         entity = MockMappedEntity(
             hass,
-            "entry_123",
+            coordinator,
             "test",
-            mapped_entity_id="media_player.test"
+            mapped_entity_id="media_player.test",
         )
 
         result = await entity._delegate_to_hass(
             "volume_set",
-            {"volume_level": 0.7}
+            {"volume_level": 0.7},
         )
 
         assert result is True
@@ -188,11 +204,12 @@ class TestMappedEntityMixin:
         hass = Mock()
         hass.services.async_call = AsyncMock(side_effect=Exception("Service failed"))
 
+        coordinator = MockCoordinator()
         entity = MockMappedEntity(
             hass,
-            "entry_123",
+            coordinator,
             "test",
-            mapped_entity_id="media_player.test"
+            mapped_entity_id="media_player.test",
         )
 
         result = await entity._delegate_to_hass("media_play")
@@ -203,12 +220,23 @@ class TestMappedEntityMixin:
     async def test_delegate_no_mapping(self):
         """Test delegation without mapped entity."""
         hass = Mock()
+        coordinator = MockCoordinator()
 
-        entity = MockMappedEntity(hass, "entry_123", "test")
+        entity = MockMappedEntity(hass, coordinator, "test")
 
         result = await entity._delegate_to_hass("media_play")
 
         assert result is False
+
+    def test_mapping_resolution_no_coordinator(self):
+        """Test graceful handling when coordinator has no config_entry."""
+        hass = Mock()
+        coordinator = Mock()
+        coordinator.config_entry = None
+
+        entity = MockMappedEntity(hass, coordinator, "test")
+
+        assert entity._mapped_entity is None
 
 
 class TestMappingKeyFunctions:
@@ -220,7 +248,7 @@ class TestMappingKeyFunctions:
 
         service = {
             "scope": "user",
-            "name": "mpd.service"
+            "name": "mpd.service",
         }
 
         form_key, mapping_key = get_service_keys(service)
@@ -233,7 +261,7 @@ class TestMappingKeyFunctions:
         from custom_components.odio_audio.config_flow_helpers import get_client_keys
 
         client = {
-            "name": "Tunnel for bobby@bobby-desktop"
+            "name": "Tunnel for bobby@bobby-desktop",
         }
 
         form_key, mapping_key = get_client_keys(client)
@@ -246,7 +274,7 @@ class TestMappingKeyFunctions:
         from custom_components.odio_audio.config_flow_helpers import get_client_keys
 
         client = {
-            "name": "Test!@#$%Client-123"
+            "name": "Test!@#$%Client-123",
         }
 
         form_key, mapping_key = get_client_keys(client)
@@ -277,8 +305,6 @@ class TestStateMapping:
         mock_state.state = "playing"
         hass.states.get.return_value = mock_state
 
-        # We'd need to test the actual _map_state_from_entity method here
-        # This is a simplified version
         mapped_state = mock_state.state
         assert mapped_state == "playing"
 
