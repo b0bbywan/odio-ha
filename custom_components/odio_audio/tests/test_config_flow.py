@@ -45,9 +45,8 @@ def _create_config_flow():
 def _create_options_flow(data=None, options=None):
     """Create an options flow instance with mocked config entry."""
     flow = OdioAudioOptionsFlow()
-    flow.hass = MagicMock()
     flow.flow_id = "test_options_flow"
-    flow.handler = DOMAIN
+    flow.handler = "test_entry_id"
     flow.context = {"source": "options"}
 
     # Mock config entry
@@ -60,7 +59,11 @@ def _create_options_flow(data=None, options=None):
     }
     mock_entry.title = "Odio Audio"
     mock_entry.entry_id = "test_entry_id"
-    flow.config_entry = mock_entry
+
+    # config_entry is a property that calls hass.config_entries.async_get_known_entry
+    mock_hass = MagicMock()
+    mock_hass.config_entries.async_get_known_entry.return_value = mock_entry
+    flow.hass = mock_hass
 
     return flow
 
@@ -161,24 +164,19 @@ class TestConfigFlowUser:
     )
     async def test_already_configured_aborts(self, mock_validate):
         """Test abort when API URL is already configured."""
-        flow = _create_config_flow()
-        flow._abort_if_unique_id_configured = MagicMock(
-            side_effect=flow.async_abort(reason="already_configured").__class__
-        )
-
-        # Simulate _abort_if_unique_id_configured raising AbortFlow
         from homeassistant.data_entry_flow import AbortFlow
 
+        flow = _create_config_flow()
         flow._abort_if_unique_id_configured = MagicMock(
             side_effect=AbortFlow("already_configured")
         )
 
-        result = await flow.async_step_user(
-            user_input={CONF_API_URL: "http://test:8080"}
-        )
+        with pytest.raises(AbortFlow) as exc_info:
+            await flow.async_step_user(
+                user_input={CONF_API_URL: "http://test:8080"}
+            )
 
-        assert result["type"] is FlowResultType.ABORT
-        assert result["reason"] == "already_configured"
+        assert exc_info.value.reason == "already_configured"
 
     @pytest.mark.asyncio
     @patch(
