@@ -1,21 +1,33 @@
 """Shared test fixtures for Odio Remote tests."""
+
 # Standard mock server info response (from GET /server)
 MOCK_SERVER_INFO = {
-    "hostname": "odio-server",
+    "hostname": "htpc",
     "os_platform": "linux/amd64",
     "os_version": "Debian GNU/Linux 13 (trixie)",
     "api_sw": "odio-api",
-    "api_version": "v0.1.0-test",
+    "api_version": "v0.6.0-rc.1-main",
     "backends": {
-        "power": False,
+        "power": True,
         "mpris": True,
         "pulseaudio": True,
         "systemd": True,
-        "zeroconf": False,
+        "zeroconf": True,
     },
 }
 
-# Standard mock services response
+# Mock audio server info response (from GET /audio/server)
+MOCK_AUDIO_SERVER_INFO = {
+    "kind": "pipewire",
+    "name": "PulseAudio (on PipeWire 1.4.2)",
+    "version": "15.0.0",
+    "user": "xbmc",
+    "hostname": "htpc",
+    "default_sink": "@DEFAULT_SINK@",
+    "volume": 1.0000153,
+}
+
+# Standard mock services response (supported services for config_flow tests)
 MOCK_SERVICES = [
     {
         "name": "mpd.service",
@@ -43,31 +55,83 @@ MOCK_SERVICES = [
     },
 ]
 
-# Standard mock audio clients response
-MOCK_CLIENTS = [
+# Real services response (from GET /services)
+MOCK_ALL_SERVICES = [
     {
-        "id": 1,
-        "name": "mpd",
-        "app": "mpd",
-        "binary": "mpd",
-        "host": "odio-server",
-        "backend": "PulseAudio",
-        "user": "odio",
-        "volume": 0.75,
-        "muted": False,
-        "corked": False,
+        "name": "bluetooth.service",
+        "scope": "system",
+        "active_state": "inactive",
+        "running": False,
+        "enabled": True,
+        "exists": True,
+        "description": "Bluetooth service",
     },
     {
-        "id": 2,
-        "name": "snapclient",
-        "app": "snapclient",
-        "binary": "snapclient",
-        "host": "odio-server",
-        "backend": "PulseAudio",
-        "user": "odio",
-        "volume": 0.5,
-        "muted": True,
+        "name": "firefox-kiosk@netflix.com.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": True,
+        "enabled": False,
+        "exists": True,
+        "description": "netflix.com",
+    },
+    {
+        "name": "firefox-kiosk@youtube.com.service",
+        "scope": "user",
+        "active_state": "inactive",
+        "running": False,
+        "enabled": False,
+        "exists": True,
+        "description": "youtube.com",
+    },
+    {
+        "name": "firefox-kiosk@tv.orange.fr.service",
+        "scope": "user",
+        "active_state": "inactive",
+        "running": False,
+        "enabled": False,
+        "exists": True,
+        "description": "tv.orange.fr",
+    },
+    {
+        "name": "kodi.service",
+        "scope": "user",
+        "active_state": "inactive",
+        "running": False,
+        "enabled": False,
+        "exists": True,
+        "description": "Kodi",
+    },
+    {
+        "name": "pipewire-pulse.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": True,
+        "enabled": True,
+        "exists": True,
+        "description": "PipeWire PulseAudio",
+    },
+]
+
+# Standard mock audio clients response (local clients, host == server hostname)
+MOCK_CLIENTS = [
+    {
+        "id": 161,
+        "name": "Netflix",
+        "app": "Firefox",
+        "muted": False,
+        "volume": 1,
         "corked": True,
+        "backend": "pipewire",
+        "binary": "firefox-esr",
+        "user": "xbmc",
+        "host": "htpc",
+        "props": {
+            "application.name": "Firefox",
+            "media.name": "Netflix",
+            "application.process.binary": "firefox-esr",
+            "media.class": "Stream/Output/Audio",
+        },
     },
 ]
 
@@ -78,7 +142,7 @@ MOCK_REMOTE_CLIENTS = [
         "app": "firefox",
         "binary": "firefox",
         "host": "remote-host",
-        "backend": "PulseAudio",
+        "backend": "pipewire",
         "user": "user",
         "volume": 0.8,
         "muted": False,
