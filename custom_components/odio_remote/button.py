@@ -26,12 +26,13 @@ async def async_setup_entry(
     server_info = entry.runtime_data.server_info
     api = entry.runtime_data.api
     entry_id = entry.entry_id
+    device_connections = entry.runtime_data.device_connections
 
     entities: list[ButtonEntity] = []
     if caps.get("power_off"):
-        entities.append(OdioPowerOffButton(api, entry_id, server_info))
+        entities.append(OdioPowerOffButton(api, entry_id, server_info, device_connections))
     if caps.get("reboot"):
-        entities.append(OdioRebootButton(api, entry_id, server_info))
+        entities.append(OdioRebootButton(api, entry_id, server_info, device_connections))
 
     async_add_entities(entities)
 
@@ -46,12 +47,14 @@ class _OdioPowerButtonBase(ButtonEntity):
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         self._api = api
         hostname = server_info.get("hostname", entry_id)
         sw_version = server_info.get("api_version")
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
+            connections=device_connections or set(),
             name=f"Odio Remote ({hostname})",
             manufacturer="Odio",
             sw_version=sw_version,
@@ -69,8 +72,9 @@ class OdioPowerOffButton(_OdioPowerButtonBase):
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
-        super().__init__(api, entry_id, server_info)
+        super().__init__(api, entry_id, server_info, device_connections)
         self._attr_unique_id = f"{entry_id}_power_off"
 
     async def async_press(self) -> None:
@@ -89,8 +93,9 @@ class OdioRebootButton(_OdioPowerButtonBase):
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
-        super().__init__(api, entry_id, server_info)
+        super().__init__(api, entry_id, server_info, device_connections)
         self._attr_unique_id = f"{entry_id}_reboot"
 
     async def async_press(self) -> None:

@@ -33,6 +33,7 @@ async def async_setup_entry(
             runtime_data.connectivity_coordinator,
             entry.entry_id,
             runtime_data.server_info,
+            runtime_data.device_connections,
         )
     ])
 
@@ -50,11 +51,13 @@ class ConnectionStatusSensor(CoordinatorEntity[OdioConnectivityCoordinator], Bin
         coordinator: OdioConnectivityCoordinator,
         entry_id: str,
         server_info: dict[str, Any],
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry_id}_connectivity"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
+            connections=device_connections or set(),
             name=f"Odio Remote ({server_info.get('hostname', entry_id)})",
             manufacturer="Odio",
             sw_version=server_info.get("api_version"),

@@ -1,7 +1,8 @@
 """Tests for Odio Remote button platform."""
 import pytest
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock
+from typing import Any, Set
 
 from homeassistant.components.button import ButtonDeviceClass
 
@@ -22,6 +23,7 @@ class MockPowerRuntimeData:
     api: object
     server_info: dict
     power_capabilities: dict
+    device_connections: Set[Any] = field(default_factory=set)
 
 
 class MockConfigEntry:
