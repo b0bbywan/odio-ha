@@ -209,7 +209,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
             manufacturer="Odio",
             sw_version=server_info.get("api_version"),
             hw_version=server_info.get("os_version"),
-            configuration_url=api_client._api_url,
+            configuration_url=f"{api_client._api_url}/ui",
         )
 
     async def async_added_to_hass(self) -> None:
