@@ -45,6 +45,12 @@
       "cannot_connect": "Cannot connect to API"
     }
   },
+  "entity": {
+    "button": {
+      "power_off": {"name": "Power Off"},
+      "reboot": {"name": "Reboot"}
+    }
+  },
   "options": {
     "step": {
       "init": {

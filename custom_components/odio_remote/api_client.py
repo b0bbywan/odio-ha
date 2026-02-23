@@ -36,8 +36,8 @@ class OdioApiClient:
                 ) as response:
                     response.raise_for_status()
 
-                    # Handle empty responses
-                    if response.status == 204:
+                    # Handle empty responses (204 No Content, 202 Accepted with no body, etc.)
+                    if response.content_length == 0 or response.status in (202, 204):
                         return None
 
                     return await response.json()
@@ -129,6 +129,25 @@ class OdioApiClient:
         encoded_name = quote(client_name, safe='')
         endpoint = ENDPOINT_CLIENT_MUTE.format(name=encoded_name)
         await self.post(endpoint, {"muted": muted})
+
+    # Power control
+    async def get_power_capabilities(self) -> dict[str, bool]:
+        """Get power capabilities (reboot/power_off flags)."""
+        from .const import ENDPOINT_POWER
+        result = await self.get(ENDPOINT_POWER)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from power endpoint, got {type(result)}")
+        return result
+
+    async def power_off(self) -> None:
+        """Trigger power off."""
+        from .const import ENDPOINT_POWER_OFF
+        await self.post(ENDPOINT_POWER_OFF)
+
+    async def reboot(self) -> None:
+        """Trigger reboot."""
+        from .const import ENDPOINT_POWER_REBOOT
+        await self.post(ENDPOINT_POWER_REBOOT)
 
     # Service control
     async def control_service(

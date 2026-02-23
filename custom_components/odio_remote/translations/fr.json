@@ -45,6 +45,12 @@
       "cannot_connect": "Impossible de se connecter à l'API"
     }
   },
+  "entity": {
+    "button": {
+      "power_off": {"name": "Éteindre"},
+      "reboot": {"name": "Redémarrer"}
+    }
+  },
   "options": {
     "step": {
       "init": {
