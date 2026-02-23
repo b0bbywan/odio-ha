@@ -74,12 +74,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    # Fetch system info once at setup — determines which backends/coordinators to create
-    server_info = await api.get_server_info()
+    # First refresh raises ConfigEntryNotReady automatically if the API is unreachable,
+    # which tells HA to retry setup with backoff rather than marking the entry as errored.
+    connectivity_coordinator = OdioConnectivityCoordinator(
+        hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
+    )
+    await connectivity_coordinator.async_config_entry_first_refresh()
+
+    # server_info comes from the coordinator — no second network call needed.
+    server_info: dict[str, Any] = connectivity_coordinator.data or {}
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
-    # Resolve MAC from ARP cache (HTTP call above guarantees a fresh ARP entry)
+    # Resolve MAC from ARP cache (first_refresh above guarantees a fresh ARP entry)
     host = urlparse(api_url).hostname
     mac = await async_get_mac_from_ip(hass, host) if host else None
     if mac:
@@ -90,11 +97,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             "MAC address not resolved for %s — 'Connected via' link unavailable", host
         )
         device_connections = set()
-
-    connectivity_coordinator = OdioConnectivityCoordinator(
-        hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
-    )
-    await connectivity_coordinator.async_config_entry_first_refresh()
     _LOGGER.debug("Connectivity coordinator created")
 
     power_capabilities: dict[str, bool] = {}
