@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configuration Odio Audio",
-        "description": "Configurez votre système audio Odio",
+        "title": "Configuration Odio Remote",
+        "description": "Configurez votre télécommande multimédia Odio",
         "data": {
           "api_url": "URL de l'API"
         },
@@ -23,6 +23,10 @@
           "service_scan_interval": "Fréquence de mise à jour des services (recommandé: 60s)"
         }
       },
+      "zeroconf_confirm": {
+        "title": "Odio Remote découvert",
+        "description": "Odio Remote a été découvert sur votre réseau à **{host}** ({api_url}). Voulez-vous l'ajouter ?"
+      },
       "services": {
         "title": "Association des services",
         "description": "Associez vos services audio à des entités media_player existantes (optionnel). Les services non associés seront créés comme de nouvelles entités.",
@@ -37,13 +41,23 @@
       "unknown": "Erreur inattendue"
     },
     "abort": {
-      "already_configured": "Cette API est déjà configurée"
+      "already_configured": "Cette API est déjà configurée",
+      "cannot_connect": "Impossible de se connecter à l'API"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connection_status": {"name": "Connexion"}
+    },
+    "button": {
+      "power_off": {"name": "Éteindre"},
+      "reboot": {"name": "Redémarrer"}
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Options Odio Audio",
+        "title": "Options Odio Remote",
         "description": "Que souhaitez-vous configurer pour {name} ?",
         "menu_options": {
           "intervals": "Modifier les intervalles de scan",

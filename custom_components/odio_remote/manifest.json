@@ -1,12 +1,15 @@
 {
-  "domain": "odio_audio",
-  "name": "Odio Audio",
+  "domain": "odio_remote",
+  "name": "Odio Remote",
   "codeowners": ["@b0bbywan"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["zeroconf"],
+  "zeroconf": [
+    {"type": "_http._tcp.local.", "name": "odio-api*"}
+  ],
   "documentation": "https://github.com/b0bbywan/ha-odio-audio",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/b0bbywan/ha-odio-audio/issues",
   "requirements": ["aiohttp>=3.8.0"],
-  "version": "0.2.2"
+  "version": "0.4.0"
 }

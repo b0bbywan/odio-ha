@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Odio Audio Configuration",
-        "description": "Configure your Odio audio system",
+        "title": "Odio Remote Configuration",
+        "description": "Configure your Odio multimedia remote",
         "data": {
           "api_url": "API URL"
         },
@@ -23,6 +23,10 @@
           "service_scan_interval": "How often to update services (recommended: 60s)"
         }
       },
+      "zeroconf_confirm": {
+        "title": "Odio Remote discovered",
+        "description": "Odio Remote was found on your network at **{host}** ({api_url}). Do you want to add it?"
+      },
       "services": {
         "title": "Service Mapping",
         "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities.",
@@ -37,13 +41,23 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This API is already configured"
+      "already_configured": "This API is already configured",
+      "cannot_connect": "Cannot connect to API"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connection_status": {"name": "Connection"}
+    },
+    "button": {
+      "power_off": {"name": "Power Off"},
+      "reboot": {"name": "Reboot"}
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Odio Audio Options",
+        "title": "Odio Remote Options",
         "description": "What would you like to configure for {name}?",
         "menu_options": {
           "intervals": "Change scan intervals",

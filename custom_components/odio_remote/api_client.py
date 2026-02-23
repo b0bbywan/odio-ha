@@ -1,4 +1,4 @@
-# custom_components/odio_audio/api_client.py
+# custom_components/odio_remote/api_client.py
 
 import asyncio
 import logging
@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class OdioApiClient:
-    """Client for Odio Audio API."""
+    """Client for Odio Remote API."""
 
     def __init__(self, api_url: str, session: aiohttp.ClientSession):
         """Initialize the API client."""
@@ -36,8 +36,8 @@ class OdioApiClient:
                 ) as response:
                     response.raise_for_status()
 
-                    # Handle empty responses
-                    if response.status == 204:
+                    # Handle empty responses (204 No Content, 202 Accepted with no body, etc.)
+                    if response.content_length == 0 or response.status in (202, 204):
                         return None
 
                     return await response.json()
@@ -70,11 +70,19 @@ class OdioApiClient:
 
     # Server endpoints
     async def get_server_info(self) -> dict[str, Any]:
-        """Get server information."""
+        """Get system-wide server info (hostname, backends, api_version, etc.)."""
+        from .const import ENDPOINT_SYSTEM_SERVER
+        result = await self.get(ENDPOINT_SYSTEM_SERVER)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+        return result
+
+    async def get_audio_server_info(self) -> dict[str, Any]:
+        """Get PulseAudio/PipeWire server info (requires pulseaudio backend)."""
         from .const import ENDPOINT_SERVER
         result = await self.get(ENDPOINT_SERVER)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+            raise ValueError(f"Expected dict from audio server endpoint, got {type(result)}")
         return result
 
     async def get_clients(self) -> list[dict[str, Any]]:
@@ -122,6 +130,25 @@ class OdioApiClient:
         endpoint = ENDPOINT_CLIENT_MUTE.format(name=encoded_name)
         await self.post(endpoint, {"muted": muted})
 
+    # Power control
+    async def get_power_capabilities(self) -> dict[str, bool]:
+        """Get power capabilities (reboot/power_off flags)."""
+        from .const import ENDPOINT_POWER
+        result = await self.get(ENDPOINT_POWER)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from power endpoint, got {type(result)}")
+        return result
+
+    async def power_off(self) -> None:
+        """Trigger power off."""
+        from .const import ENDPOINT_POWER_OFF
+        await self.post(ENDPOINT_POWER_OFF)
+
+    async def reboot(self) -> None:
+        """Trigger reboot."""
+        from .const import ENDPOINT_POWER_REBOOT
+        await self.post(ENDPOINT_POWER_REBOOT)
+
     # Service control
     async def control_service(
         self,
@@ -129,17 +156,21 @@ class OdioApiClient:
         scope: str,
         unit: str,
     ) -> None:
-        """Control systemd service (enable/disable/restart)."""
+        """Control systemd service (enable/disable/restart/start/stop)."""
         from .const import (
-            ENDPOINT_SERVICE_ENABLE,
             ENDPOINT_SERVICE_DISABLE,
+            ENDPOINT_SERVICE_ENABLE,
             ENDPOINT_SERVICE_RESTART,
+            ENDPOINT_SERVICE_START,
+            ENDPOINT_SERVICE_STOP,
         )
 
         endpoint_map = {
             "enable": ENDPOINT_SERVICE_ENABLE,
             "disable": ENDPOINT_SERVICE_DISABLE,
             "restart": ENDPOINT_SERVICE_RESTART,
+            "start": ENDPOINT_SERVICE_START,
+            "stop": ENDPOINT_SERVICE_STOP,
         }
 
         endpoint_template = endpoint_map.get(action)

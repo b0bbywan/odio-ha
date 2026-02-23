@@ -244,7 +244,7 @@ class TestMappingKeyFunctions:
 
     def test_get_service_keys(self):
         """Test service key generation."""
-        from custom_components.odio_audio.config_flow_helpers import get_service_keys
+        from custom_components.odio_remote.config_flow_helpers import get_service_keys
 
         service = {
             "scope": "user",
@@ -258,7 +258,7 @@ class TestMappingKeyFunctions:
 
     def test_get_client_keys(self):
         """Test client key generation."""
-        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+        from custom_components.odio_remote.config_flow_helpers import get_client_keys
 
         client = {
             "name": "Tunnel for bobby@bobby-desktop",
@@ -271,7 +271,7 @@ class TestMappingKeyFunctions:
 
     def test_get_client_keys_special_chars(self):
         """Test client key generation with special characters."""
-        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+        from custom_components.odio_remote.config_flow_helpers import get_client_keys
 
         client = {
             "name": "Test!@#$%Client-123",
@@ -284,7 +284,7 @@ class TestMappingKeyFunctions:
 
     def test_get_client_keys_empty_name(self):
         """Test client key generation with empty name."""
-        from custom_components.odio_audio.config_flow_helpers import get_client_keys
+        from custom_components.odio_remote.config_flow_helpers import get_client_keys
 
         client = {"name": ""}
 
