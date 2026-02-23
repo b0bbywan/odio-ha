@@ -17,7 +17,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import OdioAudioConfigEntry
+from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
     DOMAIN,
@@ -40,7 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: OdioAudioConfigEntry,
+    config_entry: OdioConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio Remote media player based on a config entry."""

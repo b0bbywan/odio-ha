@@ -38,10 +38,10 @@ class OdioRemoteRuntimeData:
     service_mappings: dict[str, str]
 
 
-type OdioAudioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
+type OdioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
     """Set up Odio Remote from a config entry."""
     _LOGGER.info("Setting up Odio Remote integration")
 
@@ -98,14 +98,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) ->
 
 
 async def async_unload_entry(
-    hass: HomeAssistant, entry: OdioAudioConfigEntry
+    hass: HomeAssistant, entry: OdioConfigEntry
 ) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: OdioAudioConfigEntry, device_entry: DeviceEntry
+    hass: HomeAssistant, config_entry: OdioConfigEntry, device_entry: DeviceEntry
 ) -> bool:
     """Remove a device from the integration."""
     return True
