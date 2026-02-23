@@ -29,6 +29,8 @@ ENDPOINT_SERVICE_RESTART: Final = "/services/{scope}/{unit}/restart"
 ENDPOINT_POWER: Final = "/power"
 ENDPOINT_POWER_OFF: Final = "/power/power_off"
 ENDPOINT_POWER_REBOOT: Final = "/power/reboot"
+ENDPOINT_SERVICE_START: Final = "/services/{scope}/{unit}/start"
+ENDPOINT_SERVICE_STOP: Final = "/services/{scope}/{unit}/stop"
 
 # Attributes
 ATTR_CLIENT_ID: Final = "client_id"

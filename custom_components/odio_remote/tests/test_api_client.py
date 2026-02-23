@@ -434,6 +434,38 @@ class TestOdioApiClientServiceControl:
                 assert len(m.requests) == 1
 
     @pytest.mark.asyncio
+    async def test_control_service_start(self):
+        """Test control_service start."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.post(
+                    "http://test:8018/services/user/mpd.service/start",
+                    status=204,
+                )
+
+                await api.control_service("start", "user", "mpd.service")
+
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_control_service_stop(self):
+        """Test control_service stop."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.post(
+                    "http://test:8018/services/user/kodi.service/stop",
+                    status=204,
+                )
+
+                await api.control_service("stop", "user", "kodi.service")
+
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
     async def test_control_service_invalid_action(self):
         """Test control_service with invalid action raises ValueError."""
         async with ClientSession() as session:
