@@ -81,6 +81,7 @@ async def async_setup_entry(
                     api_client,
                     config_entry.entry_id,
                     service,
+                    server_hostname,
                 )
                 entities.append(serviceEntity)
 
@@ -204,7 +205,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         self._attr_unique_id = f"{entry_id}_receiver"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
-            name="Universal Multimedia Remote",
+            name=f"Odio Remote ({server_info.get('hostname', entry_id)})",
             manufacturer="Odio",
             sw_version=server_info.get("api_version"),
             hw_version=server_info.get("os_version"),
@@ -317,6 +318,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         api_client: OdioApiClient,
         entry_id: str,
         service_info: dict[str, Any],
+        server_hostname: str | None = None,
     ) -> None:
         """Initialize the service."""
         # Use audio_coordinator as primary (fast updates) when available,
@@ -333,7 +335,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         self._attr_name = f"{service_name} ({scope})"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Universal Multimedia Remote",
+            "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
         }
 
@@ -590,7 +592,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         self._attr_name = self._client_name
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
-            "name": "Universal Multimedia Remote",
+            "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
         }
 
