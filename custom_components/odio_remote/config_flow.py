@@ -273,11 +273,22 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
+        _LOGGER.debug(
+            "Zeroconf discovery: host=%s addresses=%s port=%s hostname=%s",
+            discovery_info.host,
+            discovery_info.addresses,
+            discovery_info.port,
+            discovery_info.hostname,
+        )
         # Prefer IPv4 — API only supports IPv4; IPv6 addresses contain ":"
         host = next(
             (addr for addr in discovery_info.addresses if ":" not in addr),
             discovery_info.host,
         )
+        if host != discovery_info.host:
+            _LOGGER.debug(
+                "Zeroconf: picked IPv4 %s over host %s", host, discovery_info.host
+            )
         port = discovery_info.port
         api_url = f"http://{host}:{port}"
 
@@ -290,6 +301,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
         hostname = discovery_info.hostname.rstrip(".").removesuffix(".local")
         self.context["title_placeholders"] = {"host": hostname or host}
 
+        _LOGGER.debug("Zeroconf: will configure api_url=%s", api_url)
         return await self.async_step_zeroconf_confirm()
 
     async def async_step_zeroconf_confirm(
