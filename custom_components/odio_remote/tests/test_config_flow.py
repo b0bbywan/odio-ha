@@ -685,12 +685,18 @@ class TestOptionsFlowMappings:
 # =============================================================================
 
 
-def _create_zeroconf_info(host="192.168.1.100", port=8018, hostname="htpc.local."):
+def _create_zeroconf_info(
+    host="192.168.1.100",
+    port=8018,
+    hostname="htpc.local.",
+    addresses=None,
+):
     """Create a mock ZeroconfServiceInfo."""
     info = MagicMock(spec=ZeroconfServiceInfo)
     info.host = host
     info.port = port
     info.hostname = hostname
+    info.addresses = addresses if addresses is not None else [host]
     return info
 
 
@@ -781,6 +787,35 @@ class TestConfigFlowZeroconf:
 
         assert flow._data["api_url"] == "http://10.0.0.5:9000"
         flow.async_set_unique_id.assert_called_once_with("http://10.0.0.5:9000")
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_prefers_ipv4_over_ipv6(self):
+        """When both IPv6 and IPv4 addresses are advertised, IPv4 is used."""
+        flow = _create_config_flow()
+        discovery_info = _create_zeroconf_info(
+            host="2a01:cb0c:796:200:922b:34ff:fe3a:a796",
+            port=8018,
+            addresses=["2a01:cb0c:796:200:922b:34ff:fe3a:a796", "192.168.1.100"],
+        )
+
+        await flow.async_step_zeroconf(discovery_info)
+
+        assert flow._data["api_url"] == "http://192.168.1.100:8018"
+
+    @pytest.mark.asyncio
+    async def test_zeroconf_falls_back_to_host_when_only_ipv6(self):
+        """When only IPv6 is advertised, fall back to discovery_info.host."""
+        flow = _create_config_flow()
+        ipv6 = "2a01:cb0c:796:200:922b:34ff:fe3a:a796"
+        discovery_info = _create_zeroconf_info(
+            host=ipv6,
+            port=8018,
+            addresses=[ipv6],
+        )
+
+        await flow.async_step_zeroconf(discovery_info)
+
+        assert flow._data["api_url"] == f"http://{ipv6}:8018"
 
 
 # =============================================================================

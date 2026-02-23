@@ -273,7 +273,11 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
         """Handle zeroconf discovery."""
-        host = discovery_info.host
+        # Prefer IPv4 — API only supports IPv4; IPv6 addresses contain ":"
+        host = next(
+            (addr for addr in discovery_info.addresses if ":" not in addr),
+            discovery_info.host,
+        )
         port = discovery_info.port
         api_url = f"http://{host}:{port}"
 
