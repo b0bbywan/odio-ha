@@ -28,7 +28,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
     DOMAIN,
-    SUPPORTED_SERVICES,
 )
 from .config_flow_helpers import (
     build_mapping_schema,
@@ -111,8 +110,7 @@ async def async_fetch_available_services(
         return [
             svc
             for svc in info.get("services", [])
-            if svc.get("exists") and svc.get("enabled") and svc.get("name")
-            in SUPPORTED_SERVICES
+            if svc.get("exists")
         ]
     except OdioConfigError:
         return []
@@ -228,10 +226,9 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             self._services = [
                 svc
                 for svc in info.get("services", [])
-                if svc.get("exists") and svc.get("enabled") and svc.get("name")
-                in SUPPORTED_SERVICES
+                if svc.get("exists")
             ]
-            _LOGGER.info("Found %d enabled services", len(self._services))
+            _LOGGER.info("Found %d existing services", len(self._services))
 
         except CannotConnect:
             errors["base"] = "cannot_connect"

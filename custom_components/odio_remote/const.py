@@ -27,18 +27,6 @@ ENDPOINT_SERVICE_ENABLE: Final = "/services/{scope}/{unit}/enable"
 ENDPOINT_SERVICE_DISABLE: Final = "/services/{scope}/{unit}/disable"
 ENDPOINT_SERVICE_RESTART: Final = "/services/{scope}/{unit}/restart"
 
-# Service types we care about
-SUPPORTED_SERVICES: Final = [
-    "mpd.service",
-    # "mpd-discplayer.service",  # Ne fait que relayer vers MPD, pas besoin d'entité séparée
-    # "pipewire-pulse.service",  # Serveur audio, pas un lecteur - représenté par le receiver principal
-    # "pulseaudio.service",      # Serveur audio, pas un lecteur - représenté par le receiver principal
-    "shairport-sync.service",
-    "snapclient.service",
-    "spotifyd.service",
-    "upmpdcli.service",
-]
-
 # Attributes
 ATTR_CLIENT_ID: Final = "client_id"
 ATTR_APP: Final = "app"
