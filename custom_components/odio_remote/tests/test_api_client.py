@@ -249,6 +249,62 @@ class TestOdioApiClientEndpoints:
                 with pytest.raises(ValueError, match="Expected list"):
                     await api.get_services()
 
+    @pytest.mark.asyncio
+    async def test_get_power_capabilities(self):
+        """Test get_power_capabilities returns real-shaped response."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/power", payload={"reboot": True, "power_off": False})
+
+                result = await api.get_power_capabilities()
+
+                assert result["reboot"] is True
+                assert result["power_off"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_power_capabilities_invalid_response(self):
+        """Test get_power_capabilities with invalid response type raises ValueError."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/power", payload=["not", "a", "dict"])
+
+                with pytest.raises(ValueError, match="Expected dict"):
+                    await api.get_power_capabilities()
+
+
+class TestOdioApiClientPowerControl:
+    """Tests for power control methods."""
+
+    @pytest.mark.asyncio
+    async def test_power_off(self):
+        """Test power_off POSTs to /power/power_off."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.post("http://test:8018/power/power_off", status=204)
+
+                await api.power_off()
+
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_reboot(self):
+        """Test reboot POSTs to /power/reboot."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.post("http://test:8018/power/reboot", status=204)
+
+                await api.reboot()
+
+                assert len(m.requests) == 1
+
 
 class TestOdioApiClientVolumeControl:
     """Tests for volume control methods."""

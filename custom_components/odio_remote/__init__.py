@@ -24,7 +24,7 @@ from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
+PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER, Platform.BUTTON]
 
 
 @dataclass
@@ -36,6 +36,7 @@ class OdioRemoteRuntimeData:
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
     service_mappings: dict[str, str]
+    power_capabilities: dict[str, bool]
 
 
 type OdioAudioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
@@ -68,6 +69,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) ->
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
+    power_capabilities: dict[str, bool] = {}
+    if backends.get("power"):
+        try:
+            power_capabilities = await api.get_power_capabilities()
+        except Exception:
+            _LOGGER.warning("Failed to fetch power capabilities, power buttons disabled")
+
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
         audio_coordinator = OdioAudioCoordinator(hass, entry, api, scan_interval)
@@ -88,6 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioAudioConfigEntry) ->
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
         service_mappings=service_mappings,
+        power_capabilities=power_capabilities,
     )
 
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
