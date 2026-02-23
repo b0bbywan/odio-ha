@@ -48,6 +48,7 @@ async def async_setup_entry(
     service_coordinator = runtime_data.service_coordinator
     api_client = runtime_data.api
     server_info = runtime_data.server_info
+    device_connections = runtime_data.device_connections
 
     # Get server hostname from the static server_info fetched at setup
     server_hostname = server_info.get("hostname")
@@ -61,6 +62,7 @@ async def async_setup_entry(
             service_coordinator,
             api_client,
             config_entry.entry_id,
+            device_connections,
         )
     ]
 
@@ -82,6 +84,7 @@ async def async_setup_entry(
                     config_entry.entry_id,
                     service,
                     server_hostname,
+                    device_connections,
                 )
                 entities.append(serviceEntity)
 
@@ -108,6 +111,7 @@ async def async_setup_entry(
                 config_entry.entry_id,
                 client,
                 server_hostname,
+                device_connections,
             )
             entities.append(audioEntity)
 
@@ -169,6 +173,7 @@ async def async_setup_entry(
                     config_entry.entry_id,
                     client,
                     server_hostname,
+                    device_connections,
                 )
                 new_entities.append(entity)
                 known_remote_clients[client_name] = entity
@@ -196,6 +201,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         service_coordinator: OdioServiceCoordinator | None,
         api_client: OdioApiClient,
         entry_id: str,
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         """Initialize the receiver."""
         self._server_info = server_info
@@ -205,6 +211,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         self._attr_unique_id = f"{entry_id}_receiver"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
+            connections=device_connections or set(),
             name=f"Odio Remote ({server_info.get('hostname', entry_id)})",
             manufacturer="Odio",
             sw_version=server_info.get("api_version"),
@@ -319,6 +326,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         entry_id: str,
         service_info: dict[str, Any],
         server_hostname: str | None = None,
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         """Initialize the service."""
         # Use audio_coordinator as primary (fast updates) when available,
@@ -335,6 +343,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         self._attr_name = f"{service_name} ({scope})"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
+            "connections": device_connections or set(),
             "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
         }
@@ -576,6 +585,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         entry_id: str,
         initial_client: dict[str, Any],
         server_hostname: str | None = None,
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         """Initialize the standalone client."""
         super().__init__(audio_coordinator)
@@ -592,6 +602,7 @@ class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, Medi
         self._attr_name = self._client_name
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
+            "connections": device_connections or set(),
             "name": f"Odio Remote ({server_hostname or entry_id})",
             "manufacturer": "Odio",
         }

@@ -1,7 +1,8 @@
 """Tests for Odio Remote button platform."""
 import pytest
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock
+from typing import Any, Set
 
 from homeassistant.components.button import ButtonDeviceClass
 
@@ -17,11 +18,19 @@ from .conftest import MOCK_SERVER_INFO
 ENTRY_ID = "test_entry_id"
 
 
+def _make_connectivity_coordinator(last_update_success=True):
+    coord = MagicMock()
+    coord.last_update_success = last_update_success
+    return coord
+
+
 @dataclass
 class MockPowerRuntimeData:
     api: object
     server_info: dict
     power_capabilities: dict
+    connectivity_coordinator: object
+    device_connections: Set[Any] = field(default_factory=set)
 
 
 class MockConfigEntry:
@@ -31,6 +40,7 @@ class MockConfigEntry:
             api=api or MagicMock(),
             server_info=MOCK_SERVER_INFO,
             power_capabilities=caps,
+            connectivity_coordinator=_make_connectivity_coordinator(),
         )
 
 
@@ -86,7 +96,7 @@ class TestOdioPowerOffButton:
     """Tests for OdioPowerOffButton."""
 
     def _make_button(self, api=None):
-        return OdioPowerOffButton(api or MagicMock(), ENTRY_ID, MOCK_SERVER_INFO)
+        return OdioPowerOffButton(_make_connectivity_coordinator(), api or MagicMock(), ENTRY_ID, MOCK_SERVER_INFO)
 
     @pytest.mark.asyncio
     async def test_press_calls_api(self):
@@ -122,7 +132,7 @@ class TestOdioRebootButton:
     """Tests for OdioRebootButton."""
 
     def _make_button(self, api=None):
-        return OdioRebootButton(api or MagicMock(), ENTRY_ID, MOCK_SERVER_INFO)
+        return OdioRebootButton(_make_connectivity_coordinator(), api or MagicMock(), ENTRY_ID, MOCK_SERVER_INFO)
 
     @pytest.mark.asyncio
     async def test_press_calls_api(self):

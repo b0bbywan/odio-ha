@@ -32,6 +32,7 @@ async def async_setup_entry(
         return
 
     server_hostname = runtime_data.server_info.get("hostname", entry.entry_id)
+    device_connections = runtime_data.device_connections
     services = service_coordinator.data.get("services", [])
 
     entities = [
@@ -41,6 +42,7 @@ async def async_setup_entry(
             entry.entry_id,
             svc,
             server_hostname,
+            device_connections,
         )
         for svc in services
         if svc.get("exists") and svc.get("scope") == "user"
@@ -62,6 +64,7 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         entry_id: str,
         service_info: dict[str, Any],
         server_hostname: str,
+        device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._api = api
@@ -74,6 +77,7 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         self._attr_name = service_name.removesuffix(".service")
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
+            connections=device_connections or set(),
             name=f"Odio Remote ({server_hostname})",
             manufacturer="Odio",
         )

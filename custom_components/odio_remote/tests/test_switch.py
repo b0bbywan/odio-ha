@@ -40,6 +40,7 @@ def _make_entry(service_coordinator):
     entry.runtime_data.server_info = MOCK_SERVER_INFO
     entry.runtime_data.service_coordinator = service_coordinator
     entry.runtime_data.api = MagicMock()
+    entry.runtime_data.device_connections = set()
     return entry
 
 
