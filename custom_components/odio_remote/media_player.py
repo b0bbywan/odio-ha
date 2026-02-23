@@ -245,20 +245,28 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         return self._server_info.get("backends", {})
 
     @property
-    def state(self) -> MediaPlayerState:
+    def state(self) -> MediaPlayerState | None:
         """Return the state of the device."""
+
+        if self._audio_coordinator is None:
+            return MediaPlayerState.OFF
+
+        if not self._audio_coordinator.last_update_success:
+            return MediaPlayerState.OFF
+
         backends = self._get_backends()
+        if "pulseaudio" not in backends or self._audio_coordinator is None:
+            return MediaPlayerState.OFF
 
-        if backends.get("pulseaudio") and self._audio_coordinator is not None:
-            if not self._audio_coordinator.data:
-                return MediaPlayerState.IDLE
-            clients = self._audio_coordinator.data.get("audio", [])
-            if any(not c.get("corked", True) for c in clients):
-                return MediaPlayerState.PLAYING
-            return MediaPlayerState.IDLE
+        audio_data = self._audio_coordinator.data
 
-        # No audio backend: IDLE when Odio is reachable (setup succeeded)
-        return MediaPlayerState.IDLE
+        if audio_data is None:
+            return MediaPlayerState.OFF
+
+        clients = audio_data.get("audio", [])
+        has_active_client = any(not c.get("corked", True) for c in clients)
+
+        return MediaPlayerState.PLAYING if has_active_client else MediaPlayerState.IDLE
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
