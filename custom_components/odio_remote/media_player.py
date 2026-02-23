@@ -30,7 +30,6 @@ from .const import (
     ATTR_SERVICE_SCOPE,
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
-    SUPPORTED_SERVICES,
 )
 from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .mixins import MappedEntityMixin
@@ -69,13 +68,13 @@ async def async_setup_entry(
     handled_client_patterns = set()
 
     # Create service entities (only when systemd backend is enabled)
+    # Only services that have been mapped by the user are exposed as entities
+    service_mappings = runtime_data.service_mappings
     if service_coordinator is not None and service_coordinator.data:
         services = service_coordinator.data.get("services", [])
         for service in services:
-            if (
-                service.get("exists") and service.get("enabled") and service["name"]
-                in SUPPORTED_SERVICES
-            ):
+            mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+            if service.get("exists") and mapping_key in service_mappings:
                 serviceEntity = OdioServiceMediaPlayer(
                     audio_coordinator,
                     service_coordinator,
