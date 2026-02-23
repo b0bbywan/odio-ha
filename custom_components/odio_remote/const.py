@@ -26,6 +26,9 @@ ENDPOINT_CLIENT_VOLUME: Final = "/audio/clients/{name}/volume"
 ENDPOINT_SERVICE_ENABLE: Final = "/services/{scope}/{unit}/enable"
 ENDPOINT_SERVICE_DISABLE: Final = "/services/{scope}/{unit}/disable"
 ENDPOINT_SERVICE_RESTART: Final = "/services/{scope}/{unit}/restart"
+ENDPOINT_POWER: Final = "/power"
+ENDPOINT_POWER_OFF: Final = "/power/power_off"
+ENDPOINT_POWER_REBOOT: Final = "/power/reboot"
 
 # Attributes
 ATTR_CLIENT_ID: Final = "client_id"
