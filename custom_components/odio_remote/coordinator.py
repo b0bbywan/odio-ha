@@ -32,6 +32,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         config_entry: ConfigEntry,
         api: OdioApiClient,
         scan_interval: int,
+        connectivity_coordinator: "OdioConnectivityCoordinator",
     ) -> None:
         """Initialize audio coordinator."""
         super().__init__(
@@ -44,9 +45,12 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         self.api = api
         self._failure_count = 0
         self._scan_interval = scan_interval
+        self._connectivity = connectivity_coordinator
 
     async def _async_update_data(self) -> dict[str, list]:
         """Fetch audio clients from API."""
+        if not self._connectivity.last_update_success:
+            raise UpdateFailed("Skipping audio update: API unreachable")
         try:
             clients = await self.api.get_clients()
             self._failure_count = 0
@@ -114,6 +118,7 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config_entry: ConfigEntry,
         api: OdioApiClient,
         scan_interval: int,
+        connectivity_coordinator: OdioConnectivityCoordinator,
     ) -> None:
         """Initialize service coordinator."""
         super().__init__(
@@ -126,9 +131,12 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         self._failure_count = 0
         self._scan_interval = scan_interval
+        self._connectivity = connectivity_coordinator
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch systemd services from API."""
+        if not self._connectivity.last_update_success:
+            raise UpdateFailed("Skipping services update: API unreachable")
         try:
             services = await self.api.get_services()
             self._failure_count = 0

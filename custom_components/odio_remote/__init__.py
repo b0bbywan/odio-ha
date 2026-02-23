@@ -106,14 +106,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
-        audio_coordinator = OdioAudioCoordinator(hass, entry, api, scan_interval)
+        audio_coordinator = OdioAudioCoordinator(
+            hass, entry, api, scan_interval, connectivity_coordinator
+        )
         await audio_coordinator.async_config_entry_first_refresh()
         _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
 
     service_coordinator: OdioServiceCoordinator | None = None
     if backends.get("systemd"):
         service_coordinator = OdioServiceCoordinator(
-            hass, entry, api, service_scan_interval
+            hass, entry, api, service_scan_interval, connectivity_coordinator
         )
         await service_coordinator.async_config_entry_first_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
