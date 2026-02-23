@@ -127,6 +127,22 @@ class TestOdioPowerOffButton:
         btn = self._make_button()
         assert btn.device_class is None
 
+    def test_available_when_connectivity_up(self):
+        """Button is available when the connectivity coordinator succeeds."""
+        btn = OdioPowerOffButton(
+            _make_connectivity_coordinator(last_update_success=True),
+            MagicMock(), ENTRY_ID, MOCK_SERVER_INFO,
+        )
+        assert btn.available is True
+
+    def test_unavailable_when_connectivity_down(self):
+        """Button is unavailable when the connectivity coordinator fails."""
+        btn = OdioPowerOffButton(
+            _make_connectivity_coordinator(last_update_success=False),
+            MagicMock(), ENTRY_ID, MOCK_SERVER_INFO,
+        )
+        assert btn.available is False
+
 
 class TestOdioRebootButton:
     """Tests for OdioRebootButton."""
@@ -162,3 +178,19 @@ class TestOdioRebootButton:
     def test_translation_key(self):
         btn = self._make_button()
         assert btn.translation_key == "reboot"
+
+    def test_available_when_connectivity_up(self):
+        """Button is available when the connectivity coordinator succeeds."""
+        btn = OdioRebootButton(
+            _make_connectivity_coordinator(last_update_success=True),
+            MagicMock(), ENTRY_ID, MOCK_SERVER_INFO,
+        )
+        assert btn.available is True
+
+    def test_unavailable_when_connectivity_down(self):
+        """Button is unavailable when the connectivity coordinator fails."""
+        btn = OdioRebootButton(
+            _make_connectivity_coordinator(last_update_success=False),
+            MagicMock(), ENTRY_ID, MOCK_SERVER_INFO,
+        )
+        assert btn.available is False
