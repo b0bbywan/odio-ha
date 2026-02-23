@@ -8,10 +8,12 @@ from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import DOMAIN
+from .coordinator import OdioConnectivityCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,28 +29,31 @@ async def async_setup_entry(
     api = entry.runtime_data.api
     entry_id = entry.entry_id
     device_connections = entry.runtime_data.device_connections
+    connectivity = entry.runtime_data.connectivity_coordinator
 
     entities: list[ButtonEntity] = []
     if caps.get("power_off"):
-        entities.append(OdioPowerOffButton(api, entry_id, server_info, device_connections))
+        entities.append(OdioPowerOffButton(connectivity, api, entry_id, server_info, device_connections))
     if caps.get("reboot"):
-        entities.append(OdioRebootButton(api, entry_id, server_info, device_connections))
+        entities.append(OdioRebootButton(connectivity, api, entry_id, server_info, device_connections))
 
     async_add_entities(entities)
 
 
-class _OdioPowerButtonBase(ButtonEntity):
+class _OdioPowerButtonBase(CoordinatorEntity[OdioConnectivityCoordinator], ButtonEntity):
     """Base class for Odio power buttons."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
+        coordinator: OdioConnectivityCoordinator,
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
         device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
+        super().__init__(coordinator)
         self._api = api
         hostname = server_info.get("hostname", entry_id)
         sw_version = server_info.get("api_version")
@@ -69,12 +74,13 @@ class OdioPowerOffButton(_OdioPowerButtonBase):
 
     def __init__(
         self,
+        coordinator: OdioConnectivityCoordinator,
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
         device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
-        super().__init__(api, entry_id, server_info, device_connections)
+        super().__init__(coordinator, api, entry_id, server_info, device_connections)
         self._attr_unique_id = f"{entry_id}_power_off"
 
     async def async_press(self) -> None:
@@ -90,12 +96,13 @@ class OdioRebootButton(_OdioPowerButtonBase):
 
     def __init__(
         self,
+        coordinator: OdioConnectivityCoordinator,
         api: OdioApiClient,
         entry_id: str,
         server_info: dict[str, Any],
         device_connections: set[tuple[str, str]] | None = None,
     ) -> None:
-        super().__init__(api, entry_id, server_info, device_connections)
+        super().__init__(coordinator, api, entry_id, server_info, device_connections)
         self._attr_unique_id = f"{entry_id}_reboot"
 
     async def async_press(self) -> None:
