@@ -17,14 +17,16 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
     CONF_SERVICE_SCAN_INTERVAL,
+    DEFAULT_CONNECTIVITY_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
 )
-from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioConnectivityCoordinator, OdioServiceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.MEDIA_PLAYER,
     Platform.SWITCH,
@@ -37,6 +39,7 @@ class OdioRemoteRuntimeData:
 
     api: OdioApiClient
     server_info: dict[str, Any]
+    connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
     service_mappings: dict[str, str]
@@ -73,6 +76,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
+    connectivity_coordinator = OdioConnectivityCoordinator(
+        hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
+    )
+    await connectivity_coordinator.async_config_entry_first_refresh()
+    _LOGGER.debug("Connectivity coordinator created")
+
     power_capabilities: dict[str, bool] = {}
     if backends.get("power"):
         try:
@@ -97,6 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         server_info=server_info,
+        connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
         service_mappings=service_mappings,
