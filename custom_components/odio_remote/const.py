@@ -12,6 +12,7 @@ CONF_SERVICE_MAPPINGS: Final = "service_mappings"
 # Defaults
 DEFAULT_SCAN_INTERVAL: Final = 5  # secondes pour audio
 DEFAULT_SERVICE_SCAN_INTERVAL: Final = 60  # secondes pour services
+DEFAULT_CONNECTIVITY_SCAN_INTERVAL: Final = 30  # secondes pour le heartbeat de connectivité
 DEFAULT_NAME: Final = "Odio Remote"
 
 # API Endpoints
