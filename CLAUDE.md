@@ -43,7 +43,7 @@ Both coordinators are `| None` in `OdioRemoteRuntimeData` (defined in `__init__.
 
 1. **`OdioReceiverMediaPlayer`** — Extends `MediaPlayerEntity` directly (not `CoordinatorEntity`). Represents the Odio instance itself. Manually registers listeners on whichever coordinators exist via `async_added_to_hass`. Volume/mute only available when `backends["pulseaudio"]` is enabled. `extra_state_attributes` always includes `{"backends": {...}}`.
 2. **`OdioServiceMediaPlayer`** — One per systemd service (only created when `service_coordinator` is not None). Uses `audio_coordinator or service_coordinator` as its base coordinator.
-3. **`OdioStandaloneClientMediaPlayer`** — Remote audio clients (host ≠ server hostname). Dynamically created when clients are detected (only when `audio_coordinator` is not None).
+3. **`OdioPulseClientMediaPlayer`** — PulseAudio clients (host ≠ server hostname). Dynamically created when clients are detected (only when `audio_coordinator` is not None).
 
 ### Entity Delegation (`mixins.py`)
 

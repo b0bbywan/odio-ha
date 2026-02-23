@@ -105,7 +105,7 @@ async def async_setup_entry(
             if not is_remote or not client_name:
                 continue
 
-            audioEntity = OdioStandaloneClientMediaPlayer(
+            audioEntity = OdioPulseClientMediaPlayer(
                 audio_coordinator,
                 api_client,
                 config_entry.entry_id,
@@ -119,7 +119,7 @@ async def async_setup_entry(
         "Creating %d media_player entities (1 receiver + %d services + %d standalone clients)",
         len(entities),
         len([e for e in entities if isinstance(e, OdioServiceMediaPlayer)]),
-        len([e for e in entities if isinstance(e, OdioStandaloneClientMediaPlayer)]),
+        len([e for e in entities if isinstance(e, OdioPulseClientMediaPlayer)]),
     )
 
     async_add_entities(entities)
@@ -130,7 +130,7 @@ async def async_setup_entry(
         known_remote_clients = {
             entity._client_name: entity
             for entity in entities
-            if isinstance(entity, OdioStandaloneClientMediaPlayer)
+            if isinstance(entity, OdioPulseClientMediaPlayer)
         }
 
         @callback
@@ -167,7 +167,7 @@ async def async_setup_entry(
                 # Create new entity
                 _LOGGER.info("Detected new remote client: '%s' from host '%s'", client_name, client_host)
 
-                entity = OdioStandaloneClientMediaPlayer(
+                entity = OdioPulseClientMediaPlayer(
                     audio_coordinator,
                     api_client,
                     config_entry.entry_id,
@@ -581,7 +581,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         await self._api_client.set_client_mute(client_name, mute)
 
 
-class OdioStandaloneClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
     """Representation of a standalone audio client using MappedEntityMixin."""
 
     _attr_has_entity_name = True
