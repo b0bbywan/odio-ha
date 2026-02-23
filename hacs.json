@@ -1,8 +1,8 @@
 {
-  "name": "Odio Audio",
+  "name": "Odio Remote",
   "content_in_root": false,
   "filename": "odio_remote",
-  "country": ["FR"],
+  "country": ["FR", "UK", "US"],
   "render_readme": true,
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2026.1.0"
 }
