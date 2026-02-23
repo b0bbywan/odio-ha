@@ -24,7 +24,11 @@ from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER, Platform.BUTTON]
+PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
+    Platform.MEDIA_PLAYER,
+    Platform.SWITCH,
+]
 
 
 @dataclass

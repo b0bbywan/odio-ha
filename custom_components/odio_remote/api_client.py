@@ -156,17 +156,21 @@ class OdioApiClient:
         scope: str,
         unit: str,
     ) -> None:
-        """Control systemd service (enable/disable/restart)."""
+        """Control systemd service (enable/disable/restart/start/stop)."""
         from .const import (
-            ENDPOINT_SERVICE_ENABLE,
             ENDPOINT_SERVICE_DISABLE,
+            ENDPOINT_SERVICE_ENABLE,
             ENDPOINT_SERVICE_RESTART,
+            ENDPOINT_SERVICE_START,
+            ENDPOINT_SERVICE_STOP,
         )
 
         endpoint_map = {
             "enable": ENDPOINT_SERVICE_ENABLE,
             "disable": ENDPOINT_SERVICE_DISABLE,
             "restart": ENDPOINT_SERVICE_RESTART,
+            "start": ENDPOINT_SERVICE_START,
+            "stop": ENDPOINT_SERVICE_STOP,
         }
 
         endpoint_template = endpoint_map.get(action)
