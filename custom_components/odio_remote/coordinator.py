@@ -32,6 +32,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         config_entry: ConfigEntry,
         api: OdioApiClient,
         scan_interval: int,
+        connectivity_coordinator: "OdioConnectivityCoordinator",
     ) -> None:
         """Initialize audio coordinator."""
         super().__init__(
@@ -44,9 +45,12 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         self.api = api
         self._failure_count = 0
         self._scan_interval = scan_interval
+        self._connectivity = connectivity_coordinator
 
     async def _async_update_data(self) -> dict[str, list]:
         """Fetch audio clients from API."""
+        if not self._connectivity.last_update_success:
+            raise UpdateFailed("Skipping audio update: API unreachable")
         try:
             clients = await self.api.get_clients()
             self._failure_count = 0
@@ -70,6 +74,39 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
 
+class OdioConnectivityCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for connectivity heartbeat (always created, backend-independent)."""
+
+    config_entry: ConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        api: OdioApiClient,
+        scan_interval: int,
+    ) -> None:
+        """Initialize connectivity coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_connectivity",
+            update_interval=timedelta(seconds=scan_interval),
+            config_entry=config_entry,
+        )
+        self.api = api
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Ping the API server to verify connectivity."""
+        try:
+            return await self.api.get_server_info()
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            raise UpdateFailed(f"Cannot reach Odio API: {err}") from err
+        except Exception as err:
+            _LOGGER.exception("Unexpected error during connectivity check")
+            raise UpdateFailed(f"Unexpected error: {err}") from err
+
+
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for systemd service data (slow polling)."""
 
@@ -81,6 +118,7 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config_entry: ConfigEntry,
         api: OdioApiClient,
         scan_interval: int,
+        connectivity_coordinator: OdioConnectivityCoordinator,
     ) -> None:
         """Initialize service coordinator."""
         super().__init__(
@@ -93,9 +131,12 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         self._failure_count = 0
         self._scan_interval = scan_interval
+        self._connectivity = connectivity_coordinator
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch systemd services from API."""
+        if not self._connectivity.last_update_success:
+            raise UpdateFailed("Skipping services update: API unreachable")
         try:
             services = await self.api.get_services()
             self._failure_count = 0

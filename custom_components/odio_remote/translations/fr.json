@@ -46,6 +46,9 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "connection_status": {"name": "Connexion"}
+    },
     "button": {
       "power_off": {"name": "Éteindre"},
       "reboot": {"name": "Redémarrer"}
