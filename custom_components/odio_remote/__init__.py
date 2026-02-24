@@ -126,8 +126,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     if backends.get("power"):
         try:
             power_capabilities = await api.get_power_capabilities()
+            if power_capabilities != entry.data.get("power_capabilities"):
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, "power_capabilities": power_capabilities}
+                )
         except Exception:
-            _LOGGER.warning("Failed to fetch power capabilities, power buttons disabled")
+            power_capabilities = entry.data.get("power_capabilities", {})
+            _LOGGER.warning(
+                "Failed to fetch power capabilities — using cached value: %s",
+                power_capabilities,
+            )
 
     # Build DeviceInfo once — shared by all platforms so every entity stays
     # consistent regardless of which platform registers first.
