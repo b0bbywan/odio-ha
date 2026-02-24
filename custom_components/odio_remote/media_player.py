@@ -124,6 +124,53 @@ async def async_setup_entry(
 
     async_add_entities(entities)
 
+    # Set up listener to create service entities when the coordinator first gets
+    # data after a startup where the API was unreachable.
+    if service_coordinator is not None:
+        known_service_keys = {
+            f"{e._service_info['scope']}/{e._service_info['name']}"
+            for e in entities
+            if isinstance(e, OdioServiceMediaPlayer)
+        }
+
+        @callback
+        def _async_check_new_services() -> None:
+            """Create service entities once coordinator data becomes available."""
+            if not service_coordinator.data:
+                return
+
+            new_entities: list[MediaPlayerEntity] = []
+            for service in service_coordinator.data.get("services", []):
+                mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+                if (
+                    service.get("exists")
+                    and mapping_key in service_mappings
+                    and mapping_key not in known_service_keys
+                ):
+                    new_entities.append(
+                        OdioServiceMediaPlayer(
+                            audio_coordinator,
+                            service_coordinator,
+                            api_client,
+                            config_entry.entry_id,
+                            service,
+                            server_hostname,
+                            device_connections,
+                        )
+                    )
+                    known_service_keys.add(mapping_key)
+
+            if new_entities:
+                _LOGGER.info(
+                    "Dynamically adding %d service entities after late API connection",
+                    len(new_entities),
+                )
+                async_add_entities(new_entities)
+
+        config_entry.async_on_unload(
+            service_coordinator.async_add_listener(_async_check_new_services)
+        )
+
     # Set up listener to detect new remote clients (only when audio coordinator exists)
     if audio_coordinator is not None:
         # Track known standalone clients
