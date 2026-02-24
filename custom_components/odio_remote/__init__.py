@@ -11,10 +11,12 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
+from homeassistant.helpers.entity import DeviceInfo
 
 from .api_client import OdioApiClient
 from .const import (
     CONF_API_URL,
+    DOMAIN,
     CONF_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
     CONF_SERVICE_SCAN_INTERVAL,
@@ -40,8 +42,7 @@ class OdioRemoteRuntimeData:
     """Runtime data for the Odio Remote integration."""
 
     api: OdioApiClient
-    server_info: dict[str, Any]
-    device_connections: set[tuple[str, str]]
+    device_info: DeviceInfo
     connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
@@ -120,6 +121,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         except Exception:
             _LOGGER.warning("Failed to fetch power capabilities, power buttons disabled")
 
+    # Build DeviceInfo once — shared by all platforms so every entity stays
+    # consistent regardless of which platform registers first.
+    hostname = server_info.get("hostname", entry.entry_id)
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        connections=device_connections,
+        name=f"Odio Remote ({hostname})",
+        manufacturer="Odio",
+        sw_version=server_info.get("api_version"),
+        hw_version=server_info.get("os_version"),
+        configuration_url=f"{api_url}/ui",
+    )
+
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
         audio_coordinator = OdioAudioCoordinator(
@@ -138,8 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
-        server_info=server_info,
-        device_connections=device_connections,
+        device_info=device_info,
         connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,

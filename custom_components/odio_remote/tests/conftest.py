@@ -1,4 +1,6 @@
 """Shared test fixtures for Odio Remote tests."""
+from homeassistant.helpers.entity import DeviceInfo
+from custom_components.odio_remote.const import DOMAIN
 
 # Standard mock server info response (from GET /server)
 MOCK_SERVER_INFO = {
@@ -134,6 +136,15 @@ MOCK_CLIENTS = [
         },
     },
 ]
+
+MOCK_DEVICE_INFO = DeviceInfo(
+    identifiers={(DOMAIN, "test_entry_id")},
+    name="Odio Remote (htpc)",
+    manufacturer="Odio",
+    sw_version="v0.6.0-rc.1-main",
+    hw_version="Debian GNU/Linux 13 (trixie)",
+    configuration_url="http://localhost:8018/ui",
+)
 
 MOCK_REMOTE_CLIENTS = [
     {
