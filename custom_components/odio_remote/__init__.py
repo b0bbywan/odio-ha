@@ -101,18 +101,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
-    # Resolve MAC from ARP cache (only populated when connectivity refresh succeeded)
+    # Resolve MAC via device_tracker entities; fall back to cached value.
     host = urlparse(api_url).hostname
     mac = await async_get_mac_from_ip(hass, host) if host else None
     if mac:
         _LOGGER.debug("Resolved MAC for %s: %s", host, mac)
-        device_connections: set[tuple[str, str]] = {(CONNECTION_NETWORK_MAC, mac)}
+        if mac != entry.data.get("mac"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "mac": mac}
+            )
     else:
-        _LOGGER.warning(
-            "MAC address not resolved for %s — 'Connected via' link unavailable", host
-        )
-        device_connections = set()
-    _LOGGER.debug("Connectivity coordinator created")
+        mac = entry.data.get("mac")
+        if mac:
+            _LOGGER.debug("Using cached MAC for %s: %s", host, mac)
+        else:
+            _LOGGER.warning(
+                "MAC address not resolved for %s — 'Connected via' link unavailable", host
+            )
+    device_connections: set[tuple[str, str]] = (
+        {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
+    )
 
     power_capabilities: dict[str, bool] = {}
     if backends.get("power"):
