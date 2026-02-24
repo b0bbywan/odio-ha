@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -15,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
-from .const import DOMAIN
 from .coordinator import OdioConnectivityCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,8 +30,7 @@ async def async_setup_entry(
         ConnectionStatusSensor(
             runtime_data.connectivity_coordinator,
             entry.entry_id,
-            runtime_data.server_info,
-            runtime_data.device_connections,
+            runtime_data.device_info,
         )
     ])
 
@@ -50,19 +47,11 @@ class ConnectionStatusSensor(CoordinatorEntity[OdioConnectivityCoordinator], Bin
         self,
         coordinator: OdioConnectivityCoordinator,
         entry_id: str,
-        server_info: dict[str, Any],
-        device_connections: set[tuple[str, str]] | None = None,
+        device_info: DeviceInfo,
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry_id}_connectivity"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            connections=device_connections or set(),
-            name=f"Odio Remote ({server_info.get('hostname', entry_id)})",
-            manufacturer="Odio",
-            sw_version=server_info.get("api_version"),
-            hw_version=server_info.get("os_version"),
-        )
+        self._attr_device_info = device_info
 
     @property
     def is_on(self) -> bool:

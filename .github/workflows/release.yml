@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.workflow_run.head_sha }}
+        fetch-depth: 0
+
+    - name: Detect version tag
+      id: tag
+      run: |
+        TAG=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$' | head -1)
+        if [ -z "$TAG" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+        fi
+
+    - name: Build release notes
+      if: steps.tag.outputs.skip == 'false'
+      id: notes
+      run: |
+        TAG="${{ steps.tag.outputs.tag }}"
+
+        # Last stable tag: x.y.z only, excluding current tag
+        LAST_STABLE=$(git tag --sort=-version:refname \
+          | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+          | grep -v "^${TAG}$" \
+          | head -1)
+
+        RANGE="${LAST_STABLE:+${LAST_STABLE}..}HEAD"
+        NOTES=$(git log "$RANGE" --pretty=format:"- %s" --no-merges)
+
+        {
+          echo "content<<EOF"
+          echo "$NOTES"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Create GitHub release
+      if: steps.tag.outputs.skip == 'false'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        prerelease: ${{ steps.tag.outputs.prerelease }}
+        body: ${{ steps.notes.outputs.content }}

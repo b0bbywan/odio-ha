@@ -11,10 +11,12 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
+from homeassistant.helpers.entity import DeviceInfo
 
 from .api_client import OdioApiClient
 from .const import (
     CONF_API_URL,
+    DOMAIN,
     CONF_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
     CONF_SERVICE_SCAN_INTERVAL,
@@ -40,8 +42,7 @@ class OdioRemoteRuntimeData:
     """Runtime data for the Odio Remote integration."""
 
     api: OdioApiClient
-    server_info: dict[str, Any]
-    device_connections: set[tuple[str, str]]
+    device_info: DeviceInfo
     connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
@@ -74,44 +75,87 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    # First refresh raises ConfigEntryNotReady automatically if the API is unreachable,
-    # which tells HA to retry setup with backoff rather than marking the entry as errored.
     connectivity_coordinator = OdioConnectivityCoordinator(
         hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
     )
-    await connectivity_coordinator.async_config_entry_first_refresh()
+    # Use async_refresh (not async_config_entry_first_refresh) so setup always
+    # completes even when the API is down.  The connectivity binary sensor can
+    # then report "disconnected" instead of the whole device disappearing.
+    await connectivity_coordinator.async_refresh()
 
-    # server_info comes from the coordinator — no second network call needed.
-    server_info: dict[str, Any] = connectivity_coordinator.data or {}
+    if connectivity_coordinator.last_update_success:
+        server_info: dict[str, Any] = connectivity_coordinator.data or {}
+        # Persist server_info so we can use it on the next startup if the API
+        # is unreachable at that point.
+        if server_info != entry.data.get("server_info"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "server_info": server_info}
+            )
+    else:
+        # API is down — restore last known server_info from config entry data.
+        server_info = entry.data.get("server_info", {})
+        _LOGGER.warning(
+            "API unreachable at startup — using cached server_info (backends: %s)",
+            server_info.get("backends", {}),
+        )
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
-    # Resolve MAC from ARP cache (first_refresh above guarantees a fresh ARP entry)
+    # Resolve MAC via device_tracker entities; fall back to cached value.
     host = urlparse(api_url).hostname
     mac = await async_get_mac_from_ip(hass, host) if host else None
     if mac:
         _LOGGER.debug("Resolved MAC for %s: %s", host, mac)
-        device_connections: set[tuple[str, str]] = {(CONNECTION_NETWORK_MAC, mac)}
+        if mac != entry.data.get("mac"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "mac": mac}
+            )
     else:
-        _LOGGER.warning(
-            "MAC address not resolved for %s — 'Connected via' link unavailable", host
-        )
-        device_connections = set()
-    _LOGGER.debug("Connectivity coordinator created")
+        mac = entry.data.get("mac")
+        if mac:
+            _LOGGER.debug("Using cached MAC for %s: %s", host, mac)
+        else:
+            _LOGGER.warning(
+                "MAC address not resolved for %s — 'Connected via' link unavailable", host
+            )
+    device_connections: set[tuple[str, str]] = (
+        {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
+    )
 
     power_capabilities: dict[str, bool] = {}
     if backends.get("power"):
         try:
             power_capabilities = await api.get_power_capabilities()
+            if power_capabilities != entry.data.get("power_capabilities"):
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, "power_capabilities": power_capabilities}
+                )
         except Exception:
-            _LOGGER.warning("Failed to fetch power capabilities, power buttons disabled")
+            power_capabilities = entry.data.get("power_capabilities", {})
+            _LOGGER.warning(
+                "Failed to fetch power capabilities — using cached value: %s",
+                power_capabilities,
+            )
+
+    # Build DeviceInfo once — shared by all platforms so every entity stays
+    # consistent regardless of which platform registers first.
+    hostname = server_info.get("hostname", entry.entry_id)
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        connections=device_connections,
+        name=f"Odio Remote ({hostname})",
+        manufacturer="Odio",
+        sw_version=server_info.get("api_version"),
+        hw_version=server_info.get("os_version"),
+        configuration_url=f"{api_url}/ui",
+    )
 
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
         audio_coordinator = OdioAudioCoordinator(
             hass, entry, api, scan_interval, connectivity_coordinator
         )
-        await audio_coordinator.async_config_entry_first_refresh()
+        await audio_coordinator.async_refresh()
         _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
 
     service_coordinator: OdioServiceCoordinator | None = None
@@ -119,13 +163,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         service_coordinator = OdioServiceCoordinator(
             hass, entry, api, service_scan_interval, connectivity_coordinator
         )
-        await service_coordinator.async_config_entry_first_refresh()
+        await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
-        server_info=server_info,
-        device_connections=device_connections,
+        device_info=device_info,
         connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,

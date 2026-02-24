@@ -3,20 +3,40 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
-from .const import DOMAIN
 from .coordinator import OdioServiceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Platform context
+# =============================================================================
+
+
+@dataclass
+class _SwitchContext:
+    """Shared setup state for switch platform helpers."""
+
+    entry_id: str
+    service_coordinator: OdioServiceCoordinator
+    api: OdioApiClient
+    device_info: DeviceInfo
+
+
+# =============================================================================
+# Platform setup
+# =============================================================================
 
 
 async def async_setup_entry(
@@ -25,31 +45,68 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Odio Remote switch entities."""
-    runtime_data = entry.runtime_data
-    service_coordinator = runtime_data.service_coordinator
+    rd = entry.runtime_data
+    service_coordinator = rd.service_coordinator
 
-    if service_coordinator is None or not service_coordinator.data:
+    if service_coordinator is None:
         return
 
-    server_hostname = runtime_data.server_info.get("hostname", entry.entry_id)
-    device_connections = runtime_data.device_connections
-    services = service_coordinator.data.get("services", [])
+    ctx = _SwitchContext(
+        entry_id=entry.entry_id,
+        service_coordinator=service_coordinator,
+        api=rd.api,
+        device_info=rd.device_info,
+    )
 
-    entities = [
-        OdioServiceSwitch(
-            service_coordinator,
-            runtime_data.api,
-            entry.entry_id,
-            svc,
-            server_hostname,
-            device_connections,
-        )
-        for svc in services
-        if svc.get("exists") and svc.get("scope") == "user"
-    ]
+    entities = []
+    if service_coordinator.data:
+        entities = [
+            OdioServiceSwitch(ctx, svc)
+            for svc in service_coordinator.data.get("services", [])
+            if svc.get("exists") and svc.get("scope") == "user"
+        ]
+        _LOGGER.debug("Creating %d service switch entities", len(entities))
 
-    _LOGGER.debug("Creating %d service switch entities", len(entities))
     async_add_entities(entities)
+
+    # -------------------------------------------------------------------------
+    # Dynamic switch creation
+    # Fires when service_coordinator first gets data after an API-down startup.
+    # -------------------------------------------------------------------------
+    known_switch_keys = {
+        f"{e._service_info['scope']}/{e._service_info['name']}"
+        for e in entities
+    }
+
+    @callback
+    def _async_check_new_switches() -> None:
+        if not service_coordinator.data:
+            return
+        new_entities = []
+        for svc in service_coordinator.data.get("services", []):
+            key = f"{svc.get('scope', 'user')}/{svc['name']}"
+            if (
+                svc.get("exists")
+                and svc.get("scope") == "user"
+                and key not in known_switch_keys
+            ):
+                new_entities.append(OdioServiceSwitch(ctx, svc))
+                known_switch_keys.add(key)
+        if new_entities:
+            _LOGGER.info(
+                "Dynamically adding %d switch entities after late API connection",
+                len(new_entities),
+            )
+            async_add_entities(new_entities)
+
+    entry.async_on_unload(
+        service_coordinator.async_add_listener(_async_check_new_switches)
+    )
+
+
+# =============================================================================
+# Entity
+# =============================================================================
 
 
 class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity):
@@ -57,30 +114,17 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
 
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        coordinator: OdioServiceCoordinator,
-        api: OdioApiClient,
-        entry_id: str,
-        service_info: dict[str, Any],
-        server_hostname: str,
-        device_connections: set[tuple[str, str]] | None = None,
-    ) -> None:
-        super().__init__(coordinator)
-        self._api = api
+    def __init__(self, ctx: _SwitchContext, service_info: dict[str, Any]) -> None:
+        super().__init__(ctx.service_coordinator)
+        self._api = ctx.api
         self._service_info = service_info
 
         service_name: str = service_info["name"]
         scope: str = service_info["scope"]
 
-        self._attr_unique_id = f"{entry_id}_switch_{scope}_{service_name}"
+        self._attr_unique_id = f"{ctx.entry_id}_switch_{scope}_{service_name}"
         self._attr_name = service_name.removesuffix(".service")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            connections=device_connections or set(),
-            name=f"Odio Remote ({server_hostname})",
-            manufacturer="Odio",
-        )
+        self._attr_device_info = ctx.device_info
 
     @property
     def is_on(self) -> bool:
