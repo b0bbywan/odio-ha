@@ -176,6 +176,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             )
         )
 
+    # Re-fetch coordinator data on SSE reconnect to avoid stale state.
+    def _on_sse_reconnect() -> None:
+        if not event_stream.sse_connected:
+            return
+        if audio_coordinator is not None:
+            hass.async_create_task(audio_coordinator.async_refresh())
+        if service_coordinator is not None:
+            hass.async_create_task(service_coordinator.async_refresh())
+
+    entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
+
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         device_info=device_info,
