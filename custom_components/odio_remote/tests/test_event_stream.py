@@ -10,7 +10,6 @@ from custom_components.odio_remote.api_client import OdioApiClient, SseEvent
 from custom_components.odio_remote.event_stream import OdioEventStreamManager
 
 
-
 def _make_sse_bytes(*events: tuple[str, object]) -> bytes:
     """Build raw SSE byte stream from (event_type, data) tuples."""
     lines = []

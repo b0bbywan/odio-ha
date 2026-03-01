@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import aiohttp
 
@@ -48,11 +48,32 @@ class OdioEventStreamManager:
         self._service_coordinator = service_coordinator
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
+        self._sse_connected = False
+        self._listeners: list[Callable[[], None]] = []
 
     @property
     def connected(self) -> bool:
         """Return True if the SSE stream task is running."""
         return self._task is not None and not self._task.done()
+
+    @property
+    def sse_connected(self) -> bool:
+        """Return True if the SSE connection is currently established."""
+        return self._sse_connected
+
+    def async_add_listener(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a connectivity listener. Returns an unsubscribe function."""
+        self._listeners.append(callback)
+
+        def remove() -> None:
+            self._listeners.remove(callback)
+        return remove
+
+    def _set_sse_connected(self, value: bool) -> None:
+        if self._sse_connected != value:
+            self._sse_connected = value
+            for callback in self._listeners:
+                callback()
 
     @property
     def is_api_reachable(self) -> bool:
@@ -116,6 +137,7 @@ class OdioEventStreamManager:
                     "Unexpected SSE error, reconnecting in %ds", backoff
                 )
 
+            self._set_sse_connected(False)
             # Wait before reconnecting (interruptible by stop)
             try:
                 await asyncio.wait_for(
@@ -169,6 +191,7 @@ class OdioEventStreamManager:
         """Handle server.info control events (connected, love, bye)."""
         if event.data == "connected":
             _LOGGER.info("SSE stream connected")
+            self._set_sse_connected(True)
         elif event.data == "love":
             _LOGGER.debug("SSE keepalive received")
         elif event.data == "bye":
