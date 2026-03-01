@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
-from .coordinator import OdioConnectivityCoordinator
+from .event_stream import OdioEventStreamManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,32 +26,48 @@ async def async_setup_entry(
     api = entry.runtime_data.api
     entry_id = entry.entry_id
     device_info = entry.runtime_data.device_info
-    connectivity = entry.runtime_data.connectivity_coordinator
+    event_stream = entry.runtime_data.event_stream
 
     entities: list[ButtonEntity] = []
     if caps.get("power_off"):
-        entities.append(OdioPowerOffButton(connectivity, api, entry_id, device_info))
+        entities.append(OdioPowerOffButton(event_stream, api, entry_id, device_info))
     if caps.get("reboot"):
-        entities.append(OdioRebootButton(connectivity, api, entry_id, device_info))
+        entities.append(OdioRebootButton(event_stream, api, entry_id, device_info))
 
     async_add_entities(entities)
 
 
-class _OdioPowerButtonBase(CoordinatorEntity[OdioConnectivityCoordinator], ButtonEntity):
+class _OdioPowerButtonBase(ButtonEntity):
     """Base class for Odio power buttons."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: OdioConnectivityCoordinator,
+        event_stream: OdioEventStreamManager,
         api: OdioApiClient,
         entry_id: str,
         device_info: DeviceInfo,
     ) -> None:
-        super().__init__(coordinator)
+        self._event_stream = event_stream
         self._api = api
         self._attr_device_info = device_info
+        self._unsub: Callable[[], None] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        self._unsub = self._event_stream.async_add_listener(
+            self.async_write_ha_state
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub is not None:
+            self._unsub()
+            self._unsub = None
+
+    @property
+    def available(self) -> bool:
+        """Return True when the SSE stream is connected."""
+        return self._event_stream.sse_connected
 
 
 class OdioPowerOffButton(_OdioPowerButtonBase):
@@ -62,12 +78,12 @@ class OdioPowerOffButton(_OdioPowerButtonBase):
 
     def __init__(
         self,
-        coordinator: OdioConnectivityCoordinator,
+        event_stream: OdioEventStreamManager,
         api: OdioApiClient,
         entry_id: str,
         device_info: DeviceInfo,
     ) -> None:
-        super().__init__(coordinator, api, entry_id, device_info)
+        super().__init__(event_stream, api, entry_id, device_info)
         self._attr_unique_id = f"{entry_id}_power_off"
 
     async def async_press(self) -> None:
@@ -83,12 +99,12 @@ class OdioRebootButton(_OdioPowerButtonBase):
 
     def __init__(
         self,
-        coordinator: OdioConnectivityCoordinator,
+        event_stream: OdioEventStreamManager,
         api: OdioApiClient,
         entry_id: str,
         device_info: DeviceInfo,
     ) -> None:
-        super().__init__(coordinator, api, entry_id, device_info)
+        super().__init__(event_stream, api, entry_id, device_info)
         self._attr_unique_id = f"{entry_id}_reboot"
 
     async def async_press(self) -> None:

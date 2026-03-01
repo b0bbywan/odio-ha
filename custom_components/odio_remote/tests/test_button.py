@@ -17,10 +17,10 @@ from .conftest import MOCK_DEVICE_INFO
 ENTRY_ID = "test_entry_id"
 
 
-def _make_connectivity_coordinator(last_update_success=True):
-    coord = MagicMock()
-    coord.last_update_success = last_update_success
-    return coord
+def _make_event_stream(sse_connected=True):
+    stream = MagicMock()
+    stream.sse_connected = sse_connected
+    return stream
 
 
 @dataclass
@@ -28,7 +28,7 @@ class MockPowerRuntimeData:
     api: object
     device_info: object
     power_capabilities: dict
-    connectivity_coordinator: object
+    event_stream: object
 
 
 class MockConfigEntry:
@@ -38,7 +38,7 @@ class MockConfigEntry:
             api=api or MagicMock(),
             device_info=MOCK_DEVICE_INFO,
             power_capabilities=caps,
-            connectivity_coordinator=_make_connectivity_coordinator(),
+            event_stream=_make_event_stream(),
         )
 
 
@@ -80,9 +80,9 @@ class TestButtonSetup:
 class TestOdioPowerOffButton:
     """Tests for OdioPowerOffButton."""
 
-    def _make_button(self, api=None):
+    def _make_button(self, api=None, sse_connected=True):
         return OdioPowerOffButton(
-            _make_connectivity_coordinator(), api or MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO
+            _make_event_stream(sse_connected), api or MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO
         )
 
     @pytest.mark.asyncio
@@ -105,26 +105,18 @@ class TestOdioPowerOffButton:
         assert self._make_button().device_class is None
 
     def test_available_when_connectivity_up(self):
-        btn = OdioPowerOffButton(
-            _make_connectivity_coordinator(last_update_success=True),
-            MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO,
-        )
-        assert btn.available is True
+        assert self._make_button(sse_connected=True).available is True
 
     def test_unavailable_when_connectivity_down(self):
-        btn = OdioPowerOffButton(
-            _make_connectivity_coordinator(last_update_success=False),
-            MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO,
-        )
-        assert btn.available is False
+        assert self._make_button(sse_connected=False).available is False
 
 
 class TestOdioRebootButton:
     """Tests for OdioRebootButton."""
 
-    def _make_button(self, api=None):
+    def _make_button(self, api=None, sse_connected=True):
         return OdioRebootButton(
-            _make_connectivity_coordinator(), api or MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO
+            _make_event_stream(sse_connected), api or MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO
         )
 
     @pytest.mark.asyncio
@@ -147,15 +139,7 @@ class TestOdioRebootButton:
         assert self._make_button().translation_key == "reboot"
 
     def test_available_when_connectivity_up(self):
-        btn = OdioRebootButton(
-            _make_connectivity_coordinator(last_update_success=True),
-            MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO,
-        )
-        assert btn.available is True
+        assert self._make_button(sse_connected=True).available is True
 
     def test_unavailable_when_connectivity_down(self):
-        btn = OdioRebootButton(
-            _make_connectivity_coordinator(last_update_success=False),
-            MagicMock(), ENTRY_ID, MOCK_DEVICE_INFO,
-        )
-        assert btn.available is False
+        assert self._make_button(sse_connected=False).available is False
