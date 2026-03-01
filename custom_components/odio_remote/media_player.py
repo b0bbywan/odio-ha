@@ -366,20 +366,14 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         """Return the key used in service_mappings."""
         return f"{self._service_info['scope']}/{self._service_info['name']}"
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        super()._handle_coordinator_update()
+    async def async_added_to_hass(self) -> None:
+        """Register listener on the service coordinator."""
+        await super().async_added_to_hass()
         self.async_on_remove(
             self._service_coordinator.async_add_listener(
-                self._handle_service_coordinator_update
+                self.async_write_ha_state
             )
         )
-
-    @callback
-    def _handle_service_coordinator_update(self) -> None:
-        """Handle updated data from the service coordinator."""
-        self.async_write_ha_state()
 
     @property
     def state(self) -> MediaPlayerState:
