@@ -59,18 +59,6 @@ class OdioEventStreamManager:
         """Return True if the SSE connection is currently established."""
         return self._sse_connected
 
-    @property
-    def is_api_reachable(self) -> bool:
-        """Return True if the API is believed to be reachable.
-
-        Returns True during startup (before the stream is started) so that
-        coordinators can perform their initial fetch unconditionally.
-        Once the stream has started, reflects the live connection state.
-        """
-        if self._task is None:
-            return True
-        return self.connected
-
     def async_add_listener(self, callback: Callable[[], None]) -> Callable[[], None]:
         """Register a connectivity state listener. Returns an unsubscribe function."""
         self._listeners.append(callback)
