@@ -169,7 +169,6 @@ class OdioEventStreamManager:
 
         async for event in self._api.listen_events(
             backends=self._backends,
-            exclude=["player.position"],
             keepalive_interval=self._keepalive_interval,
             keepalive_timeout=self._keepalive_interval + SSE_KEEPALIVE_BUFFER,
         ):
