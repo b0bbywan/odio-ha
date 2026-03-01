@@ -32,6 +32,17 @@ ENDPOINT_POWER_OFF: Final = "/power/power_off"
 ENDPOINT_POWER_REBOOT: Final = "/power/reboot"
 ENDPOINT_SERVICE_START: Final = "/services/{scope}/{unit}/start"
 ENDPOINT_SERVICE_STOP: Final = "/services/{scope}/{unit}/stop"
+ENDPOINT_EVENTS: Final = "/events"
+
+# SSE event types
+SSE_EVENT_AUDIO_UPDATED: Final = "audio.updated"
+SSE_EVENT_SERVICE_UPDATED: Final = "service.updated"
+SSE_EVENT_SERVER_INFO: Final = "server.info"
+
+# SSE reconnection
+SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds
+SSE_RECONNECT_MAX_INTERVAL: Final = 300  # 5 minutes max backoff
+SSE_KEEPALIVE_TIMEOUT: Final = 45  # 30s server keepalive + 15s buffer
 
 # Attributes
 ATTR_CLIENT_ID: Final = "client_id"

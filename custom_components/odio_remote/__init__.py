@@ -14,6 +14,7 @@ from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, Device
 from homeassistant.helpers.entity import DeviceInfo
 
 from .api_client import OdioApiClient
+from .event_stream import OdioEventStreamManager
 from .const import (
     CONF_API_URL,
     DOMAIN,
@@ -46,6 +47,7 @@ class OdioRemoteRuntimeData:
     connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
+    event_stream: OdioEventStreamManager
     service_mappings: dict[str, str]
     power_capabilities: dict[str, bool]
 
@@ -166,18 +168,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
+    event_stream = OdioEventStreamManager(
+        hass=hass,
+        api=api,
+        audio_coordinator=audio_coordinator,
+        service_coordinator=service_coordinator,
+    )
+
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         device_info=device_info,
         connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
+        event_stream=event_stream,
         service_mappings=service_mappings,
         power_capabilities=power_capabilities,
     )
 
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    event_stream.start()
 
     _LOGGER.info("Odio Remote integration setup complete")
     return True
@@ -187,6 +199,7 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: OdioConfigEntry
 ) -> bool:
     """Unload a config entry."""
+    await entry.runtime_data.event_stream.stop()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
