@@ -54,6 +54,18 @@ class OdioEventStreamManager:
         """Return True if the SSE stream task is running."""
         return self._task is not None and not self._task.done()
 
+    @property
+    def is_api_reachable(self) -> bool:
+        """Return True if the API is believed to be reachable.
+
+        Returns True during startup (before the stream is started) so that
+        coordinators can perform their initial fetch unconditionally.
+        Once the stream has started, reflects the live connection state.
+        """
+        if self._task is None:
+            return True
+        return self.connected
+
     def start(self) -> None:
         """Start the event stream in a background task."""
         if self._task is not None and not self._task.done():

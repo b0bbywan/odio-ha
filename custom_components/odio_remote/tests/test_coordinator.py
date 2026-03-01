@@ -9,11 +9,10 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.odio_remote.coordinator import (
     OdioAudioCoordinator,
-    OdioConnectivityCoordinator,
     OdioServiceCoordinator,
 )
 
-from .conftest import MOCK_CLIENTS, MOCK_SERVER_INFO, MOCK_SERVICES
+from .conftest import MOCK_CLIENTS, MOCK_SERVICES
 
 
 # ---------------------------------------------------------------------------
@@ -26,38 +25,29 @@ def _make_hass():
     return hass
 
 
-def _make_connectivity(last_update_success=True):
-    coord = MagicMock(spec=OdioConnectivityCoordinator)
-    coord.last_update_success = last_update_success
-    return coord
+def _make_event_stream(is_api_reachable=True):
+    stream = MagicMock()
+    stream.is_api_reachable = is_api_reachable
+    return stream
 
 
-def _make_audio_coordinator(api, connectivity=None, scan_interval=5):
+def _make_audio_coordinator(api, event_stream=None, scan_interval=5):
     return OdioAudioCoordinator(
         _make_hass(),
         MagicMock(),
         api,
         scan_interval,
-        connectivity or _make_connectivity(),
+        event_stream or _make_event_stream(),
     )
 
 
-def _make_service_coordinator(api, connectivity=None, scan_interval=60):
+def _make_service_coordinator(api, event_stream=None, scan_interval=60):
     return OdioServiceCoordinator(
         _make_hass(),
         MagicMock(),
         api,
         scan_interval,
-        connectivity or _make_connectivity(),
-    )
-
-
-def _make_connectivity_coordinator(api):
-    return OdioConnectivityCoordinator(
-        _make_hass(),
-        MagicMock(),
-        api,
-        30,
+        event_stream or _make_event_stream(),
     )
 
 
@@ -69,11 +59,10 @@ class TestOdioAudioCoordinator:
 
     @pytest.mark.asyncio
     async def test_skips_update_when_connectivity_down(self):
-        """No API call is made when the connectivity coordinator reports failure."""
+        """No API call is made when the event stream reports API unreachable."""
         api = MagicMock()
         api.get_clients = AsyncMock()
-        connectivity = _make_connectivity(last_update_success=False)
-        coord = _make_audio_coordinator(api, connectivity)
+        coord = _make_audio_coordinator(api, _make_event_stream(is_api_reachable=False))
 
         with pytest.raises(UpdateFailed, match="unreachable"):
             await coord._async_update_data()
@@ -160,11 +149,10 @@ class TestOdioServiceCoordinator:
 
     @pytest.mark.asyncio
     async def test_skips_update_when_connectivity_down(self):
-        """No API call is made when the connectivity coordinator reports failure."""
+        """No API call is made when the event stream reports API unreachable."""
         api = MagicMock()
         api.get_services = AsyncMock()
-        connectivity = _make_connectivity(last_update_success=False)
-        coord = _make_service_coordinator(api, connectivity)
+        coord = _make_service_coordinator(api, _make_event_stream(is_api_reachable=False))
 
         with pytest.raises(UpdateFailed, match="unreachable"):
             await coord._async_update_data()
@@ -223,43 +211,3 @@ class TestOdioServiceCoordinator:
 
         await coord._async_update_data()
         assert coord._failure_count == 0
-
-
-# ---------------------------------------------------------------------------
-# OdioConnectivityCoordinator
-# ---------------------------------------------------------------------------
-
-class TestOdioConnectivityCoordinator:
-
-    @pytest.mark.asyncio
-    async def test_returns_server_info_on_success(self):
-        """Returns server info dict when the API responds."""
-        api = MagicMock()
-        api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
-        coord = _make_connectivity_coordinator(api)
-
-        result = await coord._async_update_data()
-
-        assert result == MOCK_SERVER_INFO
-
-    @pytest.mark.asyncio
-    async def test_raises_update_failed_on_connection_error(self):
-        """ClientConnectorError is wrapped in UpdateFailed."""
-        api = MagicMock()
-        api.get_server_info = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
-        )
-        coord = _make_connectivity_coordinator(api)
-
-        with pytest.raises(UpdateFailed, match="Cannot reach"):
-            await coord._async_update_data()
-
-    @pytest.mark.asyncio
-    async def test_raises_update_failed_on_timeout(self):
-        """TimeoutError is wrapped in UpdateFailed."""
-        api = MagicMock()
-        api.get_server_info = AsyncMock(side_effect=asyncio.TimeoutError())
-        coord = _make_connectivity_coordinator(api)
-
-        with pytest.raises(UpdateFailed, match="Cannot reach"):
-            await coord._async_update_data()

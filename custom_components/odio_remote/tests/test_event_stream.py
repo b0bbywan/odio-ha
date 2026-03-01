@@ -2,15 +2,13 @@
 import asyncio
 import json
 
-import aiohttp
 import pytest
 from aiohttp import ClientSession
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from custom_components.odio_remote.api_client import OdioApiClient, SseEvent
 from custom_components.odio_remote.event_stream import OdioEventStreamManager
 
-from .conftest import MOCK_CLIENTS, MOCK_SERVICES
 
 
 def _make_sse_bytes(*events: tuple[str, object]) -> bytes:

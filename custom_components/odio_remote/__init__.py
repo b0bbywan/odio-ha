@@ -21,11 +21,10 @@ from .const import (
     CONF_SCAN_INTERVAL,
     CONF_SERVICE_MAPPINGS,
     CONF_SERVICE_SCAN_INTERVAL,
-    DEFAULT_CONNECTIVITY_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
 )
-from .coordinator import OdioAudioCoordinator, OdioConnectivityCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .helpers import async_get_mac_from_ip
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ class OdioRemoteRuntimeData:
 
     api: OdioApiClient
     device_info: DeviceInfo
-    connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
     event_stream: OdioEventStreamManager
@@ -77,24 +75,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    connectivity_coordinator = OdioConnectivityCoordinator(
-        hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
-    )
-    # Use async_refresh (not async_config_entry_first_refresh) so setup always
-    # completes even when the API is down.  The connectivity binary sensor can
-    # then report "disconnected" instead of the whole device disappearing.
-    await connectivity_coordinator.async_refresh()
-
-    if connectivity_coordinator.last_update_success:
-        server_info: dict[str, Any] = connectivity_coordinator.data or {}
-        # Persist server_info so we can use it on the next startup if the API
-        # is unreachable at that point.
+    # Fetch server_info once at startup — it is static and never polled again.
+    try:
+        server_info: dict[str, Any] = await api.get_server_info()
         if server_info != entry.data.get("server_info"):
             hass.config_entries.async_update_entry(
                 entry, data={**entry.data, "server_info": server_info}
             )
-    else:
-        # API is down — restore last known server_info from config entry data.
+    except Exception:
         server_info = entry.data.get("server_info", {})
         _LOGGER.warning(
             "API unreachable at startup — using cached server_info (backends: %s)",
@@ -102,6 +90,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         )
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
+
+    # Create event_stream early (not started yet) so coordinators can use
+    # is_api_reachable as a gate during their initial refresh.
+    event_stream = OdioEventStreamManager(
+        hass=hass,
+        api=api,
+        audio_coordinator=None,
+        service_coordinator=None,
+    )
 
     # Resolve MAC via device_tracker entities; fall back to cached value.
     host = urlparse(api_url).hostname
@@ -155,7 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
         audio_coordinator = OdioAudioCoordinator(
-            hass, entry, api, scan_interval, connectivity_coordinator
+            hass, entry, api, scan_interval, event_stream
         )
         await audio_coordinator.async_refresh()
         _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
@@ -163,22 +160,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     service_coordinator: OdioServiceCoordinator | None = None
     if backends.get("systemd"):
         service_coordinator = OdioServiceCoordinator(
-            hass, entry, api, service_scan_interval, connectivity_coordinator
+            hass, entry, api, service_scan_interval, event_stream
         )
         await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
-    event_stream = OdioEventStreamManager(
-        hass=hass,
-        api=api,
-        audio_coordinator=audio_coordinator,
-        service_coordinator=service_coordinator,
-    )
+    event_stream._audio_coordinator = audio_coordinator
+    event_stream._service_coordinator = service_coordinator
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         device_info=device_info,
-        connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
         event_stream=event_stream,
