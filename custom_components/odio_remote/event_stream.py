@@ -9,9 +9,7 @@ import aiohttp
 
 from .api_client import OdioApiClient, SseEvent
 from .const import (
-    SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_SERVER_INFO,
-    SSE_EVENT_SERVICE_UPDATED,
     SSE_KEEPALIVE_TIMEOUT,
     SSE_RECONNECT_MAX_INTERVAL,
     SSE_RECONNECT_MIN_INTERVAL,
@@ -20,36 +18,33 @@ from .const import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
-
 _LOGGER = logging.getLogger(__name__)
 
 
 class OdioEventStreamManager:
-    """Manage an SSE connection and route events to coordinators.
+    """Manage an SSE connection and dispatch events to registered listeners.
 
     Handles reconnection with exponential backoff and keepalive timeout
-    detection. Events are dispatched to the appropriate coordinator:
-      - audio.updated  → audio_coordinator.async_set_updated_data()
-      - service.updated → merged into service_coordinator data
+    detection. Events are dispatched to listeners registered via
+    async_add_event_listener(). The manager has no knowledge of coordinators
+    or any other HA-specific consumer.
     """
 
     def __init__(
         self,
         hass: HomeAssistant,
         api: OdioApiClient,
-        audio_coordinator: OdioAudioCoordinator | None,
-        service_coordinator: OdioServiceCoordinator | None,
+        backends: list[str],
     ) -> None:
         """Initialize the event stream manager."""
         self._hass = hass
         self._api = api
-        self._audio_coordinator = audio_coordinator
-        self._service_coordinator = service_coordinator
+        self._backends = backends
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._sse_connected = False
         self._listeners: list[Callable[[], None]] = []
+        self._event_listeners: dict[str, list[Callable[[SseEvent], None]]] = {}
 
     @property
     def connected(self) -> bool:
@@ -60,20 +55,6 @@ class OdioEventStreamManager:
     def sse_connected(self) -> bool:
         """Return True if the SSE connection is currently established."""
         return self._sse_connected
-
-    def async_add_listener(self, callback: Callable[[], None]) -> Callable[[], None]:
-        """Register a connectivity listener. Returns an unsubscribe function."""
-        self._listeners.append(callback)
-
-        def remove() -> None:
-            self._listeners.remove(callback)
-        return remove
-
-    def _set_sse_connected(self, value: bool) -> None:
-        if self._sse_connected != value:
-            self._sse_connected = value
-            for callback in self._listeners:
-                callback()
 
     @property
     def is_api_reachable(self) -> bool:
@@ -86,6 +67,29 @@ class OdioEventStreamManager:
         if self._task is None:
             return True
         return self.connected
+
+    def async_add_listener(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a connectivity state listener. Returns an unsubscribe function."""
+        self._listeners.append(callback)
+
+        def remove() -> None:
+            self._listeners.remove(callback)
+        return remove
+
+    def async_add_event_listener(
+        self,
+        event_type: str,
+        callback: Callable[[SseEvent], None],
+    ) -> Callable[[], None]:
+        """Register a listener for a specific SSE event type.
+
+        Returns an unsubscribe function.
+        """
+        self._event_listeners.setdefault(event_type, []).append(callback)
+
+        def remove() -> None:
+            self._event_listeners[event_type].remove(callback)
+        return remove
 
     def start(self) -> None:
         """Start the event stream in a background task."""
@@ -110,6 +114,16 @@ class OdioEventStreamManager:
                 pass
         self._task = None
         _LOGGER.info("Event stream stopped")
+
+    def _set_sse_connected(self, value: bool) -> None:
+        if self._sse_connected != value:
+            self._sse_connected = value
+            for callback in self._listeners:
+                callback()
+
+    def _dispatch_event(self, event: SseEvent) -> None:
+        for callback in self._event_listeners.get(event.type, []):
+            callback(event)
 
     async def _run_loop(self) -> None:
         """Run the SSE event loop with reconnection logic."""
@@ -143,49 +157,30 @@ class OdioEventStreamManager:
                 await asyncio.wait_for(
                     self._stop_event.wait(), timeout=backoff
                 )
-                # stop_event was set — exit
                 return
             except asyncio.TimeoutError:
-                # Backoff elapsed — reconnect
                 pass
 
             backoff = min(backoff * 2, SSE_RECONNECT_MAX_INTERVAL)
 
     async def _consume_stream(self) -> None:
         """Open one SSE connection and process events until it ends."""
-        backends = self._get_backends()
-        if not backends:
+        if not self._backends:
             _LOGGER.debug("No backends to subscribe to, skipping SSE")
-            # Wait until stopped to avoid busy-looping
             await self._stop_event.wait()
             return
 
         async for event in self._api.listen_events(
-            backends=backends,
+            backends=self._backends,
             exclude=["player.position"],
             keepalive_timeout=SSE_KEEPALIVE_TIMEOUT,
         ):
             if event.type == SSE_EVENT_SERVER_INFO:
                 self._handle_server_info(event)
-                continue
-
-            if event.type == SSE_EVENT_AUDIO_UPDATED:
-                self._handle_audio_updated(event)
-            elif event.type == SSE_EVENT_SERVICE_UPDATED:
-                self._handle_service_updated(event)
             else:
-                _LOGGER.debug("Ignoring unhandled SSE event: %s", event.type)
+                self._dispatch_event(event)
 
         _LOGGER.debug("SSE stream ended (at_eof)")
-
-    def _get_backends(self) -> list[str]:
-        """Build the list of backends to subscribe to."""
-        backends: list[str] = []
-        if self._audio_coordinator is not None:
-            backends.append("audio")
-        if self._service_coordinator is not None:
-            backends.append("systemd")
-        return backends
 
     def _handle_server_info(self, event: SseEvent) -> None:
         """Handle server.info control events (connected, love, bye)."""
@@ -198,52 +193,3 @@ class OdioEventStreamManager:
             _LOGGER.info("SSE server sent bye")
         else:
             _LOGGER.debug("SSE server.info: %s", event.data)
-
-    def _handle_audio_updated(self, event: SseEvent) -> None:
-        """Handle audio.updated: full client list replacement."""
-        if self._audio_coordinator is None:
-            return
-        if not isinstance(event.data, list):
-            _LOGGER.warning(
-                "audio.updated: expected list, got %s", type(event.data).__name__
-            )
-            return
-        _LOGGER.debug("SSE audio.updated: %d clients", len(event.data))
-        self._audio_coordinator.async_set_updated_data({"audio": event.data})
-
-    def _handle_service_updated(self, event: SseEvent) -> None:
-        """Handle service.updated: merge single service into existing list."""
-        if self._service_coordinator is None:
-            return
-        if not isinstance(event.data, dict):
-            _LOGGER.warning(
-                "service.updated: expected dict, got %s",
-                type(event.data).__name__,
-            )
-            return
-
-        svc_name = event.data.get("name")
-        svc_scope = event.data.get("scope")
-        if not svc_name or not svc_scope:
-            _LOGGER.warning(
-                "service.updated: missing name or scope in %s", event.data
-            )
-            return
-
-        # Merge into existing services list
-        current = self._service_coordinator.data or {"services": []}
-        services = list(current.get("services", []))
-
-        replaced = False
-        for i, svc in enumerate(services):
-            if svc.get("name") == svc_name and svc.get("scope") == svc_scope:
-                services[i] = event.data
-                replaced = True
-                break
-        if not replaced:
-            services.append(event.data)
-
-        _LOGGER.debug(
-            "SSE service.updated: %s/%s (replaced=%s)", svc_scope, svc_name, replaced
-        )
-        self._service_coordinator.async_set_updated_data({"services": services})

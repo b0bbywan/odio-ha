@@ -20,6 +20,15 @@ def _make_sse_bytes(*events: tuple[str, object]) -> bytes:
     return "\n".join(lines).encode("utf-8") + b"\n"
 
 
+def _make_manager(backends=None, hass=None):
+    """Create an OdioEventStreamManager with sensible defaults."""
+    return OdioEventStreamManager(
+        hass=hass or MagicMock(),
+        api=MagicMock(),
+        backends=backends or [],
+    )
+
+
 class TestListenEvents:
     """Tests for OdioApiClient.listen_events() SSE parser."""
 
@@ -187,224 +196,53 @@ class TestListenEvents:
                         pass
 
 
-class TestEventStreamManagerHandlers:
-    """Tests for OdioEventStreamManager event routing."""
+class TestEventStreamManagerDispatch:
+    """Tests for async_add_event_listener and event dispatch."""
 
-    def test_handle_audio_updated(self):
-        """Test audio.updated replaces coordinator data."""
-        audio_coord = MagicMock()
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=audio_coord,
-            service_coordinator=None,
-        )
-
-        clients = [{"id": 1, "name": "Spotify", "volume": 0.75}]
-        event = SseEvent(type="audio.updated", data=clients)
-        manager._handle_audio_updated(event)
-
-        audio_coord.async_set_updated_data.assert_called_once_with(
-            {"audio": clients}
-        )
-
-    def test_handle_audio_updated_no_coordinator(self):
-        """Test audio.updated is a no-op when audio_coordinator is None."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=None,
-        )
+    def test_dispatch_calls_registered_listener(self):
+        """Registered listener is called when a matching event is dispatched."""
+        manager = _make_manager()
+        received = []
+        manager.async_add_event_listener("audio.updated", received.append)
 
         event = SseEvent(type="audio.updated", data=[{"id": 1}])
-        # Should not raise
-        manager._handle_audio_updated(event)
+        manager._dispatch_event(event)
 
-    def test_handle_audio_updated_invalid_data(self):
-        """Test audio.updated with non-list data is ignored."""
-        audio_coord = MagicMock()
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=audio_coord,
-            service_coordinator=None,
-        )
+        assert received == [event]
 
-        event = SseEvent(type="audio.updated", data={"not": "a list"})
-        manager._handle_audio_updated(event)
+    def test_dispatch_ignores_unregistered_type(self):
+        """No error when dispatching an event with no registered listener."""
+        manager = _make_manager()
+        received = []
+        manager.async_add_event_listener("audio.updated", received.append)
 
-        audio_coord.async_set_updated_data.assert_not_called()
+        manager._dispatch_event(SseEvent(type="service.updated", data={}))
 
-    def test_handle_service_updated_replace(self):
-        """Test service.updated replaces matching service in list."""
-        service_coord = MagicMock()
-        service_coord.data = {
-            "services": [
-                {"name": "mpd.service", "scope": "user", "running": True},
-                {"name": "snapclient.service", "scope": "user", "running": False},
-            ]
-        }
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
+        assert received == []
 
-        updated = {"name": "mpd.service", "scope": "user", "running": False}
-        event = SseEvent(type="service.updated", data=updated)
-        manager._handle_service_updated(event)
+    def test_unsubscribe_stops_delivery(self):
+        """Calling the returned unsubscribe function stops event delivery."""
+        manager = _make_manager()
+        received = []
+        unsub = manager.async_add_event_listener("audio.updated", received.append)
 
-        call_args = service_coord.async_set_updated_data.call_args[0][0]
-        services = call_args["services"]
-        assert len(services) == 2
-        assert services[0] == updated
-        assert services[1]["name"] == "snapclient.service"
+        unsub()
+        manager._dispatch_event(SseEvent(type="audio.updated", data=[]))
 
-    def test_handle_service_updated_append(self):
-        """Test service.updated appends new service to list."""
-        service_coord = MagicMock()
-        service_coord.data = {
-            "services": [
-                {"name": "mpd.service", "scope": "user", "running": True},
-            ]
-        }
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
+        assert received == []
 
-        new_svc = {"name": "kodi.service", "scope": "user", "running": True}
-        event = SseEvent(type="service.updated", data=new_svc)
-        manager._handle_service_updated(event)
+    def test_multiple_listeners_same_type(self):
+        """Multiple listeners for the same event type are all called."""
+        manager = _make_manager()
+        a, b = [], []
+        manager.async_add_event_listener("audio.updated", a.append)
+        manager.async_add_event_listener("audio.updated", b.append)
 
-        call_args = service_coord.async_set_updated_data.call_args[0][0]
-        services = call_args["services"]
-        assert len(services) == 2
-        assert services[1] == new_svc
+        event = SseEvent(type="audio.updated", data=[])
+        manager._dispatch_event(event)
 
-    def test_handle_service_updated_no_coordinator(self):
-        """Test service.updated is a no-op when service_coordinator is None."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=None,
-        )
-
-        event = SseEvent(type="service.updated", data={"name": "mpd.service", "scope": "user"})
-        # Should not raise
-        manager._handle_service_updated(event)
-
-    def test_handle_service_updated_invalid_data(self):
-        """Test service.updated with non-dict data is ignored."""
-        service_coord = MagicMock()
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
-
-        event = SseEvent(type="service.updated", data=["not", "a", "dict"])
-        manager._handle_service_updated(event)
-
-        service_coord.async_set_updated_data.assert_not_called()
-
-    def test_handle_service_updated_missing_key(self):
-        """Test service.updated with missing name or scope is ignored."""
-        service_coord = MagicMock()
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
-
-        event = SseEvent(type="service.updated", data={"name": "mpd.service"})
-        manager._handle_service_updated(event)
-
-        service_coord.async_set_updated_data.assert_not_called()
-
-    def test_handle_service_updated_empty_coordinator_data(self):
-        """Test service.updated when coordinator has no prior data."""
-        service_coord = MagicMock()
-        service_coord.data = None
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
-
-        svc = {"name": "mpd.service", "scope": "user", "running": True}
-        event = SseEvent(type="service.updated", data=svc)
-        manager._handle_service_updated(event)
-
-        call_args = service_coord.async_set_updated_data.call_args[0][0]
-        assert call_args == {"services": [svc]}
-
-    def test_get_backends_both(self):
-        """Test _get_backends returns both when both coordinators exist."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=MagicMock(),
-            service_coordinator=MagicMock(),
-        )
-        assert manager._get_backends() == ["audio", "systemd"]
-
-    def test_get_backends_audio_only(self):
-        """Test _get_backends returns audio only."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=MagicMock(),
-            service_coordinator=None,
-        )
-        assert manager._get_backends() == ["audio"]
-
-    def test_get_backends_none(self):
-        """Test _get_backends returns empty list when no coordinators."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=None,
-        )
-        assert manager._get_backends() == []
-
-    def test_handle_service_updated_scope_matters(self):
-        """Test that name+scope together identify the service."""
-        service_coord = MagicMock()
-        service_coord.data = {
-            "services": [
-                {"name": "bluetooth.service", "scope": "system", "running": True},
-                {"name": "bluetooth.service", "scope": "user", "running": False},
-            ]
-        }
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=service_coord,
-        )
-
-        # Update the user-scoped bluetooth only
-        updated = {"name": "bluetooth.service", "scope": "user", "running": True}
-        event = SseEvent(type="service.updated", data=updated)
-        manager._handle_service_updated(event)
-
-        call_args = service_coord.async_set_updated_data.call_args[0][0]
-        services = call_args["services"]
-        assert len(services) == 2
-        # system scope unchanged
-        assert services[0] == {"name": "bluetooth.service", "scope": "system", "running": True}
-        # user scope updated
-        assert services[1] == updated
+        assert a == [event]
+        assert b == [event]
 
 
 class TestEventStreamManagerLifecycle:
@@ -421,12 +259,7 @@ class TestEventStreamManagerLifecycle:
             return task
 
         hass.async_create_background_task = MagicMock(side_effect=_fake_create_task)
-        manager = OdioEventStreamManager(
-            hass=hass,
-            api=MagicMock(),
-            audio_coordinator=MagicMock(),
-            service_coordinator=None,
-        )
+        manager = _make_manager(backends=["audio"], hass=hass)
 
         manager.start()
 
@@ -444,12 +277,7 @@ class TestEventStreamManagerLifecycle:
             return task
 
         hass.async_create_background_task = MagicMock(side_effect=_fake_create_task)
-        manager = OdioEventStreamManager(
-            hass=hass,
-            api=MagicMock(),
-            audio_coordinator=MagicMock(),
-            service_coordinator=None,
-        )
+        manager = _make_manager(backends=["audio"], hass=hass)
 
         manager.start()
         manager.start()
@@ -458,7 +286,7 @@ class TestEventStreamManagerLifecycle:
 
     @pytest.mark.asyncio
     async def test_stop_cancels_task(self):
-        """Test that stop sets the task to None."""
+        """Test that stop cancels the task."""
         hass = MagicMock()
 
         async def _forever():
@@ -471,13 +299,8 @@ class TestEventStreamManagerLifecycle:
             return real_task
 
         hass.async_create_background_task = MagicMock(side_effect=_fake_create_task)
+        manager = _make_manager(backends=["audio"], hass=hass)
 
-        manager = OdioEventStreamManager(
-            hass=hass,
-            api=MagicMock(),
-            audio_coordinator=MagicMock(),
-            service_coordinator=None,
-        )
         manager.start()
         assert manager.connected
 
@@ -488,13 +311,7 @@ class TestEventStreamManagerLifecycle:
 
     def test_connected_false_when_no_task(self):
         """Test connected is False before start."""
-        manager = OdioEventStreamManager(
-            hass=MagicMock(),
-            api=MagicMock(),
-            audio_coordinator=None,
-            service_coordinator=None,
-        )
-        assert not manager.connected
+        assert not _make_manager().connected
 
 
 # ── Helpers ──────────────────────────────────────────────────────

@@ -23,6 +23,8 @@ from .const import (
     CONF_SERVICE_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SERVICE_SCAN_INTERVAL,
+    SSE_EVENT_AUDIO_UPDATED,
+    SSE_EVENT_SERVICE_UPDATED,
 )
 from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .helpers import async_get_mac_from_ip
@@ -91,13 +93,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
 
+    # Build SSE backends list from server capabilities.
+    sse_backends: list[str] = []
+    if backends.get("pulseaudio"):
+        sse_backends.append("audio")
+    if backends.get("systemd"):
+        sse_backends.append("systemd")
+
     # Create event_stream early (not started yet) so coordinators can use
     # is_api_reachable as a gate during their initial refresh.
     event_stream = OdioEventStreamManager(
         hass=hass,
         api=api,
-        audio_coordinator=None,
-        service_coordinator=None,
+        backends=sse_backends,
     )
 
     # Resolve MAC via device_tracker entities; fall back to cached value.
@@ -165,8 +173,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
-    event_stream._audio_coordinator = audio_coordinator
-    event_stream._service_coordinator = service_coordinator
+    # Wire SSE event listeners now that coordinators exist.
+    if audio_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_AUDIO_UPDATED, audio_coordinator.handle_sse_event
+            )
+        )
+    if service_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_SERVICE_UPDATED, service_coordinator.handle_sse_event
+            )
+        )
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,

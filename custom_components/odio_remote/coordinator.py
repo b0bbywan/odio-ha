@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .api_client import OdioApiClient
+from .api_client import OdioApiClient, SseEvent
 from .const import DOMAIN
 
 if TYPE_CHECKING:
@@ -76,6 +76,16 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
             _LOGGER.exception("Unexpected error fetching audio clients")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
+    def handle_sse_event(self, event: SseEvent) -> None:
+        """Handle an audio.updated SSE event."""
+        if not isinstance(event.data, list):
+            _LOGGER.warning(
+                "audio.updated: expected list, got %s", type(event.data).__name__
+            )
+            return
+        _LOGGER.debug("SSE audio.updated: %d clients", len(event.data))
+        self.async_set_updated_data({"audio": event.data})
+
 
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for systemd service data (slow polling)."""
@@ -128,3 +138,36 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.exception("Unexpected error fetching services")
             raise UpdateFailed(f"Unexpected error: {err}") from err
+
+    def handle_sse_event(self, event: SseEvent) -> None:
+        """Handle a service.updated SSE event: merge into existing list."""
+        if not isinstance(event.data, dict):
+            _LOGGER.warning(
+                "service.updated: expected dict, got %s", type(event.data).__name__
+            )
+            return
+
+        svc_name = event.data.get("name")
+        svc_scope = event.data.get("scope")
+        if not svc_name or not svc_scope:
+            _LOGGER.warning(
+                "service.updated: missing name or scope in %s", event.data
+            )
+            return
+
+        current = self.data or {"services": []}
+        services = list(current.get("services", []))
+
+        replaced = False
+        for i, svc in enumerate(services):
+            if svc.get("name") == svc_name and svc.get("scope") == svc_scope:
+                services[i] = event.data
+                replaced = True
+                break
+        if not replaced:
+            services.append(event.data)
+
+        _LOGGER.debug(
+            "SSE service.updated: %s/%s (replaced=%s)", svc_scope, svc_name, replaced
+        )
+        self.async_set_updated_data({"services": services})
