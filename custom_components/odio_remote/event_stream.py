@@ -121,12 +121,18 @@ class OdioEventStreamManager:
     def _set_sse_connected(self, value: bool) -> None:
         if self._sse_connected != value:
             self._sse_connected = value
-            for callback in self._listeners:
-                callback()
+            for cb in list(self._listeners):
+                try:
+                    cb()
+                except Exception:
+                    _LOGGER.exception("Error in connectivity listener")
 
     def _dispatch_event(self, event: SseEvent) -> None:
-        for callback in self._event_listeners.get(event.type, []):
-            callback(event)
+        for cb in list(self._event_listeners.get(event.type, [])):
+            try:
+                cb(event)
+            except Exception:
+                _LOGGER.exception("Error in event listener for %s", event.type)
 
     async def _run_loop(self) -> None:
         """Run the SSE event loop with reconnection logic."""
