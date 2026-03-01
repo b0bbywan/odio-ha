@@ -17,6 +17,9 @@ This integration connects to a Linux machine running the [go-odio-api server](ht
 - Always-visible connectivity binary_sensor (diagnostic category)
 - MAC address resolved via ARP and added to DeviceInfo.connections (“Connected via” in UI)
 - Clean state logic: `playing` / `idle` / `unavailable`
+- Real-time updates via SSE (Server-Sent Events) — no polling needed
+  - Automatic reconnection with exponential backoff
+  - Configurable keepalive interval (server-side heartbeat detection)
 
 ### Mapping to existing media players
 You can map Odio entities (services or remote clients) to any existing HA media_player entity via the configuration or reconfiguration flow.
@@ -115,7 +118,6 @@ Grouped under one device: “Odio Remote (hostname)”.
 
 ## Roadmap
 
-- SSE support for real-time updates (push instead of polling)
 - MPRIS player entities
 - Embed Bluetooth speaker support (pairing, enable/disable)
 - Audio outputs handling

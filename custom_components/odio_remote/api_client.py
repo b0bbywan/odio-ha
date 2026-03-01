@@ -1,13 +1,24 @@
 # custom_components/odio_remote/api_client.py
 
 import asyncio
+import json
 import logging
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class SseEvent:
+    """A parsed Server-Sent Event."""
+
+    type: str
+    data: Any  # JSON-decoded payload
 
 
 class OdioApiClient:
@@ -148,6 +159,78 @@ class OdioApiClient:
         """Trigger reboot."""
         from .const import ENDPOINT_POWER_REBOOT
         await self.post(ENDPOINT_POWER_REBOOT)
+
+    # SSE event stream
+    async def listen_events(
+        self,
+        backends: list[str] | None = None,
+        exclude: list[str] | None = None,
+        keepalive_interval: int | None = None,
+        keepalive_timeout: float | None = None,
+    ) -> AsyncGenerator[SseEvent]:
+        """Open an SSE connection to /events and yield parsed events.
+
+        This is a low-level generator that handles SSE wire-format parsing.
+        It does NOT handle reconnection — the caller is responsible for that.
+
+        Yields SseEvent instances for every received event including
+        server.info control events (connected, love, bye).
+
+        Raises on connection errors or when the stream ends.
+        """
+        from .const import ENDPOINT_EVENTS
+
+        params: dict[str, str] = {}
+        if backends:
+            params["backend"] = ",".join(backends)
+        if exclude:
+            params["exclude"] = ",".join(exclude)
+        if keepalive_interval is not None:
+            params["keepalive"] = str(keepalive_interval)
+
+        url = f"{self._api_url}{ENDPOINT_EVENTS}"
+        _LOGGER.debug("Opening SSE connection to %s (params=%s)", url, params)
+
+        async with self._session.get(
+            url,
+            params=params,
+            headers={"Accept": "text/event-stream"},
+            timeout=aiohttp.ClientTimeout(total=None, sock_read=None),
+        ) as response:
+            response.raise_for_status()
+
+            event_type = ""
+            data_buf = ""
+
+            while not response.content.at_eof():
+                raw_line = await asyncio.wait_for(
+                    response.content.readline(), timeout=keepalive_timeout
+                )
+                if not raw_line:
+                    break
+                line = raw_line.decode("utf-8").rstrip("\r\n")
+
+                if line.startswith("event:"):
+                    event_type = line[len("event:"):].strip()
+                elif line.startswith("data:"):
+                    data_buf += line[len("data:"):].strip()
+                elif line == "":
+                    # Blank line marks end of an event
+                    if event_type and data_buf:
+                        try:
+                            parsed_data = json.loads(data_buf)
+                        except json.JSONDecodeError:
+                            _LOGGER.warning(
+                                "Failed to parse SSE data for event %s: %s",
+                                event_type,
+                                data_buf,
+                            )
+                            event_type = ""
+                            data_buf = ""
+                            continue
+                        yield SseEvent(type=event_type, data=parsed_data)
+                    event_type = ""
+                    data_buf = ""
 
     # Service control
     async def control_service(

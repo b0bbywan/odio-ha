@@ -13,11 +13,9 @@ from custom_components.odio_remote.config_flow import (
 )
 from custom_components.odio_remote.const import (
     CONF_API_URL,
-    CONF_SCAN_INTERVAL,
+    CONF_KEEPALIVE_INTERVAL,
     CONF_SERVICE_MAPPINGS,
-    CONF_SERVICE_SCAN_INTERVAL,
-    DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SERVICE_SCAN_INTERVAL,
+    DEFAULT_KEEPALIVE_INTERVAL,
     DOMAIN,
 )
 
@@ -54,8 +52,7 @@ def _create_options_flow(data=None, options=None):
     mock_entry = MagicMock()
     mock_entry.data = data or {CONF_API_URL: "http://test:8018"}
     mock_entry.options = options or {
-        CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
-        CONF_SERVICE_SCAN_INTERVAL: DEFAULT_SERVICE_SCAN_INTERVAL,
+        CONF_KEEPALIVE_INTERVAL: DEFAULT_KEEPALIVE_INTERVAL,
         CONF_SERVICE_MAPPINGS: {},
     }
     mock_entry.title = "Odio Remote"
@@ -93,7 +90,7 @@ class TestConfigFlowUser:
         "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
-    async def test_success_transitions_to_options(self, mock_validate):
+    async def test_success_transitions_to_sse(self, mock_validate):
         """Test that valid API URL transitions to options step."""
         flow = _create_config_flow()
 
@@ -103,7 +100,7 @@ class TestConfigFlowUser:
 
         # Should transition to options step (show form)
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "options"
+        assert result["step_id"] == "sse"
         assert flow._data[CONF_API_URL] == "http://test:8018"
         mock_validate.assert_called_once()
 
@@ -196,51 +193,45 @@ class TestConfigFlowUser:
 
 
 # =============================================================================
-# Config Flow: async_step_options
+# Config Flow: async_step_sse
 # =============================================================================
 
 
-class TestConfigFlowOptions:
-    """Tests for the options step of the config flow."""
+class TestConfigFlowSse:
+    """Tests for the sse step of the config flow."""
 
     @pytest.mark.asyncio
     async def test_show_form_no_input(self):
-        """Test that the options form is shown when no input is provided."""
+        """Test that the SSE form is shown when no input is provided."""
         flow = _create_config_flow()
 
-        result = await flow.async_step_options(user_input=None)
+        result = await flow.async_step_sse(user_input=None)
 
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "options"
+        assert result["step_id"] == "sse"
 
     @pytest.mark.asyncio
     async def test_transitions_to_services(self):
-        """Test that providing options transitions to services step."""
-        flow = _create_config_flow()
-        flow._services = []  # No services available
-
-        result = await flow.async_step_options(
-            user_input={
-                CONF_SCAN_INTERVAL: 10,
-                CONF_SERVICE_SCAN_INTERVAL: 120,
-            }
-        )
-
-        assert flow._options[CONF_SCAN_INTERVAL] == 10
-        assert flow._options[CONF_SERVICE_SCAN_INTERVAL] == 120
-        # Should create entry directly since no services
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-
-    @pytest.mark.asyncio
-    async def test_defaults_used_when_not_provided(self):
-        """Test that defaults are used when values not in input."""
+        """Test that providing keepalive transitions to services step."""
         flow = _create_config_flow()
         flow._services = []
 
-        await flow.async_step_options(user_input={})
+        result = await flow.async_step_sse(
+            user_input={CONF_KEEPALIVE_INTERVAL: 60}
+        )
 
-        assert flow._options[CONF_SCAN_INTERVAL] == DEFAULT_SCAN_INTERVAL
-        assert flow._options[CONF_SERVICE_SCAN_INTERVAL] == DEFAULT_SERVICE_SCAN_INTERVAL
+        assert flow._options[CONF_KEEPALIVE_INTERVAL] == 60
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    @pytest.mark.asyncio
+    async def test_default_used_when_not_provided(self):
+        """Test that default is used when keepalive not in input."""
+        flow = _create_config_flow()
+        flow._services = []
+
+        await flow.async_step_sse(user_input={})
+
+        assert flow._options[CONF_KEEPALIVE_INTERVAL] == DEFAULT_KEEPALIVE_INTERVAL
 
 
 # =============================================================================
@@ -256,7 +247,7 @@ class TestConfigFlowServices:
         """Test that entry is created directly when no services available."""
         flow = _create_config_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
-        flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
+        flow._options = {}
         flow._services = []
 
         result = await flow.async_step_services(user_input=None)
@@ -284,7 +275,7 @@ class TestConfigFlowServices:
         """Test entry creation with service mappings."""
         flow = _create_config_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
-        flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
+        flow._options = {}
         flow._services = [
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ]
@@ -303,7 +294,7 @@ class TestConfigFlowServices:
         """Test entry creation when user skips all mappings."""
         flow = _create_config_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
-        flow._options = {CONF_SCAN_INTERVAL: 5, CONF_SERVICE_SCAN_INTERVAL: 60}
+        flow._options = {}
         flow._services = [
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
         ]
@@ -331,31 +322,23 @@ class TestConfigFlowFullPath:
         """Test the full flow when no services are available."""
         flow = _create_config_flow()
 
-        # Step 1: User provides API URL (API returns no enabled services)
-        mock_validate.return_value = {
-            "server_info": MOCK_SERVER_INFO,
-            "services": [],
-        }
+        mock_validate.return_value = {"server_info": MOCK_SERVER_INFO, "services": []}
 
+        # Step 1: User provides API URL → SSE form
         result = await flow.async_step_user(
             user_input={CONF_API_URL: "http://test:8018"}
         )
-        assert result["step_id"] == "options"
+        assert result["step_id"] == "sse"
 
-        # Step 2: User provides scan intervals
-        result = await flow.async_step_options(
-            user_input={
-                CONF_SCAN_INTERVAL: 10,
-                CONF_SERVICE_SCAN_INTERVAL: 120,
-            }
+        # Step 2: User configures keepalive → no services → entry created
+        result = await flow.async_step_sse(
+            user_input={CONF_KEEPALIVE_INTERVAL: 60}
         )
 
-        # No services → entry created directly
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert result["title"] == "Odio Remote"
         assert result["data"] == {CONF_API_URL: "http://test:8018"}
-        assert result["options"][CONF_SCAN_INTERVAL] == 10
-        assert result["options"][CONF_SERVICE_SCAN_INTERVAL] == 120
+        assert result["options"][CONF_KEEPALIVE_INTERVAL] == 60
         assert result["options"][CONF_SERVICE_MAPPINGS] == {}
 
     @pytest.mark.asyncio
@@ -367,21 +350,16 @@ class TestConfigFlowFullPath:
         """Test the full flow with services to map."""
         flow = _create_config_flow()
 
-        # Step 1: User provides API URL
+        # Step 1: User provides API URL → SSE form
         result = await flow.async_step_user(
             user_input={CONF_API_URL: "http://test:8018"}
         )
-        assert result["step_id"] == "options"
+        assert result["step_id"] == "sse"
 
-        # Step 2: User provides scan intervals
-        result = await flow.async_step_options(
-            user_input={
-                CONF_SCAN_INTERVAL: 5,
-                CONF_SERVICE_SCAN_INTERVAL: 60,
-            }
+        # Step 2: User configures keepalive → services found
+        result = await flow.async_step_sse(
+            user_input={CONF_KEEPALIVE_INTERVAL: 30}
         )
-
-        # Services found → show services form
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "services"
 
@@ -391,6 +369,7 @@ class TestConfigFlowFullPath:
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["options"][CONF_KEEPALIVE_INTERVAL] == 30
         assert result["options"][CONF_SERVICE_MAPPINGS] == {
             "user/mpd.service": "media_player.mpd"
         }
@@ -412,54 +391,47 @@ class TestOptionsFlowInit:
         result = await flow.async_step_init(user_input=None)
 
         assert result["type"] is FlowResultType.MENU
-        assert "intervals" in result["menu_options"]
+        assert "sse" in result["menu_options"]
         assert "mappings" in result["menu_options"]
 
 
 # =============================================================================
-# Options Flow: async_step_intervals
+# Options Flow: async_step_sse
 # =============================================================================
 
 
-class TestOptionsFlowIntervals:
-    """Tests for the intervals step of the options flow."""
+class TestOptionsFlowSse:
+    """Tests for the sse step of the options flow."""
 
     @pytest.mark.asyncio
     async def test_show_form_no_input(self):
-        """Test that intervals form is shown."""
+        """Test that SSE form is shown."""
         flow = _create_options_flow()
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
+            CONF_KEEPALIVE_INTERVAL: DEFAULT_KEEPALIVE_INTERVAL,
             CONF_SERVICE_MAPPINGS: {},
         }
 
-        result = await flow.async_step_intervals(user_input=None)
+        result = await flow.async_step_sse(user_input=None)
 
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "intervals"
+        assert result["step_id"] == "sse"
 
     @pytest.mark.asyncio
-    async def test_update_intervals(self):
-        """Test updating scan intervals."""
+    async def test_update_keepalive(self):
+        """Test updating keepalive interval."""
         flow = _create_options_flow()
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
+            CONF_KEEPALIVE_INTERVAL: DEFAULT_KEEPALIVE_INTERVAL,
             CONF_SERVICE_MAPPINGS: {},
         }
 
-        result = await flow.async_step_intervals(
-            user_input={
-                CONF_SCAN_INTERVAL: 15,
-                CONF_SERVICE_SCAN_INTERVAL: 180,
-            }
+        result = await flow.async_step_sse(
+            user_input={CONF_KEEPALIVE_INTERVAL: 60}
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_SCAN_INTERVAL] == 15
-        assert result["data"][CONF_SERVICE_SCAN_INTERVAL] == 180
-        # Existing mappings should be preserved
+        assert result["data"][CONF_KEEPALIVE_INTERVAL] == 60
         assert result["data"][CONF_SERVICE_MAPPINGS] == {}
 
 
@@ -563,8 +535,6 @@ class TestOptionsFlowMappings:
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
             CONF_SERVICE_MAPPINGS: {},
         }
 
@@ -593,8 +563,6 @@ class TestOptionsFlowMappings:
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
             CONF_SERVICE_MAPPINGS: {
                 "user/mpd.service": "media_player.mpd",
             },
@@ -628,8 +596,6 @@ class TestOptionsFlowMappings:
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
             CONF_SERVICE_MAPPINGS: {},
         }
 
@@ -661,8 +627,6 @@ class TestOptionsFlowMappings:
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
-            CONF_SCAN_INTERVAL: 5,
-            CONF_SERVICE_SCAN_INTERVAL: 60,
             CONF_SERVICE_MAPPINGS: {
                 "client:OfflineClient": "media_player.offline",
             },
@@ -719,19 +683,17 @@ class TestConfigFlowZeroconf:
         "custom_components.odio_remote.config_flow.async_validate_api",
         return_value=MOCK_API_INFO,
     )
-    async def test_zeroconf_confirm_proceeds_to_options(self, mock_validate):
-        """Confirmation calls validate and transitions to options."""
+    async def test_zeroconf_confirm_proceeds_to_sse(self, mock_validate):
+        """Confirmation calls validate and transitions to sse step."""
         flow = _create_config_flow()
         discovery_info = _create_zeroconf_info()
 
-        # Discover first
         await flow.async_step_zeroconf(discovery_info)
 
-        # Then confirm
         result = await flow.async_step_zeroconf_confirm(user_input={})
 
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "options"
+        assert result["step_id"] == "sse"
         mock_validate.assert_called_once()
 
     @pytest.mark.asyncio

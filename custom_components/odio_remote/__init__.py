@@ -14,17 +14,17 @@ from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, Device
 from homeassistant.helpers.entity import DeviceInfo
 
 from .api_client import OdioApiClient
+from .event_stream import OdioEventStreamManager
 from .const import (
     CONF_API_URL,
-    DOMAIN,
-    CONF_SCAN_INTERVAL,
+    CONF_KEEPALIVE_INTERVAL,
     CONF_SERVICE_MAPPINGS,
-    CONF_SERVICE_SCAN_INTERVAL,
-    DEFAULT_CONNECTIVITY_SCAN_INTERVAL,
-    DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SERVICE_SCAN_INTERVAL,
+    DEFAULT_KEEPALIVE_INTERVAL,
+    DOMAIN,
+    SSE_EVENT_AUDIO_UPDATED,
+    SSE_EVENT_SERVICE_UPDATED,
 )
-from .coordinator import OdioAudioCoordinator, OdioConnectivityCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
 from .helpers import async_get_mac_from_ip
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,9 +43,9 @@ class OdioRemoteRuntimeData:
 
     api: OdioApiClient
     device_info: DeviceInfo
-    connectivity_coordinator: OdioConnectivityCoordinator
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
+    event_stream: OdioEventStreamManager
     service_mappings: dict[str, str]
     power_capabilities: dict[str, bool]
 
@@ -58,41 +58,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     _LOGGER.info("Setting up Odio Remote integration")
 
     api_url = entry.data[CONF_API_URL]
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    service_scan_interval = entry.options.get(
-        CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
-    )
+    keepalive_interval = entry.options.get(CONF_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_INTERVAL)
     service_mappings = entry.options.get(CONF_SERVICE_MAPPINGS, {})
 
     _LOGGER.debug(
-        "Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
+        "Configuration: api_url=%s, keepalive_interval=%s",
         api_url,
-        scan_interval,
-        service_scan_interval,
+        keepalive_interval,
     )
     _LOGGER.debug("Service mappings: %s", service_mappings)
 
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    connectivity_coordinator = OdioConnectivityCoordinator(
-        hass, entry, api, DEFAULT_CONNECTIVITY_SCAN_INTERVAL
-    )
-    # Use async_refresh (not async_config_entry_first_refresh) so setup always
-    # completes even when the API is down.  The connectivity binary sensor can
-    # then report "disconnected" instead of the whole device disappearing.
-    await connectivity_coordinator.async_refresh()
-
-    if connectivity_coordinator.last_update_success:
-        server_info: dict[str, Any] = connectivity_coordinator.data or {}
-        # Persist server_info so we can use it on the next startup if the API
-        # is unreachable at that point.
+    # Fetch server_info once at startup — it is static and never polled again.
+    try:
+        server_info: dict[str, Any] = await api.get_server_info()
         if server_info != entry.data.get("server_info"):
             hass.config_entries.async_update_entry(
                 entry, data={**entry.data, "server_info": server_info}
             )
-    else:
-        # API is down — restore last known server_info from config entry data.
+    except Exception:
         server_info = entry.data.get("server_info", {})
         _LOGGER.warning(
             "API unreachable at startup — using cached server_info (backends: %s)",
@@ -100,6 +86,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         )
     backends = server_info.get("backends", {})
     _LOGGER.debug("Detected backends: %s", backends)
+
+    # Build SSE backends list from server capabilities.
+    sse_backends: list[str] = []
+    if backends.get("pulseaudio"):
+        sse_backends.append("audio")
+    if backends.get("systemd"):
+        sse_backends.append("systemd")
+    if backends.get("power"):
+        sse_backends.append("power")
+
+    event_stream = OdioEventStreamManager(
+        hass=hass,
+        api=api,
+        backends=sse_backends,
+        keepalive_interval=keepalive_interval,
+    )
 
     # Resolve MAC via device_tracker entities; fall back to cached value.
     host = urlparse(api_url).hostname
@@ -152,32 +154,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
-        audio_coordinator = OdioAudioCoordinator(
-            hass, entry, api, scan_interval, connectivity_coordinator
-        )
+        audio_coordinator = OdioAudioCoordinator(hass, entry, api)
         await audio_coordinator.async_refresh()
         _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
 
     service_coordinator: OdioServiceCoordinator | None = None
     if backends.get("systemd"):
-        service_coordinator = OdioServiceCoordinator(
-            hass, entry, api, service_scan_interval, connectivity_coordinator
-        )
+        service_coordinator = OdioServiceCoordinator(hass, entry, api)
         await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
+
+    # Wire SSE event listeners now that coordinators exist.
+    if audio_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_AUDIO_UPDATED, audio_coordinator.handle_sse_event
+            )
+        )
+    if service_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_SERVICE_UPDATED, service_coordinator.handle_sse_event
+            )
+        )
+
+    # Re-fetch coordinator data on SSE reconnect to avoid stale state.
+    def _on_sse_reconnect() -> None:
+        if not event_stream.sse_connected:
+            return
+        if audio_coordinator is not None:
+            hass.async_create_task(audio_coordinator.async_refresh())
+        if service_coordinator is not None:
+            hass.async_create_task(service_coordinator.async_refresh())
+
+    entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         device_info=device_info,
-        connectivity_coordinator=connectivity_coordinator,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
+        event_stream=event_stream,
         service_mappings=service_mappings,
         power_capabilities=power_capabilities,
     )
 
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    event_stream.start()
 
     _LOGGER.info("Odio Remote integration setup complete")
     return True
@@ -187,6 +212,7 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: OdioConfigEntry
 ) -> bool:
     """Unload a config entry."""
+    await entry.runtime_data.event_stream.stop()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

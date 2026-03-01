@@ -11,16 +11,14 @@
           "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8018)"
         }
       },
-      "options": {
-        "title": "Paramètres de scan",
-        "description": "Configurez les intervalles de mise à jour",
+      "sse": {
+        "title": "Configuration SSE",
+        "description": "Configurez l'intervalle de keepalive SSE",
         "data": {
-          "scan_interval": "Intervalle de scan audio (secondes)",
-          "service_scan_interval": "Intervalle de scan services (secondes)"
+          "keepalive_interval": "Intervalle de keepalive (secondes)"
         },
         "data_description": {
-          "scan_interval": "Fréquence de mise à jour des clients audio (recommandé: 5s)",
-          "service_scan_interval": "Fréquence de mise à jour des services (recommandé: 60s)"
+          "keepalive_interval": "Intervalle de heartbeat serveur, 10-120s (recommandé : 30s)"
         }
       },
       "zeroconf_confirm": {
@@ -57,20 +55,18 @@
         "title": "Options Odio Remote",
         "description": "Que souhaitez-vous configurer pour {name} ?",
         "menu_options": {
-          "intervals": "Modifier les intervalles de scan",
+          "sse": "Configurer les paramètres SSE",
           "mappings": "Gérer les associations d'entités"
         }
       },
-      "intervals": {
-        "title": "Intervalles de scan",
-        "description": "Configurez les intervalles de mise à jour",
+      "sse": {
+        "title": "Paramètres SSE",
+        "description": "Configurez l'intervalle de keepalive SSE",
         "data": {
-          "scan_interval": "Intervalle de scan audio (secondes)",
-          "service_scan_interval": "Intervalle de scan services (secondes)"
+          "keepalive_interval": "Intervalle de keepalive (secondes)"
         },
         "data_description": {
-          "scan_interval": "Fréquence de mise à jour des clients audio (recommandé: 5s)",
-          "service_scan_interval": "Fréquence de mise à jour des services (recommandé: 60s)"
+          "keepalive_interval": "Intervalle de heartbeat serveur, 10-120s (recommandé : 30s)"
         }
       },
       "mappings": {
