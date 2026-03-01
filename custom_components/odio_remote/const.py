@@ -34,6 +34,7 @@ ENDPOINT_EVENTS: Final = "/events"
 # SSE event types
 SSE_EVENT_AUDIO_UPDATED: Final = "audio.updated"
 SSE_EVENT_SERVICE_UPDATED: Final = "service.updated"
+SSE_EVENT_POWER_ACTION: Final = "power.action"
 SSE_EVENT_SERVER_INFO: Final = "server.info"
 
 # SSE reconnection

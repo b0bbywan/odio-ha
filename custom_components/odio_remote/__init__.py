@@ -93,6 +93,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         sse_backends.append("audio")
     if backends.get("systemd"):
         sse_backends.append("systemd")
+    if backends.get("power"):
+        sse_backends.append("power")
 
     event_stream = OdioEventStreamManager(
         hass=hass,
