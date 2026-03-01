@@ -22,7 +22,10 @@ from .conftest import MOCK_CLIENTS, MOCK_SERVICES
 
 def _make_hass():
     hass = MagicMock()
-    hass.loop = asyncio.get_event_loop()
+    try:
+        hass.loop = asyncio.get_running_loop()
+    except RuntimeError:
+        hass.loop = MagicMock()
     return hass
 
 
@@ -124,8 +127,7 @@ class TestOdioServiceCoordinator:
 
 class TestAudioCoordinatorHandleSseEvent:
 
-    @pytest.mark.asyncio
-    async def test_valid_list_updates_data(self):
+    def test_valid_list_updates_data(self):
         """handle_sse_event sets coordinator data when event data is a list."""
         coord = _make_audio_coordinator(MagicMock())
         coord.async_set_updated_data = MagicMock()
@@ -135,8 +137,7 @@ class TestAudioCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_called_once_with({"audio": [{"id": 1}]})
 
-    @pytest.mark.asyncio
-    async def test_non_list_data_ignored(self):
+    def test_non_list_data_ignored(self):
         """handle_sse_event does nothing when event data is not a list."""
         coord = _make_audio_coordinator(MagicMock())
         coord.async_set_updated_data = MagicMock()
@@ -145,8 +146,7 @@ class TestAudioCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_empty_list_updates_data(self):
+    def test_empty_list_updates_data(self):
         """handle_sse_event accepts an empty list."""
         coord = _make_audio_coordinator(MagicMock())
         coord.async_set_updated_data = MagicMock()
@@ -168,8 +168,7 @@ class TestServiceCoordinatorHandleSseEvent:
         coord.async_set_updated_data = MagicMock()
         return coord
 
-    @pytest.mark.asyncio
-    async def test_replaces_existing_service(self):
+    def test_replaces_existing_service(self):
         """handle_sse_event replaces a service matched by name+scope."""
         existing = {"name": "mpd.service", "scope": "user", "running": True}
         coord = self._make_coord_with_data([existing])
@@ -179,8 +178,7 @@ class TestServiceCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_called_once_with({"services": [updated]})
 
-    @pytest.mark.asyncio
-    async def test_appends_unknown_service(self):
+    def test_appends_unknown_service(self):
         """handle_sse_event appends a service not in the current list."""
         existing = {"name": "mpd.service", "scope": "user", "running": True}
         coord = self._make_coord_with_data([existing])
@@ -192,8 +190,7 @@ class TestServiceCoordinatorHandleSseEvent:
             {"services": [existing, new_svc]}
         )
 
-    @pytest.mark.asyncio
-    async def test_non_dict_data_ignored(self):
+    def test_non_dict_data_ignored(self):
         """handle_sse_event does nothing when event data is not a dict."""
         coord = self._make_coord_with_data([])
 
@@ -201,8 +198,7 @@ class TestServiceCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_missing_name_ignored(self):
+    def test_missing_name_ignored(self):
         """handle_sse_event does nothing when event data has no 'name' key."""
         coord = self._make_coord_with_data([])
 
@@ -210,8 +206,7 @@ class TestServiceCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_missing_scope_ignored(self):
+    def test_missing_scope_ignored(self):
         """handle_sse_event does nothing when event data has no 'scope' key."""
         coord = self._make_coord_with_data([])
 
@@ -219,8 +214,7 @@ class TestServiceCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_scope_must_match_for_replace(self):
+    def test_scope_must_match_for_replace(self):
         """A service with same name but different scope is appended, not replaced."""
         existing = {"name": "mpd.service", "scope": "user", "running": True}
         coord = self._make_coord_with_data([existing])
@@ -232,8 +226,7 @@ class TestServiceCoordinatorHandleSseEvent:
             {"services": [existing, system_svc]}
         )
 
-    @pytest.mark.asyncio
-    async def test_works_with_no_existing_data(self):
+    def test_works_with_no_existing_data(self):
         """handle_sse_event handles coordinator.data being None."""
         coord = _make_service_coordinator(MagicMock())
         coord.data = None
