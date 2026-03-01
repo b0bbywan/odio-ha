@@ -244,6 +244,49 @@ class TestEventStreamManagerDispatch:
         assert a == [event]
         assert b == [event]
 
+    def test_dispatch_survives_callback_exception(self):
+        """A callback that raises does not prevent other listeners from firing."""
+        manager = _make_manager()
+        received = []
+
+        def bad_callback(event):
+            raise RuntimeError("boom")
+
+        manager.async_add_event_listener("audio.updated", bad_callback)
+        manager.async_add_event_listener("audio.updated", received.append)
+
+        event = SseEvent(type="audio.updated", data=[])
+        manager._dispatch_event(event)
+
+        assert received == [event]
+
+    def test_unsubscribe_during_dispatch_safe(self):
+        """Removing a listener during dispatch does not crash."""
+        manager = _make_manager()
+        received = []
+        unsub = manager.async_add_event_listener("audio.updated", lambda e: unsub())
+        manager.async_add_event_listener("audio.updated", received.append)
+
+        event = SseEvent(type="audio.updated", data=[])
+        manager._dispatch_event(event)
+
+        assert received == [event]
+
+    def test_connectivity_listener_survives_exception(self):
+        """A connectivity listener that raises does not prevent others from firing."""
+        manager = _make_manager()
+        called = []
+
+        def bad_listener():
+            raise RuntimeError("boom")
+
+        manager.async_add_listener(bad_listener)
+        manager.async_add_listener(lambda: called.append(True))
+
+        manager._set_sse_connected(True)
+
+        assert called == [True]
+
 
 class TestEventStreamManagerLifecycle:
     """Tests for start/stop lifecycle."""
