@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import aiohttp
 
@@ -18,14 +17,11 @@ from homeassistant.helpers.update_coordinator import (
 from .api_client import OdioApiClient, SseEvent
 from .const import DOMAIN
 
-if TYPE_CHECKING:
-    from .event_stream import OdioEventStreamManager
-
 _LOGGER = logging.getLogger(__name__)
 
 
 class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
-    """Coordinator for audio client data (fast polling)."""
+    """Coordinator for audio client data."""
 
     config_entry: ConfigEntry
 
@@ -34,44 +30,24 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         hass: HomeAssistant,
         config_entry: ConfigEntry,
         api: OdioApiClient,
-        scan_interval: int,
-        event_stream: "OdioEventStreamManager",
     ) -> None:
         """Initialize audio coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_audio",
-            update_interval=timedelta(seconds=scan_interval),
+            update_interval=None,
             config_entry=config_entry,
         )
         self.api = api
-        self._failure_count = 0
-        self._scan_interval = scan_interval
-        self._event_stream = event_stream
 
     async def _async_update_data(self) -> dict[str, list]:
         """Fetch audio clients from API."""
-        if not self._event_stream.is_api_reachable:
-            raise UpdateFailed("Skipping audio update: API unreachable")
         try:
             clients = await self.api.get_clients()
-            self._failure_count = 0
             return {"audio": clients}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
-            self._failure_count += 1
-            retry_delay = min(
-                self._scan_interval * (2 ** self._failure_count), 3600
-            )
-            _LOGGER.debug(
-                "Connection failed (attempt %d), retrying in %ds",
-                self._failure_count,
-                retry_delay,
-            )
-            raise UpdateFailed(
-                f"Unable to connect to Odio Remote API: {err}",
-                retry_after=retry_delay,
-            ) from err
+            raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
         except Exception as err:
             _LOGGER.exception("Unexpected error fetching audio clients")
             raise UpdateFailed(f"Unexpected error: {err}") from err
@@ -88,7 +64,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
 
 
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator for systemd service data (slow polling)."""
+    """Coordinator for systemd service data."""
 
     config_entry: ConfigEntry
 
@@ -97,44 +73,24 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         config_entry: ConfigEntry,
         api: OdioApiClient,
-        scan_interval: int,
-        event_stream: "OdioEventStreamManager",
     ) -> None:
         """Initialize service coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_services",
-            update_interval=timedelta(seconds=scan_interval),
+            update_interval=None,
             config_entry=config_entry,
         )
         self.api = api
-        self._failure_count = 0
-        self._scan_interval = scan_interval
-        self._event_stream = event_stream
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch systemd services from API."""
-        if not self._event_stream.is_api_reachable:
-            raise UpdateFailed("Skipping services update: API unreachable")
         try:
             services = await self.api.get_services()
-            self._failure_count = 0
             return {"services": services}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
-            self._failure_count += 1
-            retry_delay = min(
-                self._scan_interval * (2 ** self._failure_count), 3600
-            )
-            _LOGGER.debug(
-                "Connection failed (attempt %d), retrying in %ds",
-                self._failure_count,
-                retry_delay,
-            )
-            raise UpdateFailed(
-                f"Unable to connect to Odio Remote API: {err}",
-                retry_after=retry_delay,
-            ) from err
+            raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
         except Exception as err:
             _LOGGER.exception("Unexpected error fetching services")
             raise UpdateFailed(f"Unexpected error: {err}") from err

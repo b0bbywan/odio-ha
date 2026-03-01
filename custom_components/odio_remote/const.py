@@ -5,13 +5,11 @@ DOMAIN: Final = "odio_remote"
 
 # Config Flow
 CONF_API_URL: Final = "api_url"
-CONF_SCAN_INTERVAL: Final = "scan_interval"
-CONF_SERVICE_SCAN_INTERVAL: Final = "service_scan_interval"
+CONF_KEEPALIVE_INTERVAL: Final = "keepalive_interval"
 CONF_SERVICE_MAPPINGS: Final = "service_mappings"
 
 # Defaults
-DEFAULT_SCAN_INTERVAL: Final = 5  # secondes pour audio
-DEFAULT_SERVICE_SCAN_INTERVAL: Final = 60  # secondes pour services
+DEFAULT_KEEPALIVE_INTERVAL: Final = 30  # seconds, server-side SSE keepalive (range 10-120)
 DEFAULT_NAME: Final = "Odio Remote"
 
 # API Endpoints
@@ -41,7 +39,7 @@ SSE_EVENT_SERVER_INFO: Final = "server.info"
 # SSE reconnection
 SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds
 SSE_RECONNECT_MAX_INTERVAL: Final = 300  # 5 minutes max backoff
-SSE_KEEPALIVE_TIMEOUT: Final = 45  # 30s server keepalive + 15s buffer
+SSE_KEEPALIVE_BUFFER: Final = 15  # seconds added to keepalive_interval for client timeout
 
 # Attributes
 ATTR_CLIENT_ID: Final = "client_id"

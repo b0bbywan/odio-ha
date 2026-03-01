@@ -26,30 +26,12 @@ def _make_hass():
     return hass
 
 
-def _make_event_stream(is_api_reachable=True):
-    stream = MagicMock()
-    stream.is_api_reachable = is_api_reachable
-    return stream
+def _make_audio_coordinator(api):
+    return OdioAudioCoordinator(_make_hass(), MagicMock(), api)
 
 
-def _make_audio_coordinator(api, event_stream=None, scan_interval=5):
-    return OdioAudioCoordinator(
-        _make_hass(),
-        MagicMock(),
-        api,
-        scan_interval,
-        event_stream or _make_event_stream(),
-    )
-
-
-def _make_service_coordinator(api, event_stream=None, scan_interval=60):
-    return OdioServiceCoordinator(
-        _make_hass(),
-        MagicMock(),
-        api,
-        scan_interval,
-        event_stream or _make_event_stream(),
-    )
+def _make_service_coordinator(api):
+    return OdioServiceCoordinator(_make_hass(), MagicMock(), api)
 
 
 # ---------------------------------------------------------------------------
@@ -57,18 +39,6 @@ def _make_service_coordinator(api, event_stream=None, scan_interval=60):
 # ---------------------------------------------------------------------------
 
 class TestOdioAudioCoordinator:
-
-    @pytest.mark.asyncio
-    async def test_skips_update_when_connectivity_down(self):
-        """No API call is made when the event stream reports API unreachable."""
-        api = MagicMock()
-        api.get_clients = AsyncMock()
-        coord = _make_audio_coordinator(api, _make_event_stream(is_api_reachable=False))
-
-        with pytest.raises(UpdateFailed, match="unreachable"):
-            await coord._async_update_data()
-
-        api.get_clients.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_fetches_data_when_connectivity_up(self):
@@ -104,61 +74,13 @@ class TestOdioAudioCoordinator:
         with pytest.raises(UpdateFailed):
             await coord._async_update_data()
 
-    @pytest.mark.asyncio
-    async def test_failure_count_increments_on_error(self):
-        """_failure_count increases with each connection failure."""
-        api = MagicMock()
-        api.get_clients = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
-        )
-        coord = _make_audio_coordinator(api)
-        assert coord._failure_count == 0
-
-        with pytest.raises(UpdateFailed):
-            await coord._async_update_data()
-        assert coord._failure_count == 1
-
-        with pytest.raises(UpdateFailed):
-            await coord._async_update_data()
-        assert coord._failure_count == 2
-
-    @pytest.mark.asyncio
-    async def test_failure_count_resets_on_success(self):
-        """_failure_count resets to 0 after a successful fetch."""
-        api = MagicMock()
-        api.get_clients = AsyncMock(
-            side_effect=[
-                aiohttp.ClientConnectorError(MagicMock(), OSError()),
-                MOCK_CLIENTS,
-            ]
-        )
-        coord = _make_audio_coordinator(api)
-
-        with pytest.raises(UpdateFailed):
-            await coord._async_update_data()
-        assert coord._failure_count == 1
-
-        await coord._async_update_data()
-        assert coord._failure_count == 0
-
 
 # ---------------------------------------------------------------------------
 # OdioServiceCoordinator
 # ---------------------------------------------------------------------------
 
+
 class TestOdioServiceCoordinator:
-
-    @pytest.mark.asyncio
-    async def test_skips_update_when_connectivity_down(self):
-        """No API call is made when the event stream reports API unreachable."""
-        api = MagicMock()
-        api.get_services = AsyncMock()
-        coord = _make_service_coordinator(api, _make_event_stream(is_api_reachable=False))
-
-        with pytest.raises(UpdateFailed, match="unreachable"):
-            await coord._async_update_data()
-
-        api.get_services.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_fetches_data_when_connectivity_up(self):
@@ -194,29 +116,11 @@ class TestOdioServiceCoordinator:
         with pytest.raises(UpdateFailed):
             await coord._async_update_data()
 
-    @pytest.mark.asyncio
-    async def test_failure_count_resets_on_success(self):
-        """_failure_count resets to 0 after a successful fetch."""
-        api = MagicMock()
-        api.get_services = AsyncMock(
-            side_effect=[
-                aiohttp.ClientConnectorError(MagicMock(), OSError()),
-                MOCK_SERVICES,
-            ]
-        )
-        coord = _make_service_coordinator(api)
-
-        with pytest.raises(UpdateFailed):
-            await coord._async_update_data()
-        assert coord._failure_count == 1
-
-        await coord._async_update_data()
-        assert coord._failure_count == 0
-
 
 # ---------------------------------------------------------------------------
 # OdioAudioCoordinator.handle_sse_event
 # ---------------------------------------------------------------------------
+
 
 class TestAudioCoordinatorHandleSseEvent:
 

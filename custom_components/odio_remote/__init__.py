@@ -17,12 +17,10 @@ from .api_client import OdioApiClient
 from .event_stream import OdioEventStreamManager
 from .const import (
     CONF_API_URL,
-    DOMAIN,
-    CONF_SCAN_INTERVAL,
+    CONF_KEEPALIVE_INTERVAL,
     CONF_SERVICE_MAPPINGS,
-    CONF_SERVICE_SCAN_INTERVAL,
-    DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SERVICE_SCAN_INTERVAL,
+    DEFAULT_KEEPALIVE_INTERVAL,
+    DOMAIN,
     SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_SERVICE_UPDATED,
 )
@@ -60,17 +58,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     _LOGGER.info("Setting up Odio Remote integration")
 
     api_url = entry.data[CONF_API_URL]
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    service_scan_interval = entry.options.get(
-        CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
-    )
+    keepalive_interval = entry.options.get(CONF_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_INTERVAL)
     service_mappings = entry.options.get(CONF_SERVICE_MAPPINGS, {})
 
     _LOGGER.debug(
-        "Configuration: api_url=%s, scan_interval=%s, service_scan_interval=%s",
+        "Configuration: api_url=%s, keepalive_interval=%s",
         api_url,
-        scan_interval,
-        service_scan_interval,
+        keepalive_interval,
     )
     _LOGGER.debug("Service mappings: %s", service_mappings)
 
@@ -100,12 +94,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     if backends.get("systemd"):
         sse_backends.append("systemd")
 
-    # Create event_stream early (not started yet) so coordinators can use
-    # is_api_reachable as a gate during their initial refresh.
     event_stream = OdioEventStreamManager(
         hass=hass,
         api=api,
         backends=sse_backends,
+        keepalive_interval=keepalive_interval,
     )
 
     # Resolve MAC via device_tracker entities; fall back to cached value.
@@ -159,17 +152,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 
     audio_coordinator: OdioAudioCoordinator | None = None
     if backends.get("pulseaudio"):
-        audio_coordinator = OdioAudioCoordinator(
-            hass, entry, api, scan_interval, event_stream
-        )
+        audio_coordinator = OdioAudioCoordinator(hass, entry, api)
         await audio_coordinator.async_refresh()
         _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
 
     service_coordinator: OdioServiceCoordinator | None = None
     if backends.get("systemd"):
-        service_coordinator = OdioServiceCoordinator(
-            hass, entry, api, service_scan_interval, event_stream
-        )
+        service_coordinator = OdioServiceCoordinator(hass, entry, api)
         await service_coordinator.async_refresh()
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 

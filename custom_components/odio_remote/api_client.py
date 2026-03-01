@@ -165,6 +165,7 @@ class OdioApiClient:
         self,
         backends: list[str] | None = None,
         exclude: list[str] | None = None,
+        keepalive_interval: int | None = None,
         keepalive_timeout: float | None = None,
     ) -> AsyncGenerator[SseEvent]:
         """Open an SSE connection to /events and yield parsed events.
@@ -184,6 +185,8 @@ class OdioApiClient:
             params["backend"] = ",".join(backends)
         if exclude:
             params["exclude"] = ",".join(exclude)
+        if keepalive_interval is not None:
+            params["keepalive"] = str(keepalive_interval)
 
         url = f"{self._api_url}{ENDPOINT_EVENTS}"
         _LOGGER.debug("Opening SSE connection to %s (params=%s)", url, params)

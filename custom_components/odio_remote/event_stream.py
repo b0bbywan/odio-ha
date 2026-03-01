@@ -9,8 +9,9 @@ import aiohttp
 
 from .api_client import OdioApiClient, SseEvent
 from .const import (
+    DEFAULT_KEEPALIVE_INTERVAL,
     SSE_EVENT_SERVER_INFO,
-    SSE_KEEPALIVE_TIMEOUT,
+    SSE_KEEPALIVE_BUFFER,
     SSE_RECONNECT_MAX_INTERVAL,
     SSE_RECONNECT_MIN_INTERVAL,
 )
@@ -35,11 +36,13 @@ class OdioEventStreamManager:
         hass: HomeAssistant,
         api: OdioApiClient,
         backends: list[str],
+        keepalive_interval: int = DEFAULT_KEEPALIVE_INTERVAL,
     ) -> None:
         """Initialize the event stream manager."""
         self._hass = hass
         self._api = api
         self._backends = backends
+        self._keepalive_interval = keepalive_interval
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._sse_connected = False
@@ -173,7 +176,8 @@ class OdioEventStreamManager:
         async for event in self._api.listen_events(
             backends=self._backends,
             exclude=["player.position"],
-            keepalive_timeout=SSE_KEEPALIVE_TIMEOUT,
+            keepalive_interval=self._keepalive_interval,
+            keepalive_timeout=self._keepalive_interval + SSE_KEEPALIVE_BUFFER,
         ):
             if event.type == SSE_EVENT_SERVER_INFO:
                 self._handle_server_info(event)
