@@ -1,6 +1,6 @@
 """Tests for Odio Remote switch platform."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.odio_remote.switch import OdioServiceSwitch, _SwitchContext, async_setup_entry
 
@@ -133,24 +133,22 @@ class TestOdioServiceSwitchActions:
         ctx = _SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO)
         entity = OdioServiceSwitch(ctx, svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()):
-            await entity.async_turn_on()
+        await entity.async_turn_on()
 
         api.control_service.assert_awaited_once_with("start", "user", "shairport-sync.service")
 
     @pytest.mark.asyncio
-    async def test_turn_on_requests_refresh(self):
+    async def test_turn_on_does_not_poll(self):
+        """State update is driven by SSE — no manual refresh after action."""
         svc = MOCK_SERVICES[1]
         coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
         entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            await entity.async_turn_on()
+        await entity.async_turn_on()
 
-        mock_sleep.assert_awaited_once_with(2)
-        coord.async_request_refresh.assert_awaited_once()
+        coord.async_request_refresh.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_turn_off_calls_stop(self):
@@ -160,24 +158,22 @@ class TestOdioServiceSwitchActions:
         api.control_service = AsyncMock()
         entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()):
-            await entity.async_turn_off()
+        await entity.async_turn_off()
 
         api.control_service.assert_awaited_once_with("stop", "user", "mpd.service")
 
     @pytest.mark.asyncio
-    async def test_turn_off_requests_refresh(self):
+    async def test_turn_off_does_not_poll(self):
+        """State update is driven by SSE — no manual refresh after action."""
         svc = MOCK_SERVICES[0]
         coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
         entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            await entity.async_turn_off()
+        await entity.async_turn_off()
 
-        mock_sleep.assert_awaited_once_with(2)
-        coord.async_request_refresh.assert_awaited_once()
+        coord.async_request_refresh.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

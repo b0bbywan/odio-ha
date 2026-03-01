@@ -1,7 +1,6 @@
 """Switch platform for Odio Remote — start/stop user-scope systemd services."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -146,13 +145,9 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         await self._api.control_service(
             "start", self._service_info["scope"], self._service_info["name"]
         )
-        await asyncio.sleep(2)
-        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the service."""
         await self._api.control_service(
             "stop", self._service_info["scope"], self._service_info["name"]
         )
-        await asyncio.sleep(2)
-        await self.coordinator.async_request_refresh()
