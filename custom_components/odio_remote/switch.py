@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
-from .coordinator import OdioServiceCoordinator
+from .coordinator import OdioBluetoothCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,18 +40,12 @@ class _SwitchContext:
 # =============================================================================
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
+def _build_service_switches(
     entry: OdioConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Set up Odio Remote switch entities."""
+    service_coordinator: OdioServiceCoordinator,
+) -> tuple[_SwitchContext, list["OdioServiceSwitch"]]:
+    """Build initial service switch entities from live or cached data."""
     rd = entry.runtime_data
-    service_coordinator = rd.service_coordinator
-
-    if service_coordinator is None:
-        return
-
     ctx = _SwitchContext(
         entry_id=entry.entry_id,
         service_coordinator=service_coordinator,
@@ -69,14 +63,44 @@ async def async_setup_entry(
         for svc in services_source
         if svc.get("exists") and svc.get("scope") == "user"
     ]
-    if entities:
+    if live_services or cached_services:
         _LOGGER.debug(
             "Creating %d service switch entities (%s)",
             len(entities),
             "live" if live_services else "cached",
         )
+    return ctx, entities
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Odio Remote switch entities."""
+    rd = entry.runtime_data
+    entities: list[SwitchEntity] = []
+
+    if rd.bluetooth_coordinator is not None:
+        entities.append(
+            OdioBluetoothSwitch(
+                rd.bluetooth_coordinator,
+                rd.api,
+                entry.entry_id,
+                rd.device_info,
+                rd.event_stream,
+            )
+        )
+
+    service_coordinator = rd.service_coordinator
+    if service_coordinator is not None:
+        ctx, service_switches = _build_service_switches(entry, service_coordinator)
+        entities += service_switches
 
     async_add_entities(entities)
+
+    if service_coordinator is None:
+        return
 
     # -------------------------------------------------------------------------
     # Dynamic switch creation
@@ -85,6 +109,7 @@ async def async_setup_entry(
     known_switch_keys = {
         f"{e._service_info['scope']}/{e._service_info['name']}"
         for e in entities
+        if isinstance(e, OdioServiceSwitch)
     }
 
     @callback
@@ -173,3 +198,62 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         await self._api.control_service(
             "stop", self._service_info["scope"], self._service_info["name"]
         )
+
+
+class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEntity):
+    """Switch that powers the Bluetooth adapter on or off."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "bluetooth_power"
+
+    def __init__(
+        self,
+        coordinator: OdioBluetoothCoordinator,
+        api: OdioApiClient,
+        entry_id: str,
+        device_info: DeviceInfo,
+        event_stream: OdioEventStreamManager,
+    ) -> None:
+        super().__init__(coordinator)
+        self._api = api
+        self._event_stream = event_stream
+        self._attr_unique_id = f"{entry_id}_bluetooth_power"
+        self._attr_device_info = device_info
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def icon(self) -> str:
+        """Return icon based on power state."""
+        return "mdi:bluetooth" if self.is_on else "mdi:bluetooth-off"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when Bluetooth is powered on."""
+        if not self.coordinator.data:
+            return False
+        return self.coordinator.data.get("powered", False)
+
+    @property
+    def available(self) -> bool:
+        """Return False when SSE is disconnected or coordinator has no data."""
+        return (
+            self._event_stream.sse_connected
+            and self.coordinator.last_update_success
+            and bool(self.coordinator.data)
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Power on Bluetooth adapter."""
+        await self._api.bluetooth_power_up()
+        await self.coordinator.async_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Power off Bluetooth adapter."""
+        await self._api.bluetooth_power_down()
+        await self.coordinator.async_refresh()

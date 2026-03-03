@@ -228,9 +228,9 @@ class TestOdioSwitchSetupEntry:
     @pytest.mark.asyncio
     async def test_no_entities_when_no_coordinator(self):
         entry = _make_entry(service_coordinator=None)
-        add_entities = MagicMock()
-        await async_setup_entry(MagicMock(), entry, add_entities)
-        add_entities.assert_not_called()
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        assert added == []
 
     @pytest.mark.asyncio
     async def test_no_entities_when_coordinator_data_is_none(self):
