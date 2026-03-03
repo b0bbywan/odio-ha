@@ -6,20 +6,38 @@ This integration connects to a Linux machine running the [go-odio-api server](ht
 
 ## Features
 
-### Core basics
-- Zeroconf (mDNS) auto-discovery: your Linux machine appears automatically (no manual IP/port in most cases)
-- One single "Odio Remote (hostname)" device grouping everything
-- Automatic detection of exposed backends from server config:
-  - audio: PulseAudio/PipeWire sink + per-sink-input volume/mute
-  - power: shutdown & reboot buttons
-  - services: user-scope systemd services start/stop
-  - (mpris, bluetooth, sse planned but not available yet)
-- Always-visible connectivity binary_sensor (diagnostic category)
-- MAC address resolved via ARP and added to DeviceInfo.connections (“Connected via” in UI)
-- Clean state logic: `playing` / `idle` / `unavailable`
-- Real-time updates via SSE (Server-Sent Events) — no polling needed
-  - Automatic reconnection with exponential backoff
-  - Configurable keepalive interval (server-side heartbeat detection)
+### Core
+- Zeroconf (mDNS) auto-discovery
+- One single “Odio Remote (`hostname`)” device grouping all entities
+- Backends detected automatically from server config — no toggles in HA
+- Always-visible connectivity sensor (diagnostic)
+- MAC address resolved via Device Tracker
+
+### Real-time updates (SSE)
+All state is pushed by the server via **Server-Sent Events** — no polling after initial fetch.
+- Coordinators refresh once at startup, then stay in sync via SSE
+- Automatic reconnection with exponential backoff (1s → 5min)
+- Configurable server-side keepalive interval (default 30s, range 10–120s)
+
+### Audio (PulseAudio / PipeWire backend)
+- Main receiver `media_player` with global volume/mute
+- Remote audio client entities (PipeWire tunnels from other machines)
+- No local clients for now due to name collision risks
+
+### Services (systemd backend)
+- `media_player` entity per detected user-scope systemd service
+- Start/stop switch per service
+- Optional mapping to an existing HA media player → inherits full playback controls & metadata
+
+### Bluetooth
+Control your Bluetooth adapter directly from Home Assistant:
+- **Power** switch — turn the adapter on or off
+- **Pairing mode** button — make the device discoverable for 60 seconds
+- **Pairing active** sensor — know when pairing is in progress (diagnostic)
+- **Connected device** sensor — name of the currently connected device
+
+### Power (power backend)
+- Shutdown and reboot buttons
 
 ### Mapping to existing media players
 You can map Odio entities (services or remote clients) to any existing HA media_player entity via the configuration or reconfiguration flow.
@@ -84,42 +102,43 @@ Required: [go-odio-api](https://github.com/b0bbywan/go-odio-api) running on your
 
 ## Entities Created
 
-Grouped under one device: “Odio Remote (hostname)”.
+All grouped under one device: **”Odio Remote (hostname)”**.
 
-- `media_player.odio_remote_[hostname]`
-  Main hub.
-  - State: `playing` (any active playback), `idle` (no playback), `unavailable` (API down or audio not exposed)
-  - Controls: global volume/mute (audio backend only)
+### Always present
+| Entity | Description |
+|--------|-------------|
+| `media_player.odio_remote_[hostname]` | Main hub — state: `playing` / `idle` / `unavailable`. Global volume/mute when audio backend enabled. |
+| `binary_sensor.odio_remote_[hostname]_connection_status` | SSE stream connected (diagnostic) |
 
-- `media_player.odio_remote_[hostname]_sink_input_[app]`
-  Per-sink-input (e.g. Firefox, VLC).
-  - Volume/mute per-client
-  - State follows corked/uncorked
+### Audio backend (PulseAudio / PipeWire)
+| Entity | Description |
+|--------|-------------|
+| `media_player.odio_remote_[hostname]_[app]` | Per-sink-input player (e.g. Firefox, VLC) — volume/mute, state follows corked/uncorked |
+| `media_player.odio_remote_[hostname]_[client]` | Remote audio client (PipeWire tunnel) — volume/mute, optional mapping |
 
-- `media_player.odio_remote_[hostname]_[service_name]` (e.g. mpd.service)
-  For each detected user systemd service (if services backend exposed).
-  - Start/stop via switch-like actions
-  - Volume/mute via Pulse/PipeWire
-  - If mapped: full inherited playback controls & metadata
+### Services backend (systemd)
+| Entity | Description |
+|--------|-------------|
+| `media_player.odio_remote_[hostname]_[service]` | One per user-scope service — start/stop, volume/mute, optional mapping for full playback |
+| `switch.odio_remote_[hostname]_[service]` | Direct start/stop toggle per service |
 
-- `media_player.odio_remote_[hostname]_tunnel_[client_name]`
-  For remote clients (different host, no local service).
-  - Volume/mute
-  - If mapped: inherits full player features (e.g. Kodi metadata)
+### Bluetooth backend
+| Entity | Description |
+|--------|-------------|
+| `switch.odio_remote_[hostname]_bluetooth_power` | Power the Bluetooth adapter on/off |
+| `button.odio_remote_[hostname]_bluetooth_pairing` | Trigger pairing mode (60s server-side timeout) |
+| `binary_sensor.odio_remote_[hostname]_bluetooth_pairing_active` | Pairing mode currently active (diagnostic) |
+| `sensor.odio_remote_[hostname]_bluetooth_connected_device` | Name of the connected device, empty when none |
 
-- `button.odio_remote_[hostname]_power_off` / `button.odio_remote_[hostname]_reboot`
-  Shutdown/reboot (power backend only)
-
-- `switch.odio_remote_[hostname]_service_[unit]`
-  Start/stop for services (redundant with media_player if mapped, but direct toggle)
-
-- `binary_sensor.odio_remote_[hostname]_connection_status`
-  API reachable (connectivity device_class, diagnostic)
+### Power backend
+| Entity | Description |
+|--------|-------------|
+| `button.odio_remote_[hostname]_power_off` | Shut down the machine |
+| `button.odio_remote_[hostname]_reboot` | Reboot the machine |
 
 ## Roadmap
 
 - MPRIS player entities
-- Embed Bluetooth speaker support (pairing, enable/disable)
 - Audio outputs handling
 - More Sensors: Tell me what you need for your setup !
 - Improved error reporting & options flow
