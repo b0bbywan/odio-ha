@@ -32,6 +32,8 @@ async def async_setup_entry(
         entities.append(OdioPowerOffButton(event_stream, api, entry_id, device_info))
     if caps.get("reboot"):
         entities.append(OdioRebootButton(event_stream, api, entry_id, device_info))
+    if entry.runtime_data.bluetooth_coordinator is not None:
+        entities.append(OdioBluetoothPairingButton(event_stream, api, entry_id, device_info))
 
     async_add_entities(entities)
 
@@ -103,3 +105,25 @@ class OdioRebootButton(_OdioPowerButtonBase):
     async def async_press(self) -> None:
         """Handle the button press."""
         await self._api.reboot()
+
+
+class OdioBluetoothPairingButton(_OdioPowerButtonBase):
+    """Button that triggers Bluetooth pairing mode (60s server-side timeout)."""
+
+    _attr_device_class = None
+    _attr_translation_key = "bluetooth_pairing"
+    _attr_icon = "mdi:bluetooth-connect"
+
+    def __init__(
+        self,
+        event_stream: OdioEventStreamManager,
+        api: OdioApiClient,
+        entry_id: str,
+        device_info: DeviceInfo,
+    ) -> None:
+        super().__init__(event_stream, api, entry_id, device_info)
+        self._attr_unique_id = f"{entry_id}_bluetooth_pairing"
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self._api.bluetooth_pairing_mode()
