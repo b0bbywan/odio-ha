@@ -23,9 +23,10 @@ from .const import (
     DOMAIN,
     SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_AUDIO_UPDATED,
+    SSE_EVENT_BLUETOOTH_UPDATED,
     SSE_EVENT_SERVICE_UPDATED,
 )
-from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator, OdioServiceCoordinator
 from .helpers import async_get_mac_from_ip
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.MEDIA_PLAYER,
+    Platform.SENSOR,
     Platform.SWITCH,
 ]
 
@@ -46,6 +48,7 @@ class OdioRemoteRuntimeData:
     device_info: DeviceInfo
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
+    bluetooth_coordinator: OdioBluetoothCoordinator | None
     event_stream: OdioEventStreamManager
     service_mappings: dict[str, str]
     power_capabilities: dict[str, bool]
@@ -96,6 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         sse_backends.append("systemd")
     if backends.get("power"):
         sse_backends.append("power")
+    if backends.get("bluetooth"):
+        sse_backends.append("bluetooth")
 
     event_stream = OdioEventStreamManager(
         hass=hass,
@@ -171,6 +176,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
                 )
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
+    bluetooth_coordinator: OdioBluetoothCoordinator | None = None
+    if backends.get("bluetooth"):
+        bluetooth_coordinator = OdioBluetoothCoordinator(hass, entry, api)
+        await bluetooth_coordinator.async_refresh()
+        _LOGGER.debug("Bluetooth coordinator created (bluetooth backend enabled)")
+
     # Wire SSE event listeners now that coordinators exist.
     if audio_coordinator is not None:
         entry.async_on_unload(
@@ -189,6 +200,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
                 SSE_EVENT_SERVICE_UPDATED, service_coordinator.handle_sse_event
             )
         )
+    if bluetooth_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_BLUETOOTH_UPDATED, bluetooth_coordinator.handle_sse_event
+            )
+        )
 
     # Re-fetch coordinator data on SSE reconnect to avoid stale state.
     def _on_sse_reconnect() -> None:
@@ -198,6 +215,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             hass.async_create_task(audio_coordinator.async_refresh())
         if service_coordinator is not None:
             hass.async_create_task(service_coordinator.async_refresh())
+        if bluetooth_coordinator is not None:
+            hass.async_create_task(bluetooth_coordinator.async_refresh())
 
     entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
 
@@ -206,6 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         device_info=device_info,
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
+        bluetooth_coordinator=bluetooth_coordinator,
         event_stream=event_stream,
         service_mappings=service_mappings,
         power_capabilities=power_capabilities,
