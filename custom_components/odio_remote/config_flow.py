@@ -21,12 +21,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api_client import OdioApiClient
 from .const import (
     CONF_API_URL,
-    CONF_SCAN_INTERVAL,
+    CONF_KEEPALIVE_INTERVAL,
     CONF_SERVICE_MAPPINGS,
-    CONF_SERVICE_SCAN_INTERVAL,
+    DEFAULT_KEEPALIVE_INTERVAL,
     DEFAULT_NAME,
-    DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SERVICE_SCAN_INTERVAL,
     DOMAIN,
 )
 from .config_flow_helpers import (
@@ -179,17 +177,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-STEP_OPTIONS_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Optional(
-            CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-        ): vol.All(vol.Coerce(int), vol.Range(min=1, max=300)),
-        vol.Optional(
-            CONF_SERVICE_SCAN_INTERVAL, default=DEFAULT_SERVICE_SCAN_INTERVAL
-        ): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
-    }
-)
-
 
 # =============================================================================
 # Config Flow
@@ -258,7 +245,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 self._data[CONF_API_URL] = api_url
-                return await self.async_step_options()
+                return await self.async_step_sse()
 
         return self.async_show_form(
             step_id="user",
@@ -309,7 +296,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             errors = await self._async_validate_api_url(self._data[CONF_API_URL])
             if errors:
                 return self.async_abort(reason="cannot_connect")
-            return await self.async_step_options()
+            return await self.async_step_sse()
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
@@ -319,22 +306,29 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_options(
+    async def async_step_sse(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle scan interval options."""
+        """Configure SSE keepalive interval."""
         if user_input is not None:
-            self._options[CONF_SCAN_INTERVAL] = user_input.get(
-                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-            )
-            self._options[CONF_SERVICE_SCAN_INTERVAL] = user_input.get(
-                CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
+            self._options[CONF_KEEPALIVE_INTERVAL] = user_input.get(
+                CONF_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_INTERVAL
             )
             return await self.async_step_services()
 
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_KEEPALIVE_INTERVAL): vol.All(
+                    vol.Coerce(int), vol.Range(min=10, max=120)
+                ),
+            }
+        )
+
         return self.async_show_form(
-            step_id="options",
-            data_schema=STEP_OPTIONS_DATA_SCHEMA,
+            step_id="sse",
+            data_schema=add_suggested_values_to_schema(
+                schema, {CONF_KEEPALIVE_INTERVAL: DEFAULT_KEEPALIVE_INTERVAL}
+            ),
         )
 
     async def async_step_services(
@@ -413,54 +407,43 @@ class OdioOptionsFlow(OptionsFlowWithReload):
 
         return self.async_show_menu(
             step_id="init",
-            menu_options=["intervals", "mappings"],
+            menu_options=["sse", "mappings"],
             description_placeholders={
                 "name": self.config_entry.title,
             },
         )
 
-    async def async_step_intervals(
+    async def async_step_sse(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Configure scan intervals."""
+        """Configure SSE keepalive interval."""
         if user_input is not None:
             new_options = dict(self._options)
-            new_options[CONF_SCAN_INTERVAL] = user_input[CONF_SCAN_INTERVAL]
-            new_options[CONF_SERVICE_SCAN_INTERVAL] = user_input[
-                CONF_SERVICE_SCAN_INTERVAL
-            ]
+            new_options[CONF_KEEPALIVE_INTERVAL] = user_input[CONF_KEEPALIVE_INTERVAL]
 
             _LOGGER.info(
-                "Updating intervals: scan=%s, service_scan=%s",
-                new_options[CONF_SCAN_INTERVAL],
-                new_options[CONF_SERVICE_SCAN_INTERVAL],
+                "Updating SSE keepalive interval: %s",
+                new_options[CONF_KEEPALIVE_INTERVAL],
             )
 
             return self.async_create_entry(title="", data=new_options)
 
-        # Build schema with current values as suggested
         schema = vol.Schema(
             {
-                vol.Optional(CONF_SCAN_INTERVAL): vol.All(
-                    vol.Coerce(int), vol.Range(min=1, max=300)
-                ),
-                vol.Optional(CONF_SERVICE_SCAN_INTERVAL): vol.All(
-                    vol.Coerce(int), vol.Range(min=10, max=600)
+                vol.Optional(CONF_KEEPALIVE_INTERVAL): vol.All(
+                    vol.Coerce(int), vol.Range(min=10, max=120)
                 ),
             }
         )
 
         suggested = {
-            CONF_SCAN_INTERVAL: self._options.get(
-                CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-            ),
-            CONF_SERVICE_SCAN_INTERVAL: self._options.get(
-                CONF_SERVICE_SCAN_INTERVAL, DEFAULT_SERVICE_SCAN_INTERVAL
+            CONF_KEEPALIVE_INTERVAL: self._options.get(
+                CONF_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_INTERVAL
             ),
         }
 
         return self.async_show_form(
-            step_id="intervals",
+            step_id="sse",
             data_schema=add_suggested_values_to_schema(schema, suggested),
         )
 

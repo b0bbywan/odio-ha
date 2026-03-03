@@ -1,6 +1,6 @@
 """Tests for Odio Remote switch platform."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.odio_remote.switch import OdioServiceSwitch, _SwitchContext, async_setup_entry
 
@@ -20,14 +20,22 @@ def _make_coordinator(services=None, last_update_success=True):
     return coord
 
 
-def _make_ctx(coordinator=None, service_info=None):
+def _make_event_stream(sse_connected=True):
+    es = MagicMock()
+    es.sse_connected = sse_connected
+    es.async_add_listener = MagicMock(return_value=lambda: None)
+    return es
+
+
+def _make_ctx(coordinator=None, service_info=None, event_stream=None, api=None):
     if coordinator is None:
         coordinator = _make_coordinator([service_info] if service_info else [])
     return _SwitchContext(
         entry_id="test_entry_id",
         service_coordinator=coordinator,
-        api=MagicMock(),
+        api=api or MagicMock(),
         device_info=MOCK_DEVICE_INFO,
+        event_stream=event_stream or _make_event_stream(),
     )
 
 
@@ -43,6 +51,7 @@ def _make_entry(service_coordinator):
     entry.runtime_data.service_coordinator = service_coordinator
     entry.runtime_data.api = MagicMock()
     entry.runtime_data.device_info = MOCK_DEVICE_INFO
+    entry.runtime_data.event_stream = _make_event_stream()
     entry.async_on_unload = MagicMock()
     return entry
 
@@ -117,6 +126,12 @@ class TestOdioServiceSwitchAvailable:
         entity = _make_switch(MOCK_SERVICES[0], coordinator=_make_coordinator(services=None))
         assert entity.available is False
 
+    def test_unavailable_when_sse_disconnected(self):
+        es = _make_event_stream(sse_connected=False)
+        ctx = _make_ctx(coordinator=_make_coordinator(MOCK_SERVICES), event_stream=es)
+        entity = OdioServiceSwitch(ctx, MOCK_SERVICES[0])
+        assert entity.available is False
+
 
 # ---------------------------------------------------------------------------
 # Turn on / turn off
@@ -127,57 +142,50 @@ class TestOdioServiceSwitchActions:
     @pytest.mark.asyncio
     async def test_turn_on_calls_start(self):
         svc = MOCK_SERVICES[1]
-        coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
-        ctx = _SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO)
-        entity = OdioServiceSwitch(ctx, svc)
+        entity = OdioServiceSwitch(_make_ctx(coordinator=_make_coordinator(MOCK_SERVICES), api=api), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()):
-            await entity.async_turn_on()
+        await entity.async_turn_on()
 
         api.control_service.assert_awaited_once_with("start", "user", "shairport-sync.service")
 
     @pytest.mark.asyncio
-    async def test_turn_on_requests_refresh(self):
+    async def test_turn_on_does_not_poll(self):
+        """State update is driven by SSE — no manual refresh after action."""
         svc = MOCK_SERVICES[1]
         coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
-        entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
+        entity = OdioServiceSwitch(_make_ctx(coordinator=coord, api=api), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            await entity.async_turn_on()
+        await entity.async_turn_on()
 
-        mock_sleep.assert_awaited_once_with(2)
-        coord.async_request_refresh.assert_awaited_once()
+        coord.async_request_refresh.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_turn_off_calls_stop(self):
         svc = MOCK_SERVICES[0]
-        coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
-        entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
+        entity = OdioServiceSwitch(_make_ctx(coordinator=_make_coordinator(MOCK_SERVICES), api=api), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()):
-            await entity.async_turn_off()
+        await entity.async_turn_off()
 
         api.control_service.assert_awaited_once_with("stop", "user", "mpd.service")
 
     @pytest.mark.asyncio
-    async def test_turn_off_requests_refresh(self):
+    async def test_turn_off_does_not_poll(self):
+        """State update is driven by SSE — no manual refresh after action."""
         svc = MOCK_SERVICES[0]
         coord = _make_coordinator(MOCK_SERVICES)
         api = MagicMock()
         api.control_service = AsyncMock()
-        entity = OdioServiceSwitch(_SwitchContext("test_entry_id", coord, api, MOCK_DEVICE_INFO), svc)
+        entity = OdioServiceSwitch(_make_ctx(coordinator=coord, api=api), svc)
 
-        with patch("custom_components.odio_remote.switch.asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            await entity.async_turn_off()
+        await entity.async_turn_off()
 
-        mock_sleep.assert_awaited_once_with(2)
-        coord.async_request_refresh.assert_awaited_once()
+        coord.async_request_refresh.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

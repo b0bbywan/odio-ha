@@ -11,16 +11,14 @@
           "api_url": "The base URL of your go-odio-api (e.g. http://192.168.1.100:8018)"
         }
       },
-      "options": {
-        "title": "Scan Settings",
-        "description": "Configure update intervals",
+      "sse": {
+        "title": "SSE Configuration",
+        "description": "Configure the SSE keepalive interval",
         "data": {
-          "scan_interval": "Audio scan interval (seconds)",
-          "service_scan_interval": "Service scan interval (seconds)"
+          "keepalive_interval": "Keepalive interval (seconds)"
         },
         "data_description": {
-          "scan_interval": "How often to update audio clients (recommended: 10s)",
-          "service_scan_interval": "How often to update services (recommended: 60s)"
+          "keepalive_interval": "Server heartbeat interval, 10-120s (recommended: 30s)"
         }
       },
       "zeroconf_confirm": {
@@ -60,20 +58,18 @@
         "title": "Odio Remote Options",
         "description": "What would you like to configure for {name}?",
         "menu_options": {
-          "intervals": "Change scan intervals",
+          "sse": "Configure SSE settings",
           "mappings": "Manage entity mappings"
         }
       },
-      "intervals": {
-        "title": "Scan Intervals",
-        "description": "Configure update intervals",
+      "sse": {
+        "title": "SSE Settings",
+        "description": "Configure the SSE keepalive interval",
         "data": {
-          "scan_interval": "Audio scan interval (seconds)",
-          "service_scan_interval": "Service scan interval (seconds)"
+          "keepalive_interval": "Keepalive interval (seconds)"
         },
         "data_description": {
-          "scan_interval": "How often to update audio clients (recommended: 10s)",
-          "service_scan_interval": "How often to update services (recommended: 60s)"
+          "keepalive_interval": "Server heartbeat interval, 10-120s (recommended: 30s)"
         }
       },
       "mappings": {
