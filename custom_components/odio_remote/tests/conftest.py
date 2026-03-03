@@ -10,6 +10,7 @@ MOCK_SERVER_INFO = {
     "api_sw": "odio-api",
     "api_version": "v0.6.0-rc.1-main",
     "backends": {
+        "bluetooth": True,
         "power": True,
         "mpris": True,
         "pulseaudio": True,
@@ -145,6 +146,21 @@ MOCK_DEVICE_INFO = DeviceInfo(
     hw_version="Debian GNU/Linux 13 (trixie)",
     configuration_url="http://localhost:8018/ui",
 )
+
+MOCK_BLUETOOTH_STATUS = {
+    "powered": True,
+    "discoverable": False,
+    "pairable": False,
+    "pairing_active": False,
+    "known_devices": [
+        {
+            "address": "AA:BB:CC:DD:EE:FF",
+            "name": "Pixel 6a",
+            "trusted": True,
+            "connected": True,
+        }
+    ],
+}
 
 MOCK_REMOTE_CLIENTS = [
     {

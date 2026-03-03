@@ -2,9 +2,14 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.odio_remote.switch import OdioServiceSwitch, _SwitchContext, async_setup_entry
+from custom_components.odio_remote.switch import (
+    OdioBluetoothSwitch,
+    OdioServiceSwitch,
+    _SwitchContext,
+    async_setup_entry,
+)
 
-from .conftest import MOCK_ALL_SERVICES, MOCK_DEVICE_INFO, MOCK_SERVICES
+from .conftest import MOCK_ALL_SERVICES, MOCK_BLUETOOTH_STATUS, MOCK_DEVICE_INFO, MOCK_SERVICES
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +54,7 @@ def _make_entry(service_coordinator):
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
     entry.runtime_data.service_coordinator = service_coordinator
+    entry.runtime_data.bluetooth_coordinator = None
     entry.runtime_data.api = MagicMock()
     entry.runtime_data.device_info = MOCK_DEVICE_INFO
     entry.runtime_data.event_stream = _make_event_stream()
@@ -247,3 +253,154 @@ class TestOdioSwitchSetupEntry:
         added = []
         await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
         assert {e.name for e in added} == {"mpd", "shairport-sync", "snapclient"}
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch helpers
+# ---------------------------------------------------------------------------
+
+def _make_bt_coordinator(data=None, last_update_success=True):
+    coord = MagicMock()
+    coord.data = data
+    coord.last_update_success = last_update_success
+    coord.async_refresh = AsyncMock()
+    coord.async_add_listener = MagicMock(return_value=lambda: None)
+    return coord
+
+
+def _make_bt_switch(data=None, sse_connected=True, last_update_success=True, api=None):
+    coord = _make_bt_coordinator(data, last_update_success)
+    es = _make_event_stream(sse_connected)
+    return OdioBluetoothSwitch(coord, api or MagicMock(), "test_entry_id", MOCK_DEVICE_INFO, es)
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch — construction
+# ---------------------------------------------------------------------------
+
+class TestOdioBluetoothSwitchConstruction:
+
+    def test_unique_id(self):
+        assert _make_bt_switch().unique_id == "test_entry_id_bluetooth_power"
+
+    def test_translation_key(self):
+        assert _make_bt_switch().translation_key == "bluetooth_power"
+
+    def test_has_entity_name(self):
+        assert _make_bt_switch()._attr_has_entity_name is True
+
+    def test_device_info_set(self):
+        from custom_components.odio_remote.const import DOMAIN
+        assert (DOMAIN, "test_entry_id") in _make_bt_switch().device_info["identifiers"]
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch — is_on
+# ---------------------------------------------------------------------------
+
+class TestOdioBluetoothSwitchIsOn:
+
+    def test_is_on_when_powered(self):
+        assert _make_bt_switch(data=MOCK_BLUETOOTH_STATUS).is_on is True
+
+    def test_is_off_when_not_powered(self):
+        data = {**MOCK_BLUETOOTH_STATUS, "powered": False}
+        assert _make_bt_switch(data=data).is_on is False
+
+    def test_is_off_when_no_data(self):
+        assert _make_bt_switch(data=None).is_on is False
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch — available
+# ---------------------------------------------------------------------------
+
+class TestOdioBluetoothSwitchAvailable:
+
+    def test_available_when_all_ok(self):
+        assert _make_bt_switch(data=MOCK_BLUETOOTH_STATUS).available is True
+
+    def test_unavailable_when_sse_disconnected(self):
+        assert _make_bt_switch(data=MOCK_BLUETOOTH_STATUS, sse_connected=False).available is False
+
+    def test_unavailable_when_last_update_failed(self):
+        assert _make_bt_switch(data=MOCK_BLUETOOTH_STATUS, last_update_success=False).available is False
+
+    def test_unavailable_when_no_data(self):
+        assert _make_bt_switch(data=None).available is False
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch — actions
+# ---------------------------------------------------------------------------
+
+class TestOdioBluetoothSwitchActions:
+
+    @pytest.mark.asyncio
+    async def test_turn_on_calls_power_up(self):
+        api = MagicMock()
+        api.bluetooth_power_up = AsyncMock()
+        switch = _make_bt_switch(data=MOCK_BLUETOOTH_STATUS, api=api)
+        await switch.async_turn_on()
+        api.bluetooth_power_up.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_turn_on_refreshes_coordinator(self):
+        api = MagicMock()
+        api.bluetooth_power_up = AsyncMock()
+        coord = _make_bt_coordinator(data=MOCK_BLUETOOTH_STATUS)
+        es = _make_event_stream()
+        switch = OdioBluetoothSwitch(coord, api, "test_entry_id", MOCK_DEVICE_INFO, es)
+        await switch.async_turn_on()
+        coord.async_refresh.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_turn_off_calls_power_down(self):
+        api = MagicMock()
+        api.bluetooth_power_down = AsyncMock()
+        switch = _make_bt_switch(data=MOCK_BLUETOOTH_STATUS, api=api)
+        await switch.async_turn_off()
+        api.bluetooth_power_down.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_turn_off_refreshes_coordinator(self):
+        api = MagicMock()
+        api.bluetooth_power_down = AsyncMock()
+        coord = _make_bt_coordinator(data=MOCK_BLUETOOTH_STATUS)
+        es = _make_event_stream()
+        switch = OdioBluetoothSwitch(coord, api, "test_entry_id", MOCK_DEVICE_INFO, es)
+        await switch.async_turn_off()
+        coord.async_refresh.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothSwitch — async_setup_entry
+# ---------------------------------------------------------------------------
+
+def _make_entry_with_bt(bt_coordinator, service_coordinator=None):
+    entry = MagicMock()
+    entry.entry_id = "test_entry_id"
+    entry.runtime_data.service_coordinator = service_coordinator
+    entry.runtime_data.bluetooth_coordinator = bt_coordinator
+    entry.runtime_data.api = MagicMock()
+    entry.runtime_data.device_info = MOCK_DEVICE_INFO
+    entry.runtime_data.event_stream = _make_event_stream()
+    entry.async_on_unload = MagicMock()
+    return entry
+
+
+class TestOdioBluetoothSwitchSetupEntry:
+
+    @pytest.mark.asyncio
+    async def test_creates_bt_switch_when_coordinator_present(self):
+        entry = _make_entry_with_bt(_make_bt_coordinator(MOCK_BLUETOOTH_STATUS))
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        assert any(isinstance(e, OdioBluetoothSwitch) for e in added)
+
+    @pytest.mark.asyncio
+    async def test_no_bt_switch_when_coordinator_absent(self):
+        entry = _make_entry_with_bt(bt_coordinator=None)
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        assert not any(isinstance(e, OdioBluetoothSwitch) for e in added)
