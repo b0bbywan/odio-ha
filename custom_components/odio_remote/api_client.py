@@ -160,6 +160,30 @@ class OdioApiClient:
         from .const import ENDPOINT_POWER_REBOOT
         await self.post(ENDPOINT_POWER_REBOOT)
 
+    # Bluetooth control
+    async def get_bluetooth_status(self) -> dict[str, Any]:
+        """Get Bluetooth adapter and device status."""
+        from .const import ENDPOINT_BLUETOOTH
+        result = await self.get(ENDPOINT_BLUETOOTH)
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from bluetooth endpoint, got {type(result)}")
+        return result
+
+    async def bluetooth_power_up(self) -> None:
+        """Power on Bluetooth adapter."""
+        from .const import ENDPOINT_BLUETOOTH_POWER_UP
+        await self.post(ENDPOINT_BLUETOOTH_POWER_UP)
+
+    async def bluetooth_power_down(self) -> None:
+        """Power off Bluetooth adapter."""
+        from .const import ENDPOINT_BLUETOOTH_POWER_DOWN
+        await self.post(ENDPOINT_BLUETOOTH_POWER_DOWN)
+
+    async def bluetooth_pairing_mode(self) -> None:
+        """Enable Bluetooth pairing mode (60s timeout server-side)."""
+        from .const import ENDPOINT_BLUETOOTH_PAIRING_MODE
+        await self.post(ENDPOINT_BLUETOOTH_PAIRING_MODE)
+
     # SSE event stream
     async def listen_events(
         self,
