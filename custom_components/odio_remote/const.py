@@ -30,6 +30,10 @@ ENDPOINT_POWER_REBOOT: Final = "/power/reboot"
 ENDPOINT_SERVICE_START: Final = "/services/{scope}/{unit}/start"
 ENDPOINT_SERVICE_STOP: Final = "/services/{scope}/{unit}/stop"
 ENDPOINT_EVENTS: Final = "/events"
+ENDPOINT_BLUETOOTH: Final = "/bluetooth"
+ENDPOINT_BLUETOOTH_POWER_UP: Final = "/bluetooth/power_up"
+ENDPOINT_BLUETOOTH_POWER_DOWN: Final = "/bluetooth/power_down"
+ENDPOINT_BLUETOOTH_PAIRING_MODE: Final = "/bluetooth/pairing_mode"
 
 # SSE event types
 SSE_EVENT_AUDIO_UPDATED: Final = "audio.updated"
@@ -37,6 +41,7 @@ SSE_EVENT_AUDIO_REMOVED: Final = "audio.removed"
 SSE_EVENT_SERVICE_UPDATED: Final = "service.updated"
 SSE_EVENT_POWER_ACTION: Final = "power.action"
 SSE_EVENT_SERVER_INFO: Final = "server.info"
+SSE_EVENT_BLUETOOTH_UPDATED: Final = "bluetooth.updated"
 
 # SSE reconnection
 SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds
