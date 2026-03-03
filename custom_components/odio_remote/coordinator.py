@@ -88,6 +88,48 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         self.async_set_updated_data({"audio": result})
 
 
+class OdioBluetoothCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for Bluetooth adapter and device state."""
+
+    config_entry: ConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        api: OdioApiClient,
+    ) -> None:
+        """Initialize bluetooth coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_bluetooth",
+            update_interval=None,
+            config_entry=config_entry,
+        )
+        self.api = api
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch Bluetooth status from API."""
+        try:
+            return await self.api.get_bluetooth_status()
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
+        except Exception as err:
+            _LOGGER.exception("Unexpected error fetching bluetooth status")
+            raise UpdateFailed(f"Unexpected error: {err}") from err
+
+    def handle_sse_event(self, event: SseEvent) -> None:
+        """Handle a bluetooth.updated SSE event."""
+        if not isinstance(event.data, dict):
+            _LOGGER.warning(
+                "bluetooth.updated: expected dict, got %s", type(event.data).__name__
+            )
+            return
+        _LOGGER.debug("SSE bluetooth.updated: powered=%s", event.data.get("powered"))
+        self.async_set_updated_data(event.data)
+
+
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for systemd service data."""
 
