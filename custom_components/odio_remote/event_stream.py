@@ -164,6 +164,7 @@ class OdioEventStreamManager:
         """Open one SSE connection and process events until it ends."""
         if not self._backends:
             _LOGGER.debug("No backends to subscribe to, skipping SSE")
+            self._set_sse_connected(True)
             await self._stop_event.wait()
             return
 

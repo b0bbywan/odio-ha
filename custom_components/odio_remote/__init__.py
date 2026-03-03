@@ -162,6 +162,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     if backends.get("systemd"):
         service_coordinator = OdioServiceCoordinator(hass, entry, api)
         await service_coordinator.async_refresh()
+        if service_coordinator.data:
+            services = service_coordinator.data.get("services", [])
+            if services != entry.data.get("cached_services"):
+                hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, "cached_services": services}
+                )
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
     # Wire SSE event listeners now that coordinators exist.

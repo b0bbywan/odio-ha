@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.core import HomeAssistant
@@ -52,17 +51,11 @@ class _OdioPowerButtonBase(ButtonEntity):
         self._event_stream = event_stream
         self._api = api
         self._attr_device_info = device_info
-        self._unsub: Callable[[], None] | None = None
 
     async def async_added_to_hass(self) -> None:
-        self._unsub = self._event_stream.async_add_listener(
-            self.async_write_ha_state
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
         )
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub is not None:
-            self._unsub()
-            self._unsub = None
 
     @property
     def available(self) -> bool:

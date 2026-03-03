@@ -271,6 +271,9 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def state(self) -> MediaPlayerState | None:
         """Return the state of the device."""
+        if not self._event_stream.sse_connected:
+            return MediaPlayerState.OFF
+
         if self._audio_coordinator is None:
             return MediaPlayerState.OFF
 
@@ -351,6 +354,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         coordinator = ctx.audio_coordinator or ctx.service_coordinator
         super().__init__(coordinator)
         self._service_coordinator: OdioServiceCoordinator = ctx.service_coordinator
+        self._event_stream = ctx.event_stream
         self._api_client = ctx.api
         self._service_info = service_info
 
@@ -367,13 +371,19 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         return f"{self._service_info['scope']}/{self._service_info['name']}"
 
     async def async_added_to_hass(self) -> None:
-        """Register listener on the service coordinator."""
+        """Register listener on the service coordinator and SSE stream."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            self._service_coordinator.async_add_listener(
-                self.async_write_ha_state
-            )
+            self._service_coordinator.async_add_listener(self.async_write_ha_state)
         )
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return False when the SSE stream is disconnected."""
+        return self._event_stream.sse_connected and super().available
 
     @property
     def state(self) -> MediaPlayerState:
@@ -557,6 +567,7 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
         assert ctx.audio_coordinator is not None
         super().__init__(ctx.audio_coordinator)
         self._api_client = ctx.api
+        self._event_stream = ctx.event_stream
         self._server_hostname_value = ctx.server_hostname
 
         self._client_name = initial_client.get("name", "")
@@ -656,10 +667,17 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
             attrs["app_version"] = props["application.version"]
         return attrs
 
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
+
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return True
+        """Return False when the SSE stream is disconnected."""
+        return self._event_stream.sse_connected
 
     def _get_current_client(self) -> dict[str, Any] | None:
         """Get the current client data from coordinator by NAME."""

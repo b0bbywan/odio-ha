@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .coordinator import OdioServiceCoordinator
+from .event_stream import OdioEventStreamManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class _SwitchContext:
     service_coordinator: OdioServiceCoordinator
     api: OdioApiClient
     device_info: DeviceInfo
+    event_stream: OdioEventStreamManager
 
 
 # =============================================================================
@@ -55,16 +57,24 @@ async def async_setup_entry(
         service_coordinator=service_coordinator,
         api=rd.api,
         device_info=rd.device_info,
+        event_stream=rd.event_stream,
     )
 
-    entities = []
-    if service_coordinator.data:
-        entities = [
-            OdioServiceSwitch(ctx, svc)
-            for svc in service_coordinator.data.get("services", [])
-            if svc.get("exists") and svc.get("scope") == "user"
-        ]
-        _LOGGER.debug("Creating %d service switch entities", len(entities))
+    live_services = service_coordinator.data.get("services", []) if service_coordinator.data else []
+    cached_services = entry.data.get("cached_services", []) if not live_services else []
+    services_source = live_services or cached_services
+
+    entities = [
+        OdioServiceSwitch(ctx, svc)
+        for svc in services_source
+        if svc.get("exists") and svc.get("scope") == "user"
+    ]
+    if entities:
+        _LOGGER.debug(
+            "Creating %d service switch entities (%s)",
+            len(entities),
+            "live" if live_services else "cached",
+        )
 
     async_add_entities(entities)
 
@@ -116,6 +126,7 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
     def __init__(self, ctx: _SwitchContext, service_info: dict[str, Any]) -> None:
         super().__init__(ctx.service_coordinator)
         self._api = ctx.api
+        self._event_stream = ctx.event_stream
         self._service_info = service_info
 
         service_name: str = service_info["name"]
@@ -124,6 +135,13 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         self._attr_unique_id = f"{ctx.entry_id}_switch_{scope}_{service_name}"
         self._attr_name = service_name.removesuffix(".service")
         self._attr_device_info = ctx.device_info
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
 
     @property
     def is_on(self) -> bool:
@@ -137,8 +155,12 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
 
     @property
     def available(self) -> bool:
-        """Return False when the coordinator has no data."""
-        return self.coordinator.last_update_success and bool(self.coordinator.data)
+        """Return False when SSE is disconnected or coordinator has no data."""
+        return (
+            self._event_stream.sse_connected
+            and self.coordinator.last_update_success
+            and bool(self.coordinator.data)
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start the service."""
