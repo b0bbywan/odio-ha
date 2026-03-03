@@ -10,10 +10,11 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.odio_remote.api_client import SseEvent
 from custom_components.odio_remote.coordinator import (
     OdioAudioCoordinator,
+    OdioBluetoothCoordinator,
     OdioServiceCoordinator,
 )
 
-from .conftest import MOCK_CLIENTS, MOCK_SERVICES
+from .conftest import MOCK_BLUETOOTH_STATUS, MOCK_CLIENTS, MOCK_SERVICES
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,10 @@ def _make_audio_coordinator(api):
 
 def _make_service_coordinator(api):
     return OdioServiceCoordinator(_make_hass(), MagicMock(), api)
+
+
+def _make_bluetooth_coordinator(api):
+    return OdioBluetoothCoordinator(_make_hass(), MagicMock(), api)
 
 
 # ---------------------------------------------------------------------------
@@ -333,3 +338,92 @@ class TestServiceCoordinatorHandleSseEvent:
         coord.handle_sse_event(SseEvent(type="service.updated", data=svc))
 
         coord.async_set_updated_data.assert_called_once_with({"services": [svc]})
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothCoordinator
+# ---------------------------------------------------------------------------
+
+
+class TestOdioBluetoothCoordinator:
+
+    @pytest.mark.asyncio
+    async def test_fetches_status(self):
+        """Returns raw bluetooth status dict from API."""
+        api = MagicMock()
+        api.get_bluetooth_status = AsyncMock(return_value=MOCK_BLUETOOTH_STATUS)
+        coord = _make_bluetooth_coordinator(api)
+
+        result = await coord._async_update_data()
+
+        assert result == MOCK_BLUETOOTH_STATUS
+        api.get_bluetooth_status.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_connection_error(self):
+        """ClientConnectorError is wrapped in UpdateFailed."""
+        api = MagicMock()
+        api.get_bluetooth_status = AsyncMock(
+            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
+        )
+        coord = _make_bluetooth_coordinator(api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_timeout(self):
+        """TimeoutError is wrapped in UpdateFailed."""
+        api = MagicMock()
+        api.get_bluetooth_status = AsyncMock(side_effect=asyncio.TimeoutError())
+        coord = _make_bluetooth_coordinator(api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
+
+# ---------------------------------------------------------------------------
+# OdioBluetoothCoordinator.handle_sse_event
+# ---------------------------------------------------------------------------
+
+
+class TestBluetoothCoordinatorHandleSseEvent:
+
+    def test_valid_dict_updates_data(self):
+        """handle_sse_event sets coordinator data when event data is a dict."""
+        coord = _make_bluetooth_coordinator(MagicMock())
+        coord.async_set_updated_data = MagicMock()
+
+        coord.handle_sse_event(SseEvent(type="bluetooth.updated", data=MOCK_BLUETOOTH_STATUS))
+
+        coord.async_set_updated_data.assert_called_once_with(MOCK_BLUETOOTH_STATUS)
+
+    def test_non_dict_data_ignored(self):
+        """handle_sse_event does nothing when event data is not a dict."""
+        coord = _make_bluetooth_coordinator(MagicMock())
+        coord.async_set_updated_data = MagicMock()
+
+        coord.handle_sse_event(SseEvent(type="bluetooth.updated", data=["not", "a", "dict"]))
+
+        coord.async_set_updated_data.assert_not_called()
+
+    def test_powered_off_updates_data(self):
+        """handle_sse_event handles powered=False state."""
+        coord = _make_bluetooth_coordinator(MagicMock())
+        coord.async_set_updated_data = MagicMock()
+
+        data = {"powered": False, "discoverable": False, "pairable": False,
+                "pairing_active": False, "known_devices": []}
+        coord.handle_sse_event(SseEvent(type="bluetooth.updated", data=data))
+
+        coord.async_set_updated_data.assert_called_once_with(data)
+
+    def test_pairing_active_updates_data(self):
+        """handle_sse_event handles pairing_active=True state."""
+        coord = _make_bluetooth_coordinator(MagicMock())
+        coord.async_set_updated_data = MagicMock()
+
+        data = {**MOCK_BLUETOOTH_STATUS, "pairing_active": True}
+        coord.handle_sse_event(SseEvent(type="bluetooth.updated", data=data))
+
+        coord.async_set_updated_data.assert_called_once_with(data)
