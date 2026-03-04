@@ -64,6 +64,114 @@ class OdioRemoteRuntimeData:
 type OdioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
 
 
+async def _setup_audio_coordinator(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+    event_stream: OdioEventStreamManager,
+) -> OdioAudioCoordinator:
+    """Create audio coordinator, refresh, and wire SSE listeners."""
+    coordinator = OdioAudioCoordinator(hass, entry, api)
+    await coordinator.async_refresh()
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_AUDIO_UPDATED, coordinator.handle_sse_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_AUDIO_REMOVED, coordinator.handle_sse_remove_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_AUDIO_OUTPUT_UPDATED, coordinator.handle_sse_output_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_AUDIO_OUTPUT_REMOVED, coordinator.handle_sse_output_remove_event
+        )
+    )
+    _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
+    return coordinator
+
+
+async def _setup_service_coordinator(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+    event_stream: OdioEventStreamManager,
+) -> OdioServiceCoordinator:
+    """Create service coordinator, refresh, cache services, and wire SSE listeners."""
+    coordinator = OdioServiceCoordinator(hass, entry, api)
+    await coordinator.async_refresh()
+    if coordinator.data:
+        services = coordinator.data.get("services", [])
+        if services != entry.data.get("cached_services"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "cached_services": services}
+            )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_SERVICE_UPDATED, coordinator.handle_sse_event
+        )
+    )
+    _LOGGER.debug("Service coordinator created (systemd backend enabled)")
+    return coordinator
+
+
+async def _setup_mpris_coordinator(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+    event_stream: OdioEventStreamManager,
+) -> OdioMPRISCoordinator:
+    """Create MPRIS coordinator, refresh, and wire SSE listeners."""
+    coordinator = OdioMPRISCoordinator(hass, entry, api)
+    await coordinator.async_refresh()
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_PLAYER_UPDATED, coordinator.handle_sse_update_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_PLAYER_ADDED, coordinator.handle_sse_update_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_PLAYER_REMOVED, coordinator.handle_sse_removed_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_PLAYER_POSITION, coordinator.handle_sse_position_event
+        )
+    )
+    _LOGGER.debug("MPRIS coordinator created (mpris backend enabled)")
+    return coordinator
+
+
+async def _setup_bluetooth_coordinator(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+    event_stream: OdioEventStreamManager,
+) -> OdioBluetoothCoordinator:
+    """Create bluetooth coordinator, refresh, and wire SSE listeners."""
+    coordinator = OdioBluetoothCoordinator(hass, entry, api)
+    await coordinator.async_refresh()
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_BLUETOOTH_UPDATED, coordinator.handle_sse_event
+        )
+    )
+    _LOGGER.debug("Bluetooth coordinator created (bluetooth backend enabled)")
+    return coordinator
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
     """Set up Odio Remote from a config entry."""
     _LOGGER.info("Setting up Odio Remote integration")
@@ -167,92 +275,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         configuration_url=f"{api_url}/ui",
     )
 
-    audio_coordinator: OdioAudioCoordinator | None = None
-    if backends.get("pulseaudio"):
-        audio_coordinator = OdioAudioCoordinator(hass, entry, api)
-        await audio_coordinator.async_refresh()
-        _LOGGER.debug("Audio coordinator created (pulseaudio backend enabled)")
-
-    service_coordinator: OdioServiceCoordinator | None = None
-    if backends.get("systemd"):
-        service_coordinator = OdioServiceCoordinator(hass, entry, api)
-        await service_coordinator.async_refresh()
-        if service_coordinator.data:
-            services = service_coordinator.data.get("services", [])
-            if services != entry.data.get("cached_services"):
-                hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, "cached_services": services}
-                )
-        _LOGGER.debug("Service coordinator created (systemd backend enabled)")
-
-    mpris_coordinator: OdioMPRISCoordinator | None = None
-    if backends.get("mpris"):
-        mpris_coordinator = OdioMPRISCoordinator(hass, entry, api)
-        await mpris_coordinator.async_refresh()
-        _LOGGER.debug("MPRIS coordinator created (mpris backend enabled)")
-
-    bluetooth_coordinator: OdioBluetoothCoordinator | None = None
-    if backends.get("bluetooth"):
-        bluetooth_coordinator = OdioBluetoothCoordinator(hass, entry, api)
-        await bluetooth_coordinator.async_refresh()
-        _LOGGER.debug("Bluetooth coordinator created (bluetooth backend enabled)")
-
-    # Wire SSE event listeners now that coordinators exist.
-    if audio_coordinator is not None:
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_AUDIO_UPDATED, audio_coordinator.handle_sse_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_AUDIO_REMOVED, audio_coordinator.handle_sse_remove_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_AUDIO_OUTPUT_UPDATED, audio_coordinator.handle_sse_output_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_AUDIO_OUTPUT_REMOVED, audio_coordinator.handle_sse_output_remove_event
-            )
-        )
-    if service_coordinator is not None:
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_SERVICE_UPDATED, service_coordinator.handle_sse_event
-            )
-        )
-    if bluetooth_coordinator is not None:
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_BLUETOOTH_UPDATED, bluetooth_coordinator.handle_sse_event
-            )
-        )
-
-    if mpris_coordinator is not None:
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_PLAYER_UPDATED, mpris_coordinator.handle_sse_update_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_PLAYER_ADDED, mpris_coordinator.handle_sse_update_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_PLAYER_REMOVED, mpris_coordinator.handle_sse_removed_event
-            )
-        )
-        entry.async_on_unload(
-            event_stream.async_add_event_listener(
-                SSE_EVENT_PLAYER_POSITION, mpris_coordinator.handle_sse_position_event
-            )
-        )
+    audio_coordinator = (
+        await _setup_audio_coordinator(hass, entry, api, event_stream)
+        if backends.get("pulseaudio") else None
+    )
+    service_coordinator = (
+        await _setup_service_coordinator(hass, entry, api, event_stream)
+        if backends.get("systemd") else None
+    )
+    mpris_coordinator = (
+        await _setup_mpris_coordinator(hass, entry, api, event_stream)
+        if backends.get("mpris") else None
+    )
+    bluetooth_coordinator = (
+        await _setup_bluetooth_coordinator(hass, entry, api, event_stream)
+        if backends.get("bluetooth") else None
+    )
 
     # Re-fetch coordinator data on SSE reconnect to avoid stale state.
     def _on_sse_reconnect() -> None:
