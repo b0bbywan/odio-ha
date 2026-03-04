@@ -24,9 +24,13 @@ from .const import (
     SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_BLUETOOTH_UPDATED,
+    SSE_EVENT_PLAYER_UPDATED,
+    SSE_EVENT_PLAYER_ADDED,
+    SSE_EVENT_PLAYER_REMOVED,
+    SSE_EVENT_PLAYER_POSITION,
     SSE_EVENT_SERVICE_UPDATED,
 )
-from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .helpers import async_get_mac_from_ip
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +53,7 @@ class OdioRemoteRuntimeData:
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
     bluetooth_coordinator: OdioBluetoothCoordinator | None
+    mpris_coordinator: OdioMPRISCoordinator | None
     event_stream: OdioEventStreamManager
     service_mappings: dict[str, str]
     power_capabilities: dict[str, bool]
@@ -101,6 +106,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         sse_backends.append("power")
     if backends.get("bluetooth"):
         sse_backends.append("bluetooth")
+    if backends.get("mpris"):
+        sse_backends.append("mpris")
 
     event_stream = OdioEventStreamManager(
         hass=hass,
@@ -176,6 +183,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
                 )
         _LOGGER.debug("Service coordinator created (systemd backend enabled)")
 
+    mpris_coordinator: OdioMPRISCoordinator | None = None
+    if backends.get("mpris"):
+        mpris_coordinator = OdioMPRISCoordinator(hass, entry, api)
+        await mpris_coordinator.async_refresh()
+        _LOGGER.debug("MPRIS coordinator created (mpris backend enabled)")
+
     bluetooth_coordinator: OdioBluetoothCoordinator | None = None
     if backends.get("bluetooth"):
         bluetooth_coordinator = OdioBluetoothCoordinator(hass, entry, api)
@@ -207,6 +220,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             )
         )
 
+    if mpris_coordinator is not None:
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_PLAYER_UPDATED, mpris_coordinator.handle_sse_update_event
+            )
+        )
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_PLAYER_ADDED, mpris_coordinator.handle_sse_update_event
+            )
+        )
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_PLAYER_REMOVED, mpris_coordinator.handle_sse_removed_event
+            )
+        )
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_PLAYER_POSITION, mpris_coordinator.handle_sse_position_event
+            )
+        )
+
     # Re-fetch coordinator data on SSE reconnect to avoid stale state.
     def _on_sse_reconnect() -> None:
         if not event_stream.sse_connected:
@@ -217,6 +252,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             hass.async_create_task(service_coordinator.async_refresh())
         if bluetooth_coordinator is not None:
             hass.async_create_task(bluetooth_coordinator.async_refresh())
+        if mpris_coordinator is not None:
+            hass.async_create_task(mpris_coordinator.async_refresh())
 
     entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
 
@@ -226,6 +263,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         audio_coordinator=audio_coordinator,
         service_coordinator=service_coordinator,
         bluetooth_coordinator=bluetooth_coordinator,
+        mpris_coordinator=mpris_coordinator,
         event_stream=event_stream,
         service_mappings=service_mappings,
         power_capabilities=power_capabilities,
