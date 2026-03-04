@@ -14,61 +14,14 @@ from custom_components.odio_remote.api_client import SseEvent
 from custom_components.odio_remote.coordinator import OdioMPRISCoordinator
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
 
-from .conftest import MOCK_DEVICE_INFO
+from .conftest import MOCK_DEVICE_INFO, MOCK_PLAYERS
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-MOCK_SPOTIFY = {
-    "bus_name": "org.mpris.MediaPlayer2.spotify",
-    "identity": "Spotify",
-    "playback_status": "Playing",
-    "loop_status": "None",
-    "shuffle": True,
-    "volume": 0.8,
-    "position": 28962000,  # µs
-    "rate": 1,
-    "metadata": {
-        "mpris:artUrl": "https://i.scdn.co/image/abc123",
-        "mpris:length": "223840000",  # µs
-        "mpris:trackid": "/com/spotify/track/abc",
-        "xesam:album": "Etoiles du sol",
-        "xesam:artist": ["Dooz Kawa"],
-        "xesam:title": "Narcozik",
-    },
-    "capabilities": {
-        "can_play": True,
-        "can_pause": True,
-        "can_go_next": True,
-        "can_go_previous": True,
-        "can_seek": True,
-        "can_control": True,
-    },
-}
-
-MOCK_CHROME = {
-    "bus_name": "org.mpris.MediaPlayer2.chromium.instance1",
-    "identity": "Chrome",
-    "playback_status": "Paused",
-    "volume": 1.0,
-    "position": 987200000,  # µs
-    "metadata": {
-        "mpris:artUrl": "file:///tmp/.com.google.Chrome.abc",
-        "mpris:length": "987200000",  # µs
-        "mpris:trackid": "/org/chromium/MediaPlayer2/TrackList/Track1",
-        "xesam:artist": "Some Artist",
-        "xesam:title": "Some Title",
-    },
-    "capabilities": {
-        "can_play": False,
-        "can_pause": False,
-        "can_go_next": False,
-        "can_go_previous": False,
-        "can_seek": False,
-        "can_control": True,
-    },
-}
+MOCK_SPOTIFY = MOCK_PLAYERS[0]
+MOCK_CHROME = MOCK_PLAYERS[1]
 
 EMITTED_AT_MS = 1772649711164  # arbitrary ms timestamp
 

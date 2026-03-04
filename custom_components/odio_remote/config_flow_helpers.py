@@ -129,3 +129,19 @@ def get_client_keys(client: dict[str, Any]) -> tuple[str, str]:
     form_key = f"client_{safe_name}"
     mapping_key = f"client:{client_name}"
     return form_key, mapping_key
+
+
+def get_player_keys(player: dict[str, Any]) -> tuple[str, str]:
+    """Get form_key and mapping_key for an MPRIS player.
+
+    Returns:
+        (form_key, mapping_key) tuple
+    """
+    bus_name = player.get("bus_name", "")
+    if not bus_name:
+        return "", ""
+
+    safe_name = re.sub(r"[^a-z0-9_]+", "_", bus_name.lower()).strip("_")
+    form_key = f"player_{safe_name}"
+    mapping_key = f"mpris:{bus_name}"
+    return form_key, mapping_key

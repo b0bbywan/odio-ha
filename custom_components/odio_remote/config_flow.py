@@ -32,6 +32,7 @@ from .config_flow_helpers import (
     parse_mappings_from_input,
     get_service_keys,
     get_client_keys,
+    get_player_keys,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,6 +145,29 @@ async def async_fetch_remote_clients(
         for client in clients
         if client.get("host") and client.get("host") != server_hostname
     ]
+
+
+async def async_fetch_mpris_players(
+    hass: HomeAssistant, api_url: str
+) -> list[dict[str, Any]]:
+    """Fetch MPRIS players if the mpris backend is enabled."""
+    session = async_get_clientsession(hass)
+    api = OdioApiClient(api_url, session)
+
+    try:
+        server_info = await api.get_server_info()
+    except Exception:
+        return []
+
+    if not server_info.get("backends", {}).get("mpris"):
+        return []
+
+    try:
+        players, _ = await api.get_players()
+    except Exception:
+        return []
+
+    return [p for p in players if p.get("bus_name")]
 
 
 # =============================================================================
@@ -391,11 +415,13 @@ class OdioOptionsFlow(OptionsFlowWithReload):
         self._options: dict[str, Any] = {}
         self._services: list[dict[str, Any]] = []
         self._clients: list[dict[str, Any]] = []
+        self._players: list[dict[str, Any]] = []
 
     async def _async_fetch_mappable_entities(self, api_url: str) -> None:
-        """Fetch services and clients that can be mapped."""
+        """Fetch services, clients and players that can be mapped."""
         self._services = await async_fetch_available_services(self.hass, api_url)
         self._clients = await async_fetch_remote_clients(self.hass, api_url)
+        self._players = await async_fetch_mpris_players(self.hass, api_url)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -485,6 +511,16 @@ class OdioOptionsFlow(OptionsFlowWithReload):
             )
             _LOGGER.debug("after client parse: %s", new_mappings)
 
+            # Parse player mappings using generic helper
+            new_mappings = parse_mappings_from_input(
+                user_input,
+                self._players,
+                new_mappings,
+                get_player_keys,
+                preserve_others=True,  # Preserve offline player mappings
+            )
+            _LOGGER.debug("after player parse: %s", new_mappings)
+
             _LOGGER.info("Updating mappings: %d total", len(new_mappings))
 
             new_options = dict(self._options)
@@ -493,8 +529,8 @@ class OdioOptionsFlow(OptionsFlowWithReload):
 
             return self.async_create_entry(title="", data=new_options)
 
-        # Build combined schema for services and clients
-        if not self._services and not self._clients:
+        # Build combined schema for services, clients, and players
+        if not self._services and not self._clients and not self._players:
             return self.async_abort(reason="no_mappable_entities")
 
         schema_dict: dict[Any, Any] = {}
@@ -512,6 +548,13 @@ class OdioOptionsFlow(OptionsFlowWithReload):
                 self._clients, current_mappings, get_client_keys
             )
             schema_dict.update(client_schema.schema)
+
+        # Add player selectors using generic helper
+        if self._players:
+            player_schema = build_mapping_schema(
+                self._players, current_mappings, get_player_keys
+            )
+            schema_dict.update(player_schema.schema)
 
         return self.async_show_form(
             step_id="mappings",
