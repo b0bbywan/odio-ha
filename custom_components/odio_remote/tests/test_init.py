@@ -1,9 +1,11 @@
-"""Tests for coordinator setup functions in __init__.py."""
+"""Tests for setup helper functions in __init__.py."""
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.odio_remote import (
+    _resolve_mac,
+    _fetch_power_capabilities,
     _setup_audio_coordinator,
     _setup_service_coordinator,
     _setup_mpris_coordinator,
@@ -54,6 +56,147 @@ def _make_event_stream():
     stream.async_add_event_listener = add_event_listener
     stream._registered = registered
     return stream
+
+
+# =============================================================================
+# MAC resolution
+# =============================================================================
+
+
+class TestResolveMac:
+    """Tests for _resolve_mac."""
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
+    async def test_resolves_and_caches_mac(self, mock_get_mac):
+        """Test MAC is resolved and cached in entry data."""
+        mock_get_mac.return_value = "aa:bb:cc:dd:ee:ff"
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {}
+
+        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+
+        assert result == "aa:bb:cc:dd:ee:ff"
+        mock_get_mac.assert_awaited_once_with(hass, "192.168.1.10")
+        hass.config_entries.async_update_entry.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
+    async def test_skips_update_when_mac_unchanged(self, mock_get_mac):
+        """Test no update when MAC matches cached value."""
+        mock_get_mac.return_value = "aa:bb:cc:dd:ee:ff"
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {"mac": "aa:bb:cc:dd:ee:ff"}
+
+        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+
+        assert result == "aa:bb:cc:dd:ee:ff"
+        hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
+    async def test_falls_back_to_cached_mac(self, mock_get_mac):
+        """Test fallback to cached MAC when resolution fails."""
+        mock_get_mac.return_value = None
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {"mac": "11:22:33:44:55:66"}
+
+        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+
+        assert result == "11:22:33:44:55:66"
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
+    async def test_returns_none_when_no_mac(self, mock_get_mac):
+        """Test returns None when no MAC resolved and no cache."""
+        mock_get_mac.return_value = None
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {}
+
+        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_no_host(self):
+        """Test returns None when URL has no hostname."""
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {}
+
+        result = await _resolve_mac(hass, entry, "")
+
+        assert result is None
+
+
+# =============================================================================
+# Power capabilities
+# =============================================================================
+
+
+class TestFetchPowerCapabilities:
+    """Tests for _fetch_power_capabilities."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_and_caches(self):
+        """Test capabilities are fetched and cached."""
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {}
+        api = MagicMock()
+        caps = {"reboot": True, "shutdown": True}
+        api.get_power_capabilities = AsyncMock(return_value=caps)
+
+        result = await _fetch_power_capabilities(hass, entry, api)
+
+        assert result == caps
+        hass.config_entries.async_update_entry.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_update_when_unchanged(self):
+        """Test no update when capabilities match cached value."""
+        hass = MagicMock()
+        entry = _make_entry()
+        caps = {"reboot": True, "shutdown": True}
+        entry.data = {"power_capabilities": caps}
+        api = MagicMock()
+        api.get_power_capabilities = AsyncMock(return_value=caps)
+
+        result = await _fetch_power_capabilities(hass, entry, api)
+
+        assert result == caps
+        hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_cached_on_error(self):
+        """Test fallback to cached value on API error."""
+        hass = MagicMock()
+        entry = _make_entry()
+        cached = {"reboot": True, "shutdown": False}
+        entry.data = {"power_capabilities": cached}
+        api = MagicMock()
+        api.get_power_capabilities = AsyncMock(side_effect=ConnectionError("refused"))
+
+        result = await _fetch_power_capabilities(hass, entry, api)
+
+        assert result == cached
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error_no_cache(self):
+        """Test returns empty dict on error with no cache."""
+        hass = MagicMock()
+        entry = _make_entry()
+        entry.data = {}
+        api = MagicMock()
+        api.get_power_capabilities = AsyncMock(side_effect=ConnectionError("refused"))
+
+        result = await _fetch_power_capabilities(hass, entry, api)
+
+        assert result == {}
 
 
 # =============================================================================
