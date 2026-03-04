@@ -15,6 +15,7 @@ from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .coordinator import OdioBluetoothCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
+from .helpers import api_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,12 +188,14 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
             and bool(self.coordinator.data)
         )
 
+    @api_command
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start the service."""
         await self._api.control_service(
             "start", self._service_info["scope"], self._service_info["name"]
         )
 
+    @api_command
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the service."""
         await self._api.control_service(
@@ -248,11 +251,13 @@ class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEnt
             and bool(self.coordinator.data)
         )
 
+    @api_command
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Power on Bluetooth adapter."""
         await self._api.bluetooth_power_up()
         await self.coordinator.async_refresh()
 
+    @api_command
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Power off Bluetooth adapter."""
         await self._api.bluetooth_power_down()
