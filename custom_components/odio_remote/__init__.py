@@ -64,6 +64,54 @@ class OdioRemoteRuntimeData:
 type OdioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
 
 
+async def _resolve_mac(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api_url: str,
+) -> str | None:
+    """Resolve MAC address via device_tracker; fall back to cached value."""
+    host = urlparse(api_url).hostname
+    mac = await async_get_mac_from_ip(hass, host) if host else None
+    if mac:
+        _LOGGER.debug("Resolved MAC for %s: %s", host, mac)
+        if mac != entry.data.get("mac"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "mac": mac}
+            )
+    else:
+        mac = entry.data.get("mac")
+        if mac:
+            _LOGGER.debug("Using cached MAC for %s: %s", host, mac)
+        else:
+            _LOGGER.warning(
+                "MAC address not resolved for %s — 'Connected via' link unavailable",
+                host,
+            )
+    return mac
+
+
+async def _fetch_power_capabilities(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+) -> dict[str, bool]:
+    """Fetch power capabilities from API; fall back to cached value."""
+    try:
+        power_capabilities = await api.get_power_capabilities()
+        if power_capabilities != entry.data.get("power_capabilities"):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "power_capabilities": power_capabilities}
+            )
+        return power_capabilities
+    except Exception:
+        cached = entry.data.get("power_capabilities", {})
+        _LOGGER.warning(
+            "Failed to fetch power capabilities — using cached value: %s",
+            cached,
+        )
+        return cached
+
+
 async def _setup_audio_coordinator(
     hass: HomeAssistant,
     entry: OdioConfigEntry,
@@ -226,41 +274,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         keepalive_interval=keepalive_interval,
     )
 
-    # Resolve MAC via device_tracker entities; fall back to cached value.
-    host = urlparse(api_url).hostname
-    mac = await async_get_mac_from_ip(hass, host) if host else None
-    if mac:
-        _LOGGER.debug("Resolved MAC for %s: %s", host, mac)
-        if mac != entry.data.get("mac"):
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, "mac": mac}
-            )
-    else:
-        mac = entry.data.get("mac")
-        if mac:
-            _LOGGER.debug("Using cached MAC for %s: %s", host, mac)
-        else:
-            _LOGGER.warning(
-                "MAC address not resolved for %s — 'Connected via' link unavailable", host
-            )
+    mac = await _resolve_mac(hass, entry, api_url)
     device_connections: set[tuple[str, str]] = (
         {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
     )
 
-    power_capabilities: dict[str, bool] = {}
-    if backends.get("power"):
-        try:
-            power_capabilities = await api.get_power_capabilities()
-            if power_capabilities != entry.data.get("power_capabilities"):
-                hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, "power_capabilities": power_capabilities}
-                )
-        except Exception:
-            power_capabilities = entry.data.get("power_capabilities", {})
-            _LOGGER.warning(
-                "Failed to fetch power capabilities — using cached value: %s",
-                power_capabilities,
-            )
+    power_capabilities = (
+        await _fetch_power_capabilities(hass, entry, api)
+        if backends.get("power") else {}
+    )
 
     # Build DeviceInfo once — shared by all platforms so every entity stays
     # consistent regardless of which platform registers first.
