@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator
 
+PARALLEL_UPDATES = 0
+
 _LOGGER = logging.getLogger(__name__)
 
 
