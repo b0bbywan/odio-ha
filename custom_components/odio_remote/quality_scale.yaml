@@ -4,8 +4,10 @@ rules:
     status: exempt
     comment: |
       No custom service actions registered.
-      Only standard platform actions (media_player).
-  appropriate-polling: done
+      Only standard platform actions (media_player, switch, button, sensor, binary_sensor).
+  appropriate-polling:
+    status: exempt
+    comment: No polling — all state updates are SSE-driven (update_interval=None).
   brands:
     status: exempt
     comment: Custom integration distributed via HACS, not in HA core.
@@ -24,3 +26,31 @@ rules:
   test-before-configure: done
   test-before-setup: done
   unique-config-entry: done
+
+  # ===== Silver =====
+  action-exceptions:
+    status: done
+    comment: All API actions wrapped with @api_command decorator (HomeAssistantError).
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: todo
+    comment: Document SSE keepalive and service mapping options.
+  docs-installation-parameters:
+    status: todo
+    comment: Document API URL setup parameter.
+  entity-unavailable: done
+  integration-owner:
+    status: todo
+    comment: Add CODEOWNERS file.
+  log-when-unavailable: done
+  parallel-updates:
+    status: todo
+    comment: Define PARALLEL_UPDATES in each platform module.
+  reauthentication-flow:
+    status: exempt
+    comment: No authentication — API has no credentials.
+  test-coverage:
+    status: todo
+    comment: |
+      86% global. Needs 95%.
+      Gaps: media_player.py (44%), mixins.py (49%), event_stream.py (61%), __init__.py (58%).

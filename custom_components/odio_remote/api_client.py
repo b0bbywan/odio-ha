@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 import aiohttp
 
+from .exceptions import OdioApiError, OdioConnectionError, OdioError, OdioTimeoutError
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -53,18 +55,21 @@ class OdioApiClient:
 
                     return await response.json()
 
-        except asyncio.TimeoutError:
-            # Timeout is expected when device is slow or unreachable - log as warning
+        except asyncio.TimeoutError as err:
             _LOGGER.warning("Timeout connecting to %s", url)
-            raise
+            raise OdioTimeoutError(f"Timeout connecting to {url}") from err
         except aiohttp.ClientConnectorError as err:
-            # Connection errors are expected when device is offline - log as warning
             _LOGGER.warning("Unable to connect to %s: %s", url, err)
-            raise
-        except aiohttp.ClientError as err:
-            # Other client errors (e.g., HTTP errors) are unexpected - log as error
+            raise OdioConnectionError(f"Unable to connect to {url}: {err}") from err
+        except aiohttp.ClientResponseError as err:
             _LOGGER.error("Error on %s %s: %s", method, url, err)
-            raise
+            raise OdioApiError(
+                f"HTTP {err.status} on {method} {url}: {err.message}",
+                status=err.status,
+            ) from err
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error on %s %s: %s", method, url, err)
+            raise OdioConnectionError(f"Client error on {method} {url}: {err}") from err
 
     async def get(self, endpoint: str, timeout: int = 10) -> Any:
         """Make GET request."""
@@ -85,7 +90,7 @@ class OdioApiClient:
         from .const import ENDPOINT_SYSTEM_SERVER
         result = await self.get(ENDPOINT_SYSTEM_SERVER)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from server endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected dict from server endpoint, got {type(result)}")
         return result
 
     async def get_audio_server_info(self) -> dict[str, Any]:
@@ -93,7 +98,7 @@ class OdioApiClient:
         from .const import ENDPOINT_SERVER
         result = await self.get(ENDPOINT_SERVER)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from audio server endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected dict from audio server endpoint, got {type(result)}")
         return result
 
     async def get_audio_data(self) -> dict[str, list]:
@@ -106,7 +111,7 @@ class OdioApiClient:
 
         try:
             result = await self.get(ENDPOINT_AUDIO)
-        except aiohttp.ClientResponseError as err:
+        except OdioApiError as err:
             if err.status == 404:
                 _LOGGER.debug("GET /audio returned 404 — falling back to legacy endpoints")
                 clients = await self._get_clients_legacy()
@@ -115,19 +120,19 @@ class OdioApiClient:
             raise
 
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from /audio endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected dict from /audio endpoint, got {type(result)}")
 
         raw_clients = result.get("clients")
         if raw_clients is None:
             raw_clients = []
         if not isinstance(raw_clients, list):
-            raise ValueError(f"Expected list for 'clients' key, got {type(raw_clients)}")
+            raise OdioApiError(f"Expected list for 'clients' key, got {type(raw_clients)}")
 
         raw_outputs = result.get("outputs")
         if raw_outputs is None:
             raw_outputs = []
         if not isinstance(raw_outputs, list):
-            raise ValueError(f"Expected list for 'outputs' key, got {type(raw_outputs)}")
+            raise OdioApiError(f"Expected list for 'outputs' key, got {type(raw_outputs)}")
 
         return {"clients": raw_clients, "outputs": raw_outputs}
 
@@ -143,7 +148,7 @@ class OdioApiClient:
         """
         try:
             server = await self.get_audio_server_info()
-        except Exception:
+        except OdioError:
             return []
         default_sink = server.get("default_sink")
         if not default_sink:
@@ -166,7 +171,7 @@ class OdioApiClient:
         if result is None:
             return []
         if not isinstance(result, list):
-            raise ValueError(f"Expected list from clients endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected list from clients endpoint, got {type(result)}")
         return result
 
     async def get_services(self) -> list[dict[str, Any]]:
@@ -176,7 +181,7 @@ class OdioApiClient:
         if result is None:
             return []
         if not isinstance(result, list):
-            raise ValueError(f"Expected list from services endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected list from services endpoint, got {type(result)}")
         return result
 
     # Output control
@@ -218,7 +223,7 @@ class OdioApiClient:
         from .const import ENDPOINT_POWER
         result = await self.get(ENDPOINT_POWER)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from power endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected dict from power endpoint, got {type(result)}")
         return result
 
     async def power_off(self) -> None:
@@ -237,7 +242,7 @@ class OdioApiClient:
         from .const import ENDPOINT_BLUETOOTH
         result = await self.get(ENDPOINT_BLUETOOTH)
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict from bluetooth endpoint, got {type(result)}")
+            raise OdioApiError(f"Expected dict from bluetooth endpoint, got {type(result)}")
         return result
 
     async def bluetooth_power_up(self) -> None:
@@ -266,14 +271,24 @@ class OdioApiClient:
                     response.raise_for_status()
                     result = await response.json()
                     if not isinstance(result, list):
-                        raise ValueError(f"Expected list from players endpoint, got {type(result)}")
+                        raise OdioApiError(f"Expected list from players endpoint, got {type(result)}")
                     cache_ts = response.headers.get("x-cache-updated-at")
                     return result, cache_ts
+        except asyncio.TimeoutError as err:
+            _LOGGER.warning("Timeout getting players from %s", url)
+            raise OdioTimeoutError(f"Timeout getting players from {url}") from err
         except aiohttp.ClientResponseError as err:
             if err.status == 404:
                 _LOGGER.debug("Players endpoint not available (404) - server may not support MPRIS yet")
                 return [], None
-            raise
+            raise OdioApiError(
+                f"HTTP {err.status} on GET {url}: {err.message}", status=err.status
+            ) from err
+        except aiohttp.ClientConnectorError as err:
+            _LOGGER.warning("Unable to connect to %s: %s", url, err)
+            raise OdioConnectionError(f"Unable to connect to {url}: {err}") from err
+        except aiohttp.ClientError as err:
+            raise OdioConnectionError(f"Client error on GET {url}: {err}") from err
 
     async def player_play(self, player: str) -> None:
         """Send play command to MPRIS player."""

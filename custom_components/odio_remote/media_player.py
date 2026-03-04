@@ -37,6 +37,7 @@ from .const import (
 )
 from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
+from .helpers import api_command
 from .mixins import MappedEntityMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -426,10 +427,12 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
                 await self._api_client.set_output_default(o["name"])
                 return
 
+    @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         await self._api_client.set_server_volume(volume)
 
+    @api_command
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         await self._api_client.set_server_mute(mute)
@@ -590,6 +593,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
                 return client
         return None
 
+    @api_command
     async def async_turn_on(self) -> None:
         """Turn the media player on."""
         scope = self._service_info["scope"]
@@ -602,6 +606,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             await asyncio.sleep(0.5)
             await self.coordinator.async_request_refresh()
 
+    @api_command
     async def async_turn_off(self) -> None:
         """Turn the media player off."""
         scope = self._service_info["scope"]
@@ -614,6 +619,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             await asyncio.sleep(0.5)
             await self.coordinator.async_request_refresh()
 
+    @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         if await self._delegate_to_hass("volume_set", {"volume_level": volume}):
@@ -632,6 +638,7 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             return
         await self._api_client.set_client_volume(client_name, volume)
 
+    @api_command
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         if await self._delegate_to_hass("volume_mute", {"is_volume_muted": mute}):
@@ -782,6 +789,7 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
                 return client
         return None
 
+    @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
         def get_client_name():
@@ -790,6 +798,7 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
 
         await self._set_volume_with_fallback(volume, get_client_name, self._api_client)
 
+    @api_command
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
         def get_client_name():
@@ -1036,6 +1045,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
 
     # Media control — MPRIS API first if capability exists, else delegate to mapped entity
 
+    @api_command
     async def async_media_play(self) -> None:
         """Send play command."""
         player = self._player_data
@@ -1045,6 +1055,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_play")
 
+    @api_command
     async def async_media_pause(self) -> None:
         """Send pause command."""
         player = self._player_data
@@ -1054,6 +1065,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_pause")
 
+    @api_command
     async def async_media_stop(self) -> None:
         """Send stop command."""
         player = self._player_data
@@ -1063,6 +1075,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_stop")
 
+    @api_command
     async def async_media_next_track(self) -> None:
         """Send next track command."""
         player = self._player_data
@@ -1072,6 +1085,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_next_track")
 
+    @api_command
     async def async_media_previous_track(self) -> None:
         """Send previous track command."""
         player = self._player_data
@@ -1081,6 +1095,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_previous_track")
 
+    @api_command
     async def async_media_seek(self, position: float) -> None:
         """Seek to position (in seconds)."""
         player = self._player_data
@@ -1092,6 +1107,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("media_seek", {"seek_position": position})
 
+    @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level (0..1)."""
         player = self._player_data
@@ -1101,18 +1117,21 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("volume_set", {"volume_level": volume})
 
+    @api_command
     async def async_volume_up(self) -> None:
         """Volume up by 5%."""
         current = self.volume_level
         if current is not None:
             await self.async_set_volume_level(min(1.0, current + 0.05))
 
+    @api_command
     async def async_volume_down(self) -> None:
         """Volume down by 5%."""
         current = self.volume_level
         if current is not None:
             await self.async_set_volume_level(max(0.0, current - 0.05))
 
+    @api_command
     async def async_set_shuffle(self, shuffle: bool) -> None:
         """Enable/disable shuffle mode."""
         player = self._player_data
@@ -1122,6 +1141,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
             return
         await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
 
+    @api_command
     async def async_set_repeat(self, repeat: RepeatMode) -> None:
         """Set repeat mode."""
         player = self._player_data

@@ -2,7 +2,14 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.odio_remote.helpers import async_get_mac_from_ip
+from homeassistant.exceptions import HomeAssistantError
+
+from custom_components.odio_remote.exceptions import (
+    OdioApiError,
+    OdioConnectionError,
+    OdioTimeoutError,
+)
+from custom_components.odio_remote.helpers import api_command, async_get_mac_from_ip
 
 
 def _make_hass(gethostbyname_result, dt_states=None):
@@ -108,3 +115,66 @@ class TestAsyncGetMacFromIp:
         await async_get_mac_from_ip(hass, "192.168.1.100")
 
         hass.states.async_all.assert_called_once_with("device_tracker")
+
+
+class TestApiCommand:
+    """Tests for the api_command decorator."""
+
+    @pytest.mark.asyncio
+    async def test_returns_result_on_success(self):
+        """Successful calls return the function result unchanged."""
+        @api_command
+        async def action():
+            return "ok"
+
+        assert await action() == "ok"
+
+    @pytest.mark.asyncio
+    async def test_reraises_homeassistant_error(self):
+        """Existing HomeAssistantError passes through unchanged."""
+        @api_command
+        async def action():
+            raise HomeAssistantError("already ha")
+
+        with pytest.raises(HomeAssistantError, match="already ha"):
+            await action()
+
+    @pytest.mark.asyncio
+    async def test_converts_odio_connection_error(self):
+        """OdioConnectionError is re-raised as HomeAssistantError."""
+        @api_command
+        async def action():
+            raise OdioConnectionError("unreachable")
+
+        with pytest.raises(HomeAssistantError, match="unreachable"):
+            await action()
+
+    @pytest.mark.asyncio
+    async def test_converts_odio_timeout_error(self):
+        """OdioTimeoutError is re-raised as HomeAssistantError."""
+        @api_command
+        async def action():
+            raise OdioTimeoutError("timed out")
+
+        with pytest.raises(HomeAssistantError, match="timed out"):
+            await action()
+
+    @pytest.mark.asyncio
+    async def test_converts_odio_api_error(self):
+        """OdioApiError is re-raised as HomeAssistantError."""
+        @api_command
+        async def action():
+            raise OdioApiError("bad response", status=500)
+
+        with pytest.raises(HomeAssistantError, match="bad response"):
+            await action()
+
+    @pytest.mark.asyncio
+    async def test_lets_programming_errors_bubble(self):
+        """TypeError and other bugs are not caught — they bubble naturally."""
+        @api_command
+        async def action():
+            raise TypeError("this is a bug")
+
+        with pytest.raises(TypeError, match="this is a bug"):
+            await action()

@@ -1,11 +1,8 @@
 """Coordinators for the Odio Remote integration."""
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
-
-import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -17,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .api_client import OdioApiClient, SseEvent
 from .const import DOMAIN
+from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,11 +45,11 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         try:
             data = await self.api.get_audio_data()
             return {"audio": data["clients"], "outputs": data["outputs"]}
-        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+        except (OdioConnectionError, OdioTimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching audio data")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+        except OdioApiError as err:
+            _LOGGER.error("API error fetching audio data: %s", err)
+            raise UpdateFailed(f"API error: {err}") from err
 
     def handle_sse_event(self, event: SseEvent) -> None:
         """Handle an audio.updated SSE event (changed/added clients only — merge into list)."""
@@ -141,11 +139,11 @@ class OdioBluetoothCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch Bluetooth status from API."""
         try:
             return await self.api.get_bluetooth_status()
-        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+        except (OdioConnectionError, OdioTimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching bluetooth status")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+        except OdioApiError as err:
+            _LOGGER.error("API error fetching bluetooth status: %s", err)
+            raise UpdateFailed(f"API error: {err}") from err
 
     def handle_sse_event(self, event: SseEvent) -> None:
         """Handle a bluetooth.updated SSE event."""
@@ -186,11 +184,11 @@ class OdioMPRISCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             position_updated_at = dt_util.parse_datetime(cache_ts) if cache_ts else dt_util.utcnow()
             stamped = [{**p, "position_updated_at": position_updated_at} for p in players]
             return {"mpris": stamped}
-        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+        except (OdioConnectionError, OdioTimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching MPRIS players")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+        except OdioApiError as err:
+            _LOGGER.error("API error fetching MPRIS players: %s", err)
+            raise UpdateFailed(f"API error: {err}") from err
 
     def _merge_player(self, player_data: dict[str, Any], emitted_at_ms: int | None) -> None:
         """Merge a player into the current list, replacing by bus_name if it exists."""
@@ -293,11 +291,11 @@ class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             services = await self.api.get_services()
             return {"services": services}
-        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+        except (OdioConnectionError, OdioTimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching services")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+        except OdioApiError as err:
+            _LOGGER.error("API error fetching services: %s", err)
+            raise UpdateFailed(f"API error: {err}") from err
 
     def handle_sse_event(self, event: SseEvent) -> None:
         """Handle a service.updated SSE event: merge into existing list."""

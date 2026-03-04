@@ -255,8 +255,8 @@ class TestSetupAudioCoordinator:
 
         await _setup_audio_coordinator(_make_hass(), entry, MagicMock(), stream)
 
-        # 1 (coordinator shutdown) + 2 SSE listeners = 3 unload callbacks
-        assert len(entry._unload_callbacks) == 3
+        # 1 (coordinator shutdown) + 4 SSE listeners = 5 unload callbacks
+        assert len(entry._unload_callbacks) == 5
 
 
 # =============================================================================
