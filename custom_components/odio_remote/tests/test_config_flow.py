@@ -19,7 +19,7 @@ from custom_components.odio_remote.const import (
     DOMAIN,
 )
 
-from .conftest import MOCK_SERVER_INFO, MOCK_SERVICES, MOCK_CLIENTS, MOCK_REMOTE_CLIENTS
+from .conftest import MOCK_SERVER_INFO, MOCK_SERVICES, MOCK_CLIENTS, MOCK_REMOTE_CLIENTS, MOCK_PLAYERS
 
 # Valid API response for async_validate_api
 MOCK_API_INFO = {
@@ -456,6 +456,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[],
     )
@@ -463,7 +467,7 @@ class TestOptionsFlowMappings:
         "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
-    async def test_abort_no_mappable_entities(self, mock_clients, mock_services):
+    async def test_abort_no_mappable_entities(self, mock_clients, mock_services, mock_players):
         """Test abort when no services or clients are available."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -476,6 +480,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -485,7 +493,7 @@ class TestOptionsFlowMappings:
         "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
-    async def test_show_form_with_services(self, mock_clients, mock_services):
+    async def test_show_form_with_services(self, mock_clients, mock_services, mock_players):
         """Test that mappings form is shown when services exist."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -499,6 +507,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[],
     )
@@ -508,7 +520,7 @@ class TestOptionsFlowMappings:
             {"name": "RemoteClient", "host": "remote-host"},
         ],
     )
-    async def test_show_form_with_clients(self, mock_clients, mock_services):
+    async def test_show_form_with_clients(self, mock_clients, mock_services, mock_players):
         """Test that mappings form is shown when clients exist."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -521,6 +533,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -530,7 +546,7 @@ class TestOptionsFlowMappings:
         "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
-    async def test_update_mappings(self, mock_clients, mock_services):
+    async def test_update_mappings(self, mock_clients, mock_services, mock_players):
         """Test updating service mappings."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -549,6 +565,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -558,7 +578,7 @@ class TestOptionsFlowMappings:
         "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
-    async def test_delete_mapping(self, mock_clients, mock_services):
+    async def test_delete_mapping(self, mock_clients, mock_services, mock_players):
         """Test deleting an existing mapping via delete checkbox."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -580,6 +600,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -591,7 +615,7 @@ class TestOptionsFlowMappings:
             {"name": "RemoteClient", "host": "remote-host"},
         ],
     )
-    async def test_mixed_services_and_clients(self, mock_clients, mock_services):
+    async def test_mixed_services_and_clients(self, mock_clients, mock_services, mock_players):
         """Test mapping both services and clients."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -613,6 +637,10 @@ class TestOptionsFlowMappings:
 
     @pytest.mark.asyncio
     @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
         "custom_components.odio_remote.config_flow.async_fetch_available_services",
         return_value=[
             {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
@@ -622,7 +650,7 @@ class TestOptionsFlowMappings:
         "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
         return_value=[],
     )
-    async def test_preserves_offline_client_mappings(self, mock_clients, mock_services):
+    async def test_preserves_offline_client_mappings(self, mock_clients, mock_services, mock_players):
         """Test that mappings for offline clients are preserved."""
         flow = _create_options_flow()
         flow._data = {CONF_API_URL: "http://test:8018"}
@@ -642,6 +670,127 @@ class TestOptionsFlowMappings:
         assert mappings["user/mpd.service"] == "media_player.mpd"
         # Offline client mapping preserved
         assert mappings["client:OfflineClient"] == "media_player.offline"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=MOCK_PLAYERS,
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
+        return_value=[],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
+        return_value=[],
+    )
+    async def test_show_form_with_players(self, mock_clients, mock_services, mock_players):
+        """Test that mappings form is shown when MPRIS players exist."""
+        flow = _create_options_flow()
+        flow._data = {CONF_API_URL: "http://test:8018"}
+        flow._options = {CONF_SERVICE_MAPPINGS: {}}
+
+        result = await flow.async_step_mappings(user_input=None)
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "mappings"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=MOCK_PLAYERS[:1],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
+        return_value=[],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
+        return_value=[],
+    )
+    async def test_update_player_mapping(self, mock_clients, mock_services, mock_players):
+        """Test adding an MPRIS player mapping."""
+        flow = _create_options_flow()
+        flow._data = {CONF_API_URL: "http://test:8018"}
+        flow._options = {CONF_SERVICE_MAPPINGS: {}}
+
+        result = await flow.async_step_mappings(
+            user_input={
+                "player_org_mpris_mediaplayer2_spotify": "media_player.spotify_ha",
+            }
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        mappings = result["data"][CONF_SERVICE_MAPPINGS]
+        assert mappings["mpris:org.mpris.MediaPlayer2.spotify"] == "media_player.spotify_ha"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=MOCK_PLAYERS[:1],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
+        return_value=[
+            {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
+        ],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
+        return_value=[],
+    )
+    async def test_mixed_services_and_players(self, mock_clients, mock_services, mock_players):
+        """Test mapping both services and MPRIS players."""
+        flow = _create_options_flow()
+        flow._data = {CONF_API_URL: "http://test:8018"}
+        flow._options = {CONF_SERVICE_MAPPINGS: {}}
+
+        result = await flow.async_step_mappings(
+            user_input={
+                "user_mpd.service": "media_player.mpd",
+                "player_org_mpris_mediaplayer2_spotify": "media_player.spotify_ha",
+            }
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        mappings = result["data"][CONF_SERVICE_MAPPINGS]
+        assert mappings["user/mpd.service"] == "media_player.mpd"
+        assert mappings["mpris:org.mpris.MediaPlayer2.spotify"] == "media_player.spotify_ha"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_mpris_players",
+        return_value=[],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_available_services",
+        return_value=[
+            {"name": "mpd.service", "scope": "user", "exists": True, "enabled": True},
+        ],
+    )
+    @patch(
+        "custom_components.odio_remote.config_flow.async_fetch_remote_clients",
+        return_value=[],
+    )
+    async def test_preserves_offline_player_mappings(self, mock_clients, mock_services, mock_players):
+        """Test that mappings for offline players are preserved."""
+        flow = _create_options_flow()
+        flow._data = {CONF_API_URL: "http://test:8018"}
+        flow._options = {
+            CONF_SERVICE_MAPPINGS: {
+                "mpris:org.mpris.MediaPlayer2.vlc": "media_player.vlc_ha",
+            },
+        }
+
+        result = await flow.async_step_mappings(
+            user_input={"user_mpd.service": "media_player.mpd"}
+        )
+
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        mappings = result["data"][CONF_SERVICE_MAPPINGS]
+        assert mappings["user/mpd.service"] == "media_player.mpd"
+        # Offline player mapping preserved
+        assert mappings["mpris:org.mpris.MediaPlayer2.vlc"] == "media_player.vlc_ha"
 
 
 # =============================================================================
@@ -881,6 +1030,62 @@ class TestValidationHelpers:
             return_value=mock_api_instance,
         ):
             result = await async_fetch_remote_clients(MagicMock(), "http://bad:8018")
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
+    async def test_async_fetch_mpris_players(self, mock_session):
+        """Test fetching MPRIS players when backend is enabled."""
+        from custom_components.odio_remote.config_flow import async_fetch_mpris_players
+
+        mock_api_instance = MagicMock()
+        mock_api_instance.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
+        mock_api_instance.get_players = AsyncMock(return_value=(MOCK_PLAYERS, "2025-01-01T00:00:00Z"))
+
+        with patch(
+            "custom_components.odio_remote.config_flow.OdioApiClient",
+            return_value=mock_api_instance,
+        ):
+            result = await async_fetch_mpris_players(MagicMock(), "http://test:8018")
+
+        assert len(result) == 2
+        assert result[0]["bus_name"] == "org.mpris.MediaPlayer2.spotify"
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
+    async def test_async_fetch_mpris_players_backend_disabled(self, mock_session):
+        """Test fetching MPRIS players returns empty when backend is disabled."""
+        from custom_components.odio_remote.config_flow import async_fetch_mpris_players
+
+        server_info = {**MOCK_SERVER_INFO, "backends": {**MOCK_SERVER_INFO["backends"], "mpris": False}}
+        mock_api_instance = MagicMock()
+        mock_api_instance.get_server_info = AsyncMock(return_value=server_info)
+
+        with patch(
+            "custom_components.odio_remote.config_flow.OdioApiClient",
+            return_value=mock_api_instance,
+        ):
+            result = await async_fetch_mpris_players(MagicMock(), "http://test:8018")
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
+    async def test_async_fetch_mpris_players_error(self, mock_session):
+        """Test fetching MPRIS players returns empty on error."""
+        from custom_components.odio_remote.config_flow import async_fetch_mpris_players
+
+        mock_api_instance = MagicMock()
+        mock_api_instance.get_server_info = AsyncMock(
+            side_effect=ConnectionError("refused")
+        )
+
+        with patch(
+            "custom_components.odio_remote.config_flow.OdioApiClient",
+            return_value=mock_api_instance,
+        ):
+            result = await async_fetch_mpris_players(MagicMock(), "http://bad:8018")
 
         assert result == []
 

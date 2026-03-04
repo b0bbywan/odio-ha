@@ -5,6 +5,7 @@ from custom_components.odio_remote.config_flow_helpers import (
     parse_mappings_from_input,
     get_service_keys,
     get_client_keys,
+    get_player_keys,
 )
 
 
@@ -283,6 +284,42 @@ class TestClientKeys:
         # Leading/trailing underscores should be stripped
         assert form_key == "client_test"
         assert mapping_key == "client:___Test___"
+
+
+class TestPlayerKeys:
+    """Tests for player key generation."""
+
+    def test_standard_bus_name(self):
+        """Test standard MPRIS bus name."""
+        player = {"bus_name": "org.mpris.MediaPlayer2.spotify"}
+        form_key, mapping_key = get_player_keys(player)
+
+        assert form_key == "player_org_mpris_mediaplayer2_spotify"
+        assert mapping_key == "mpris:org.mpris.MediaPlayer2.spotify"
+
+    def test_bus_name_with_instance(self):
+        """Test bus name with instance number."""
+        player = {"bus_name": "org.mpris.MediaPlayer2.chromium.instance1"}
+        form_key, mapping_key = get_player_keys(player)
+
+        assert form_key == "player_org_mpris_mediaplayer2_chromium_instance1"
+        assert mapping_key == "mpris:org.mpris.MediaPlayer2.chromium.instance1"
+
+    def test_empty_bus_name(self):
+        """Test player with empty bus_name."""
+        player = {"bus_name": ""}
+        form_key, mapping_key = get_player_keys(player)
+
+        assert form_key == ""
+        assert mapping_key == ""
+
+    def test_missing_bus_name(self):
+        """Test player without bus_name key."""
+        player = {"identity": "Spotify"}
+        form_key, mapping_key = get_player_keys(player)
+
+        assert form_key == ""
+        assert mapping_key == ""
 
 
 if __name__ == "__main__":
