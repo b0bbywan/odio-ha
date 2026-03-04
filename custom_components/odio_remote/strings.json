@@ -2,104 +2,118 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configuration Odio Remote",
-        "description": "Configurez votre télécommande multimédia Odio",
+        "title": "Odio Remote Configuration",
+        "description": "Configure your Odio multimedia remote",
         "data": {
-          "api_url": "URL de l'API"
+          "api_url": "API URL"
         },
         "data_description": {
-          "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8018)"
+          "api_url": "The base URL of your go-odio-api (e.g. http://192.168.1.100:8018)"
         }
       },
       "sse": {
-        "title": "Configuration SSE",
-        "description": "Configurez l'intervalle de keepalive SSE",
+        "title": "SSE Configuration",
+        "description": "Configure the SSE keepalive interval",
         "data": {
-          "keepalive_interval": "Intervalle de keepalive (secondes)"
+          "keepalive_interval": "Keepalive interval (seconds)"
         },
         "data_description": {
-          "keepalive_interval": "Intervalle de heartbeat serveur, 10-120s (recommandé : 30s)"
+          "keepalive_interval": "Server heartbeat interval, 10-120s (recommended: 30s)"
         }
       },
       "zeroconf_confirm": {
-        "title": "Odio Remote découvert",
-        "description": "Odio Remote a été découvert sur votre réseau à **{host}** ({api_url}). Voulez-vous l'ajouter ?"
+        "title": "Odio Remote discovered",
+        "description": "Odio Remote was found on your network at **{host}** ({api_url}). Do you want to add it?"
       },
       "services": {
-        "title": "Association des services",
-        "description": "Associez vos services audio à des entités media_player existantes (optionnel). Les services non associés seront créés comme de nouvelles entités.",
+        "title": "Service Mapping",
+        "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities.",
         "data_description": {
-          "services_info": "Sélectionnez une entité media_player existante pour chaque service que vous souhaitez associer. Laissez vide pour créer une nouvelle entité."
+          "services_info": "Select an existing media_player entity for each service you want to map. Leave empty to create a new entity."
         }
       }
     },
     "error": {
-      "cannot_connect": "Impossible de se connecter à l'API",
-      "invalid_response": "Réponse invalide du serveur",
-      "unknown": "Erreur inattendue"
+      "cannot_connect": "Cannot connect to API",
+      "invalid_response": "Invalid server response",
+      "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "Cette API est déjà configurée",
-      "cannot_connect": "Impossible de se connecter à l'API"
+      "already_configured": "This API is already configured",
+      "cannot_connect": "Cannot connect to API"
     }
   },
   "entity": {
+    "binary_sensor": {
+      "connection_status": {"name": "Connection"},
+      "bluetooth_pairing_active": {"name": "Bluetooth Pairing"}
+    },
     "button": {
-      "power_off": {"name": "Éteindre"},
-      "reboot": {"name": "Redémarrer"}
+      "power_off": {"name": "Power Off"},
+      "reboot": {"name": "Reboot"},
+      "bluetooth_pairing": {"name": "Bluetooth Pairing"}
+    },
+    "sensor": {
+      "bluetooth_connected_device": {
+        "name": "Connected Device",
+        "state": {"none": "None"}
+      }
+    },
+    "switch": {
+      "bluetooth_power": {"name": "Bluetooth"}
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Options Odio Remote",
-        "description": "Que souhaitez-vous configurer pour {name} ?",
+        "title": "Odio Remote Options",
+        "description": "What would you like to configure for {name}?",
         "menu_options": {
-          "sse": "Configurer les paramètres SSE",
-          "mappings": "Gérer les associations d'entités"
+          "sse": "Configure SSE settings",
+          "mappings": "Manage entity mappings"
         }
       },
       "sse": {
-        "title": "Paramètres SSE",
-        "description": "Configurez l'intervalle de keepalive SSE",
+        "title": "SSE Settings",
+        "description": "Configure the SSE keepalive interval",
         "data": {
-          "keepalive_interval": "Intervalle de keepalive (secondes)"
+          "keepalive_interval": "Keepalive interval (seconds)"
         },
         "data_description": {
-          "keepalive_interval": "Intervalle de heartbeat serveur, 10-120s (recommandé : 30s)"
+          "keepalive_interval": "Server heartbeat interval, 10-120s (recommended: 30s)"
         }
       },
       "mappings": {
-        "title": "Associations d'entités",
-        "description": "Associez vos services et clients à des entités media_player. Cochez 'Supprimer' pour retirer une association.",
+        "title": "Entity Mappings",
+        "description": "Map your services and clients to media_player entities. Check 'Delete' to remove a mapping.",
         "data": {
           "system_upmpdcli.service": "upmpdcli (system)",
-          "system_upmpdcli.service_delete": "Supprimer upmpdcli",
+          "system_upmpdcli.service_delete": "Delete upmpdcli mapping",
           "user_mpd.service": "mpd (user)",
-          "user_mpd.service_delete": "Supprimer mpd",
+          "user_mpd.service_delete": "Delete mpd mapping",
           "user_snapclient.service": "snapclient (user)",
-          "user_snapclient.service_delete": "Supprimer snapclient",
+          "user_snapclient.service_delete": "Delete snapclient mapping",
           "user_squeezelite.service": "squeezelite (user)",
-          "user_squeezelite.service_delete": "Supprimer squeezelite",
+          "user_squeezelite.service_delete": "Delete squeezelite mapping",
           "user_shairport-sync.service": "shairport-sync (user)",
-          "user_shairport-sync.service_delete": "Supprimer shairport-sync",
-          "client_rasponkyo": "Client Rasponkyo",
-          "client_rasponkyo_delete": "Supprimer client Rasponkyo"
+          "user_shairport-sync.service_delete": "Delete shairport-sync mapping",
+          "client_rasponkyo": "Rasponkyo Client",
+          "client_rasponkyo_delete": "Delete Rasponkyo client mapping"
         },
         "data_description": {
-          "info": "Sélectionnez une entité media_player existante pour chaque service ou client."
+          "info": "Select an existing media_player entity for each service or client."
         }
       }
     },
     "error": {
-      "cannot_connect": "Impossible de se connecter à l'API",
-      "invalid_response": "Réponse invalide du serveur",
-      "unknown": "Erreur inattendue"
+      "cannot_connect": "Cannot connect to API",
+      "invalid_response": "Invalid server response",
+      "unknown": "Unexpected error"
     },
     "abort": {
-      "no_api_url": "URL de l'API non configurée",
-      "no_mappable_entities": "Aucun service ou client disponible à associer",
-      "not_loaded": "L'intégration n'est pas chargée"
+      "no_api_url": "API URL not configured",
+      "no_mappable_entities": "No services or clients available to map",
+      "not_loaded": "Integration not loaded"
     }
   }
 }

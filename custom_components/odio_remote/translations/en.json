@@ -45,11 +45,22 @@
   },
   "entity": {
     "binary_sensor": {
-      "connection_status": {"name": "Connection"}
+      "connection_status": {"name": "Connection"},
+      "bluetooth_pairing_active": {"name": "Bluetooth Pairing"}
     },
     "button": {
       "power_off": {"name": "Power Off"},
-      "reboot": {"name": "Reboot"}
+      "reboot": {"name": "Reboot"},
+      "bluetooth_pairing": {"name": "Bluetooth Pairing"}
+    },
+    "sensor": {
+      "bluetooth_connected_device": {
+        "name": "Connected Device",
+        "state": {"none": "None"}
+      }
+    },
+    "switch": {
+      "bluetooth_power": {"name": "Bluetooth"}
     }
   },
   "options": {
