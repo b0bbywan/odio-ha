@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,6 +38,8 @@ from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioService
 from .event_stream import OdioEventStreamManager
 from .helpers import api_command
 from .mixins import MappedEntityMixin
+
+PARALLEL_UPDATES = 0
 
 _LOGGER = logging.getLogger(__name__)
 

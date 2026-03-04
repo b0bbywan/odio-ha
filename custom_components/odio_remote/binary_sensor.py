@@ -19,6 +19,8 @@ from . import OdioConfigEntry
 from .coordinator import OdioBluetoothCoordinator
 from .event_stream import OdioEventStreamManager
 
+PARALLEL_UPDATES = 0
+
 _LOGGER = logging.getLogger(__name__)
 
 
