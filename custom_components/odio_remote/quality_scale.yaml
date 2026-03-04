@@ -41,8 +41,4 @@ rules:
   reauthentication-flow:
     status: exempt
     comment: No authentication — API has no credentials.
-  test-coverage:
-    status: todo
-    comment: |
-      92% global. Needs 95%.
-      Gaps: mixins.py (49%), __init__.py (58%), media_player.py (68%).
+  test-coverage: done

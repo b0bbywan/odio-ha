@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.odio_remote.api_client import SseEvent
 from custom_components.odio_remote.coordinator import OdioMPRISCoordinator
-from custom_components.odio_remote.exceptions import OdioConnectionError, OdioTimeoutError
+from custom_components.odio_remote.exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
 
 from .conftest import MOCK_DEVICE_INFO, MOCK_PLAYERS
@@ -134,6 +134,15 @@ class TestMPRISCoordinatorFetch:
         with pytest.raises(UpdateFailed):
             await coord._async_update_data()
 
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_api_error(self):
+        api = MagicMock()
+        api.get_players = AsyncMock(side_effect=OdioApiError("bad response"))
+        coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
 
 # ===========================================================================
 # OdioMPRISCoordinator — handle_sse_update_event / handle_sse_added_event
@@ -203,6 +212,20 @@ class TestMPRISCoordinatorSseUpdate:
         coord.handle_sse_update_event(self._sse_event(MOCK_SPOTIFY))
         result = coord.async_set_updated_data.call_args[0][0]["mpris"]
         assert len(result) == 1
+
+    def test_missing_bus_name_ignored(self):
+        """_merge_player returns early when player_data has no bus_name."""
+        coord = self._coord_with_players([MOCK_SPOTIFY])
+        player_without_bus = {k: v for k, v in MOCK_SPOTIFY.items() if k != "bus_name"}
+        coord.handle_sse_update_event(self._sse_event(player_without_bus))
+        coord.async_set_updated_data.assert_not_called()
+
+    def test_emitted_at_none_falls_back_to_utcnow(self):
+        """_merge_player uses utcnow() when emitted_at_ms is None."""
+        coord = self._coord_with_players([])
+        coord.handle_sse_update_event(self._sse_event(MOCK_SPOTIFY, emitted_at=None))
+        result = coord.async_set_updated_data.call_args[0][0]["mpris"]
+        assert result[0]["position_updated_at"] is not None
 
 
 # ===========================================================================
