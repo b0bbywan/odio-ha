@@ -29,6 +29,15 @@ All state is pushed by the server via **Server-Sent Events** — no polling afte
 - Start/stop switch per service
 - Optional mapping to an existing HA media player → inherits full playback controls & metadata
 
+### MPRIS (media player backend)
+- `media_player` entity per active D-Bus MPRIS player (Spotify, Firefox, Chromium, mpd, etc.)
+- Full transport controls: play/pause/stop/next/previous/seek (when the player supports them)
+- Volume control, shuffle, and repeat mode
+- Rich metadata: title, artist, album, album art (remote URLs only)
+- Live position tracking via SSE
+- Players appear/disappear dynamically as they start and stop
+- Optional mapping to an existing HA media player for fallback controls
+
 ### Bluetooth
 Control your Bluetooth adapter directly from Home Assistant:
 - **Power** switch — turn the adapter on or off
@@ -122,6 +131,11 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 | `media_player.odio_remote_[hostname]_[service]` | One per user-scope service — start/stop, volume/mute, optional mapping for full playback |
 | `switch.odio_remote_[hostname]_[service]` | Direct start/stop toggle per service |
 
+### MPRIS backend
+| Entity | Description |
+|--------|-------------|
+| `media_player.odio_remote_[hostname]_[player]` | One per MPRIS player (e.g. Spotify, Firefox) — transport controls, volume, metadata, position tracking |
+
 ### Bluetooth backend
 | Entity | Description |
 |--------|-------------|
@@ -138,7 +152,6 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 
 ## Roadmap
 
-- MPRIS player entities
 - Audio outputs handling
 - More Sensors: Tell me what you need for your setup !
 - Improved error reporting & options flow
