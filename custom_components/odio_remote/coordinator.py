@@ -53,14 +53,39 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def handle_sse_event(self, event: SseEvent) -> None:
-        """Handle an audio.updated SSE event."""
+        """Handle an audio.updated SSE event (changed/added clients only — merge into list)."""
         if not isinstance(event.data, list):
             _LOGGER.warning(
                 "audio.updated: expected list, got %s", type(event.data).__name__
             )
             return
-        _LOGGER.debug("SSE audio.updated: %d clients", len(event.data))
-        self.async_set_updated_data({"audio": event.data})
+        _LOGGER.debug("SSE audio.updated: %d changed/added", len(event.data))
+        current = list((self.data or {}).get("audio", []))
+        updated_by_name = {c["name"]: c for c in event.data if "name" in c}
+        result = [updated_by_name.pop(c.get("name"), c) for c in current]
+        result.extend(updated_by_name.values())
+        self.async_set_updated_data({"audio": result})
+
+    def handle_sse_remove_event(self, event: SseEvent) -> None:
+        """Handle an audio.removed SSE event.
+
+        Keeps removed clients in the list but marks them corked=True so entities
+        transition to Idle instead of disappearing from HA.
+        """
+        if not isinstance(event.data, list):
+            _LOGGER.warning(
+                "audio.removed: expected list, got %s", type(event.data).__name__
+            )
+            return
+        _LOGGER.debug("SSE audio.removed: %d clients", len(event.data))
+        removed_by_name = {
+            c["name"]: {**c, "corked": True}
+            for c in event.data
+            if "name" in c
+        }
+        current = list((self.data or {}).get("audio", []))
+        result = [removed_by_name.get(c.get("name"), c) for c in current]
+        self.async_set_updated_data({"audio": result})
 
 
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):

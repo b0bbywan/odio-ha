@@ -21,6 +21,7 @@ from .const import (
     CONF_SERVICE_MAPPINGS,
     DEFAULT_KEEPALIVE_INTERVAL,
     DOMAIN,
+    SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_SERVICE_UPDATED,
 )
@@ -175,6 +176,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         entry.async_on_unload(
             event_stream.async_add_event_listener(
                 SSE_EVENT_AUDIO_UPDATED, audio_coordinator.handle_sse_event
+            )
+        )
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                SSE_EVENT_AUDIO_REMOVED, audio_coordinator.handle_sse_remove_event
             )
         )
     if service_coordinator is not None:
