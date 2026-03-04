@@ -11,7 +11,7 @@ from custom_components.odio_remote.coordinator import (
     OdioBluetoothCoordinator,
     OdioServiceCoordinator,
 )
-from custom_components.odio_remote.exceptions import OdioConnectionError, OdioTimeoutError
+from custom_components.odio_remote.exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 from .conftest import MOCK_BLUETOOTH_STATUS, MOCK_CLIENTS, MOCK_OUTPUTS, MOCK_SERVICES
 
@@ -83,6 +83,16 @@ class TestOdioAudioCoordinator:
         with pytest.raises(UpdateFailed):
             await coord._async_update_data()
 
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_api_error(self):
+        """OdioApiError is wrapped in UpdateFailed."""
+        api = MagicMock()
+        api.get_audio_data = AsyncMock(side_effect=OdioApiError("bad response"))
+        coord = _make_audio_coordinator(api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
 
 # ---------------------------------------------------------------------------
 # OdioServiceCoordinator
@@ -120,6 +130,16 @@ class TestOdioServiceCoordinator:
         """OdioTimeoutError is wrapped in UpdateFailed."""
         api = MagicMock()
         api.get_services = AsyncMock(side_effect=OdioTimeoutError("timeout"))
+        coord = _make_service_coordinator(api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_api_error(self):
+        """OdioApiError is wrapped in UpdateFailed."""
+        api = MagicMock()
+        api.get_services = AsyncMock(side_effect=OdioApiError("bad response"))
         coord = _make_service_coordinator(api)
 
         with pytest.raises(UpdateFailed):
@@ -382,6 +402,16 @@ class TestOdioBluetoothCoordinator:
         with pytest.raises(UpdateFailed):
             await coord._async_update_data()
 
+    @pytest.mark.asyncio
+    async def test_raises_update_failed_on_api_error(self):
+        """OdioApiError is wrapped in UpdateFailed."""
+        api = MagicMock()
+        api.get_bluetooth_status = AsyncMock(side_effect=OdioApiError("bad response"))
+        coord = _make_bluetooth_coordinator(api)
+
+        with pytest.raises(UpdateFailed):
+            await coord._async_update_data()
+
 
 # ---------------------------------------------------------------------------
 # OdioBluetoothCoordinator.handle_sse_event
@@ -428,3 +458,96 @@ class TestBluetoothCoordinatorHandleSseEvent:
         coord.handle_sse_event(SseEvent(type="bluetooth.updated", data=data))
 
         coord.async_set_updated_data.assert_called_once_with(data)
+
+
+# ---------------------------------------------------------------------------
+# OdioAudioCoordinator.handle_sse_output_event
+# ---------------------------------------------------------------------------
+
+
+class TestAudioCoordinatorHandleSseOutputEvent:
+
+    def _make_coord(self, outputs):
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = {"outputs": outputs}
+        coord.async_set_updated_data = MagicMock()
+        return coord
+
+    def test_updates_existing_output_by_name(self):
+        existing = {**MOCK_OUTPUTS[0]}
+        coord = self._make_coord([existing])
+
+        updated = {**existing, "volume": 0.5}
+        coord.handle_sse_output_event(SseEvent(type="audio.output.updated", data=[updated]))
+
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert result[0]["volume"] == 0.5
+
+    def test_appends_unknown_output(self):
+        coord = self._make_coord([MOCK_OUTPUTS[0]])
+        new_output = {**MOCK_OUTPUTS[1]}
+        coord.handle_sse_output_event(SseEvent(type="audio.output.updated", data=[new_output]))
+
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert len(result) == 2
+
+    def test_works_with_no_existing_data(self):
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = None
+        coord.async_set_updated_data = MagicMock()
+
+        coord.handle_sse_output_event(SseEvent(type="audio.output.updated", data=[MOCK_OUTPUTS[0]]))
+
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert len(result) == 1
+
+    def test_non_list_data_ignored(self):
+        coord = self._make_coord([])
+        coord.handle_sse_output_event(SseEvent(type="audio.output.updated", data={"not": "a list"}))
+        coord.async_set_updated_data.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# OdioAudioCoordinator.handle_sse_output_remove_event
+# ---------------------------------------------------------------------------
+
+
+class TestAudioCoordinatorHandleSseOutputRemoveEvent:
+
+    def _make_coord(self, outputs):
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = {"outputs": outputs}
+        coord.async_set_updated_data = MagicMock()
+        return coord
+
+    def test_removes_output_by_name(self):
+        coord = self._make_coord(list(MOCK_OUTPUTS))
+        coord.handle_sse_output_remove_event(
+            SseEvent(type="audio.output.removed", data=[{"name": MOCK_OUTPUTS[0]["name"]}])
+        )
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert all(o["name"] != MOCK_OUTPUTS[0]["name"] for o in result)
+
+    def test_unknown_name_leaves_list_intact(self):
+        coord = self._make_coord(list(MOCK_OUTPUTS))
+        coord.handle_sse_output_remove_event(
+            SseEvent(type="audio.output.removed", data=[{"name": "ghost-output"}])
+        )
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert len(result) == len(MOCK_OUTPUTS)
+
+    def test_works_with_no_existing_data(self):
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = None
+        coord.async_set_updated_data = MagicMock()
+
+        coord.handle_sse_output_remove_event(
+            SseEvent(type="audio.output.removed", data=[{"name": MOCK_OUTPUTS[0]["name"]}])
+        )
+        result = coord.async_set_updated_data.call_args[0][0]["outputs"]
+        assert result == []
+
+    def test_non_list_data_ignored(self):
+        coord = self._make_coord([])
+        coord.handle_sse_output_remove_event(SseEvent(type="audio.output.removed", data={"not": "a list"}))
+        coord.async_set_updated_data.assert_not_called()

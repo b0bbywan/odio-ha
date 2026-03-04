@@ -1,6 +1,7 @@
 """Tests for Odio Remote switch platform."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from custom_components.odio_remote.switch import (
     OdioBluetoothSwitch,
@@ -118,6 +119,19 @@ class TestOdioServiceSwitchIsOn:
 # available
 # ---------------------------------------------------------------------------
 
+class TestOdioServiceSwitchLifecycle:
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_subscribes_to_sse(self):
+        es = _make_event_stream()
+        ctx = _make_ctx(coordinator=_make_coordinator(MOCK_SERVICES), event_stream=es)
+        entity = OdioServiceSwitch(ctx, MOCK_SERVICES[0])
+        entity.async_on_remove = MagicMock()
+        with patch.object(CoordinatorEntity, "async_added_to_hass", new=AsyncMock()):
+            await entity.async_added_to_hass()
+        es.async_add_listener.assert_called_with(entity.async_write_ha_state)
+
+
 class TestOdioServiceSwitchAvailable:
 
     def test_available_when_coordinator_ok(self):
@@ -232,6 +246,56 @@ class TestOdioSwitchSetupEntry:
         assert added[0]._service_info["name"] == "mpd.service"
 
     @pytest.mark.asyncio
+    async def test_dynamic_listener_adds_new_services(self):
+        """Callback fires when coordinator gets data after an API-down startup."""
+        coord = _make_coordinator(services=None)
+        captured_listeners = []
+        coord.async_add_listener = MagicMock(
+            side_effect=lambda cb: captured_listeners.append(cb) or (lambda: None)
+        )
+        entry = _make_entry(coord)
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        assert added == []
+
+        coord.data = {"services": MOCK_SERVICES}
+        for listener in captured_listeners:
+            listener()
+        assert len(added) == len([s for s in MOCK_SERVICES if s.get("exists") and s.get("scope") == "user"])
+
+    @pytest.mark.asyncio
+    async def test_dynamic_listener_skips_already_known_keys(self):
+        """Callback does not re-add services already created at setup."""
+        coord = _make_coordinator(MOCK_SERVICES)
+        captured_listeners = []
+        coord.async_add_listener = MagicMock(
+            side_effect=lambda cb: captured_listeners.append(cb) or (lambda: None)
+        )
+        entry = _make_entry(coord)
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        initial_count = len(added)
+
+        for listener in captured_listeners:
+            listener()
+        assert len(added) == initial_count  # no duplicates
+
+    @pytest.mark.asyncio
+    async def test_dynamic_listener_noop_when_data_is_none(self):
+        """Callback does nothing if coordinator data is still None."""
+        coord = _make_coordinator(services=None)
+        captured_listeners = []
+        coord.async_add_listener = MagicMock(
+            side_effect=lambda cb: captured_listeners.append(cb) or (lambda: None)
+        )
+        entry = _make_entry(coord)
+        added = []
+        await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
+        for listener in captured_listeners:
+            listener()
+        assert added == []
+
+    @pytest.mark.asyncio
     async def test_no_entities_when_no_coordinator(self):
         entry = _make_entry(service_coordinator=None)
         added = []
@@ -278,6 +342,19 @@ def _make_bt_switch(data=None, sse_connected=True, last_update_success=True, api
 # OdioBluetoothSwitch — construction
 # ---------------------------------------------------------------------------
 
+class TestOdioBluetoothSwitchLifecycle:
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_subscribes_to_sse(self):
+        coord = _make_bt_coordinator(MOCK_BLUETOOTH_STATUS)
+        es = _make_event_stream()
+        switch = OdioBluetoothSwitch(coord, MagicMock(), "test_entry_id", MOCK_DEVICE_INFO, es)
+        switch.async_on_remove = MagicMock()
+        with patch.object(CoordinatorEntity, "async_added_to_hass", new=AsyncMock()):
+            await switch.async_added_to_hass()
+        es.async_add_listener.assert_called_with(switch.async_write_ha_state)
+
+
 class TestOdioBluetoothSwitchConstruction:
 
     def test_unique_id(self):
@@ -297,6 +374,16 @@ class TestOdioBluetoothSwitchConstruction:
 # ---------------------------------------------------------------------------
 # OdioBluetoothSwitch — is_on
 # ---------------------------------------------------------------------------
+
+class TestOdioBluetoothSwitchIcon:
+
+    def test_icon_when_on(self):
+        assert _make_bt_switch(data=MOCK_BLUETOOTH_STATUS).icon == "mdi:bluetooth"
+
+    def test_icon_when_off(self):
+        data = {**MOCK_BLUETOOTH_STATUS, "powered": False}
+        assert _make_bt_switch(data=data).icon == "mdi:bluetooth-off"
+
 
 class TestOdioBluetoothSwitchIsOn:
 

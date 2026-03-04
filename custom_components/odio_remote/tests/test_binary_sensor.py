@@ -44,6 +44,36 @@ def _make_entry(bt_coordinator=None):
 
 class TestConnectionStatusSensor:
 
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_subscribes(self):
+        es = _make_event_stream()
+        sensor = ConnectionStatusSensor(es, ENTRY_ID, MOCK_DEVICE_INFO)
+        await sensor.async_added_to_hass()
+        es.async_add_listener.assert_called_once_with(sensor._handle_connectivity_change)
+        assert sensor._unsub is not None
+
+    @pytest.mark.asyncio
+    async def test_async_will_remove_from_hass_unsubscribes(self):
+        es = _make_event_stream()
+        sensor = ConnectionStatusSensor(es, ENTRY_ID, MOCK_DEVICE_INFO)
+        unsub = MagicMock()
+        sensor._unsub = unsub
+        await sensor.async_will_remove_from_hass()
+        unsub.assert_called_once()
+        assert sensor._unsub is None
+
+    @pytest.mark.asyncio
+    async def test_async_will_remove_from_hass_noop_when_no_unsub(self):
+        sensor = ConnectionStatusSensor(_make_event_stream(), ENTRY_ID, MOCK_DEVICE_INFO)
+        sensor._unsub = None
+        await sensor.async_will_remove_from_hass()  # should not raise
+
+    def test_handle_connectivity_change_writes_state(self):
+        sensor = ConnectionStatusSensor(_make_event_stream(), ENTRY_ID, MOCK_DEVICE_INFO)
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_connectivity_change()
+        sensor.async_write_ha_state.assert_called_once()
+
     def test_is_on_when_sse_connected(self):
         sensor = ConnectionStatusSensor(_make_event_stream(True), ENTRY_ID, MOCK_DEVICE_INFO)
         assert sensor.is_on is True
