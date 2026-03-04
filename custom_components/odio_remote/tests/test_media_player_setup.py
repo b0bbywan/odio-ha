@@ -1,11 +1,9 @@
 """Tests for media_player.py setup helpers."""
-import pytest
 from unittest.mock import MagicMock
 
 from custom_components.odio_remote.media_player import (
     OdioMPRISMediaPlayer,
     OdioPulseClientMediaPlayer,
-    OdioReceiverMediaPlayer,
     OdioServiceMediaPlayer,
     _MediaPlayerContext,
     _build_mpris_entities,
@@ -85,21 +83,14 @@ class TestBuildServiceEntities:
             "user/shairport-sync.service": "media_player.shairport",
         }
         ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
-        entities, patterns = _build_service_entities(ctx)
+        entities = _build_service_entities(ctx)
         assert len(entities) == 2
         assert all(isinstance(e, OdioServiceMediaPlayer) for e in entities)
-
-    def test_handled_client_patterns_populated(self):
-        coord = _make_coordinator({"services": MOCK_SERVICES})
-        mappings = {"user/mpd.service": "media_player.mpd"}
-        ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
-        _, patterns = _build_service_entities(ctx)
-        assert "mpd" in patterns
 
     def test_skips_unmapped_services(self):
         coord = _make_coordinator({"services": MOCK_SERVICES})
         ctx = _make_ctx(service_coordinator=coord, service_mappings={})
-        entities, _ = _build_service_entities(ctx)
+        entities = _build_service_entities(ctx)
         assert len(entities) == 0
 
     def test_skips_non_existing_services(self):
@@ -107,21 +98,19 @@ class TestBuildServiceEntities:
         coord = _make_coordinator({"services": services})
         mappings = {"user/gone.service": "media_player.gone"}
         ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
-        entities, _ = _build_service_entities(ctx)
+        entities = _build_service_entities(ctx)
         assert len(entities) == 0
 
     def test_returns_empty_when_no_coordinator(self):
         ctx = _make_ctx(service_coordinator=None)
-        entities, patterns = _build_service_entities(ctx)
+        entities = _build_service_entities(ctx)
         assert entities == []
-        assert patterns == set()
 
     def test_returns_empty_when_coordinator_has_no_data(self):
         coord = _make_coordinator(data=None)
         ctx = _make_ctx(service_coordinator=coord)
-        entities, patterns = _build_service_entities(ctx)
+        entities = _build_service_entities(ctx)
         assert entities == []
-        assert patterns == set()
 
 
 # ---------------------------------------------------------------------------
@@ -210,14 +199,14 @@ class TestRegisterDynamicServices:
     def test_noop_when_no_coordinator(self):
         ctx = _make_ctx(service_coordinator=None)
         entry = _make_entry(ctx)
-        _register_dynamic_services(entry, ctx, MagicMock(), [], set())
+        _register_dynamic_services(entry, ctx, MagicMock(), [])
         entry.async_on_unload.assert_not_called()
 
     def test_registers_listener(self):
         coord = _make_coordinator({"services": []})
         ctx = _make_ctx(service_coordinator=coord)
         entry = _make_entry(ctx)
-        _register_dynamic_services(entry, ctx, MagicMock(), [], set())
+        _register_dynamic_services(entry, ctx, MagicMock(), [])
         coord.async_add_listener.assert_called_once()
         entry.async_on_unload.assert_called_once()
 
@@ -227,7 +216,7 @@ class TestRegisterDynamicServices:
         ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
         entry = _make_entry(ctx)
         async_add = MagicMock()
-        _register_dynamic_services(entry, ctx, async_add, [], set())
+        _register_dynamic_services(entry, ctx, async_add, [])
 
         # Simulate coordinator getting new data
         coord.data = {"services": MOCK_SERVICES}
@@ -243,27 +232,14 @@ class TestRegisterDynamicServices:
         coord = _make_coordinator({"services": MOCK_SERVICES})
         mappings = {"user/mpd.service": "media_player.mpd"}
         ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
-        initial_entities, _ = _build_service_entities(ctx)
+        initial_entities = _build_service_entities(ctx)
         entry = _make_entry(ctx)
         async_add = MagicMock()
-        _register_dynamic_services(entry, ctx, async_add, initial_entities, set())
+        _register_dynamic_services(entry, ctx, async_add, initial_entities)
 
         listener = coord.async_add_listener.call_args[0][0]
         listener()
         async_add.assert_not_called()
-
-    def test_listener_updates_handled_client_patterns(self):
-        coord = _make_coordinator({"services": []})
-        mappings = {"user/mpd.service": "media_player.mpd"}
-        ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings)
-        entry = _make_entry(ctx)
-        handled = set()
-        _register_dynamic_services(entry, ctx, MagicMock(), [], handled)
-
-        coord.data = {"services": MOCK_SERVICES}
-        listener = coord.async_add_listener.call_args[0][0]
-        listener()
-        assert "mpd" in handled
 
 
 # ---------------------------------------------------------------------------
@@ -275,14 +251,14 @@ class TestRegisterDynamicClients:
     def test_noop_when_no_coordinator(self):
         ctx = _make_ctx(audio_coordinator=None)
         entry = _make_entry(ctx)
-        _register_dynamic_clients(entry, ctx, MagicMock(), [], set())
+        _register_dynamic_clients(entry, ctx, MagicMock(), [])
         entry.async_on_unload.assert_not_called()
 
     def test_registers_listener(self):
         coord = _make_coordinator({"audio": []})
         ctx = _make_ctx(audio_coordinator=coord)
         entry = _make_entry(ctx)
-        _register_dynamic_clients(entry, ctx, MagicMock(), [], set())
+        _register_dynamic_clients(entry, ctx, MagicMock(), [])
         coord.async_add_listener.assert_called_once()
         entry.async_on_unload.assert_called_once()
 
@@ -291,7 +267,7 @@ class TestRegisterDynamicClients:
         ctx = _make_ctx(audio_coordinator=coord)
         entry = _make_entry(ctx)
         async_add = MagicMock()
-        _register_dynamic_clients(entry, ctx, async_add, [], set())
+        _register_dynamic_clients(entry, ctx, async_add, [])
 
         coord.data = {"audio": MOCK_REMOTE_CLIENTS}
         listener = coord.async_add_listener.call_args[0][0]
@@ -308,7 +284,7 @@ class TestRegisterDynamicClients:
         initial = _build_remote_client_entities(ctx)
         entry = _make_entry(ctx)
         async_add = MagicMock()
-        _register_dynamic_clients(entry, ctx, async_add, initial, set())
+        _register_dynamic_clients(entry, ctx, async_add, initial)
 
         listener = coord.async_add_listener.call_args[0][0]
         listener()
@@ -319,22 +295,9 @@ class TestRegisterDynamicClients:
         ctx = _make_ctx(audio_coordinator=coord, server_hostname="htpc")
         entry = _make_entry(ctx)
         async_add = MagicMock()
-        _register_dynamic_clients(entry, ctx, async_add, [], set())
+        _register_dynamic_clients(entry, ctx, async_add, [])
 
         coord.data = {"audio": MOCK_CLIENTS}
-        listener = coord.async_add_listener.call_args[0][0]
-        listener()
-        async_add.assert_not_called()
-
-    def test_listener_skips_handled_client_patterns(self):
-        coord = _make_coordinator({"audio": []})
-        ctx = _make_ctx(audio_coordinator=coord)
-        entry = _make_entry(ctx)
-        async_add = MagicMock()
-        handled = {"remoteclient"}
-        _register_dynamic_clients(entry, ctx, async_add, [], handled)
-
-        coord.data = {"audio": MOCK_REMOTE_CLIENTS}
         listener = coord.async_add_listener.call_args[0][0]
         listener()
         async_add.assert_not_called()
