@@ -474,5 +474,250 @@ class TestSetupBluetoothCoordinator:
         assert len(entry._unload_callbacks) == 2
 
 
+# =============================================================================
+# async_setup_entry
+# =============================================================================
+
+
+class TestAsyncSetupEntry:
+    """Tests for async_setup_entry."""
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value="aa:bb:cc:dd:ee:ff")
+    @patch("custom_components.odio_remote._fetch_power_capabilities", new_callable=AsyncMock, return_value={"reboot": True})
+    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
+    async def test_full_setup_all_backends(
+        self, mock_bt, mock_mpris, mock_svc, mock_audio,
+        mock_power, mock_mac, mock_session,
+    ):
+        from custom_components.odio_remote import async_setup_entry
+        from .conftest import MOCK_SERVER_INFO
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = _make_entry()
+        entry.data = {
+            "api_url": "http://192.168.1.10:8018",
+            "server_info": MOCK_SERVER_INFO,
+        }
+        entry.options = {}
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
+        mock_session.return_value = MagicMock()
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
+            mock_esm.return_value = mock_esm_instance
+
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        mock_audio.assert_awaited_once()
+        mock_svc.assert_awaited_once()
+        mock_mpris.assert_awaited_once()
+        mock_bt.assert_awaited_once()
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once()
+        mock_esm_instance.start.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
+    @patch("custom_components.odio_remote._fetch_power_capabilities", new_callable=AsyncMock, return_value={})
+    async def test_setup_no_backends(self, mock_power, mock_mac, mock_session):
+        from custom_components.odio_remote import async_setup_entry
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = _make_entry()
+        no_backends = {"backends": {}}
+        entry.data = {"api_url": "http://localhost:8018", "server_info": no_backends}
+        entry.options = {}
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(return_value=no_backends)
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
+            mock_esm.return_value = mock_esm_instance
+
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+        assert entry.runtime_data.audio_coordinator is None
+        assert entry.runtime_data.service_coordinator is None
+        assert entry.runtime_data.mpris_coordinator is None
+        assert entry.runtime_data.bluetooth_coordinator is None
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
+    @patch("custom_components.odio_remote._fetch_power_capabilities", new_callable=AsyncMock, return_value={})
+    async def test_setup_falls_back_to_cached_server_info(self, mock_power, mock_mac, mock_session):
+        from custom_components.odio_remote import async_setup_entry
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = _make_entry()
+        cached = {"hostname": "htpc", "backends": {}}
+        entry.data = {"api_url": "http://localhost:8018", "server_info": cached}
+        entry.options = {}
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(side_effect=ConnectionError("offline"))
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
+            mock_esm.return_value = mock_esm_instance
+
+            result = await async_setup_entry(hass, entry)
+
+        assert result is True
+
+
+# =============================================================================
+# _on_sse_reconnect
+# =============================================================================
+
+
+class TestOnSseReconnect:
+    """Tests for the SSE reconnect callback inside async_setup_entry."""
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
+    @patch("custom_components.odio_remote._fetch_power_capabilities", new_callable=AsyncMock, return_value={})
+    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
+    async def test_reconnect_refreshes_coordinators(
+        self, mock_bt, mock_mpris, mock_svc, mock_audio,
+        mock_power, mock_mac, mock_session,
+    ):
+        from custom_components.odio_remote import async_setup_entry
+        from .conftest import MOCK_SERVER_INFO
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = _make_entry()
+        entry.data = {"api_url": "http://localhost:8018", "server_info": MOCK_SERVER_INFO}
+        entry.options = {}
+
+        audio_coord = MagicMock()
+        audio_coord.async_refresh = AsyncMock()
+        svc_coord = MagicMock()
+        svc_coord.async_refresh = AsyncMock()
+        mpris_coord = MagicMock()
+        mpris_coord.async_refresh = AsyncMock()
+        bt_coord = MagicMock()
+        bt_coord.async_refresh = AsyncMock()
+
+        mock_audio.return_value = audio_coord
+        mock_svc.return_value = svc_coord
+        mock_mpris.return_value = mpris_coord
+        mock_bt.return_value = bt_coord
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
+
+        reconnect_cb = None
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.sse_connected = True
+
+            def capture_listener(cb):
+                nonlocal reconnect_cb
+                reconnect_cb = cb
+                return lambda: None
+
+            mock_esm_instance.async_add_listener = capture_listener
+            mock_esm.return_value = mock_esm_instance
+
+            await async_setup_entry(hass, entry)
+
+        assert reconnect_cb is not None
+        reconnect_cb()
+        assert hass.async_create_task.call_count == 4
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
+    @patch("custom_components.odio_remote._fetch_power_capabilities", new_callable=AsyncMock, return_value={})
+    async def test_reconnect_noop_when_disconnected(self, mock_power, mock_mac, mock_session):
+        from custom_components.odio_remote import async_setup_entry
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        entry = _make_entry()
+        entry.data = {"api_url": "http://localhost:8018", "server_info": {"backends": {}}}
+        entry.options = {}
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(return_value={"backends": {}})
+
+        reconnect_cb = None
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.sse_connected = False
+
+            def capture_listener(cb):
+                nonlocal reconnect_cb
+                reconnect_cb = cb
+                return lambda: None
+
+            mock_esm_instance.async_add_listener = capture_listener
+            mock_esm.return_value = mock_esm_instance
+
+            await async_setup_entry(hass, entry)
+
+        reconnect_cb()
+        hass.async_create_task.assert_not_called()
+
+
+# =============================================================================
+# async_unload_entry / async_remove_config_entry_device
+# =============================================================================
+
+
+class TestAsyncUnload:
+
+    @pytest.mark.asyncio
+    async def test_unload_stops_event_stream(self):
+        from custom_components.odio_remote import async_unload_entry
+
+        hass = _make_hass()
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        entry = MagicMock()
+        entry.runtime_data.event_stream.stop = AsyncMock()
+
+        result = await async_unload_entry(hass, entry)
+
+        assert result is True
+        entry.runtime_data.event_stream.stop.assert_awaited_once()
+        hass.config_entries.async_unload_platforms.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_remove_device_returns_true(self):
+        from custom_components.odio_remote import async_remove_config_entry_device
+
+        result = await async_remove_config_entry_device(MagicMock(), MagicMock(), MagicMock())
+        assert result is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
