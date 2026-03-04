@@ -127,15 +127,62 @@ class TestOdioServiceCoordinator:
 
 class TestAudioCoordinatorHandleSseEvent:
 
-    def test_valid_list_updates_data(self):
-        """handle_sse_event sets coordinator data when event data is a list."""
+    def _make_coord_with_data(self, clients):
         coord = _make_audio_coordinator(MagicMock())
+        coord.data = {"audio": clients}
+        coord.async_set_updated_data = MagicMock()
+        return coord
+
+    def test_updates_existing_client_by_name(self):
+        """Changed client is replaced in-place by name."""
+        existing = {"id": 1, "name": "Spotify", "volume": 0.5}
+        coord = self._make_coord_with_data([existing])
+
+        updated = {"id": 1, "name": "Spotify", "volume": 0.8}
+        coord.handle_sse_event(SseEvent(type="audio.updated", data=[updated]))
+
+        coord.async_set_updated_data.assert_called_once_with({"audio": [updated]})
+
+    def test_appends_new_client(self):
+        """Unknown client name is appended to the list."""
+        existing = {"id": 1, "name": "Spotify", "volume": 0.5}
+        coord = self._make_coord_with_data([existing])
+
+        new_client = {"id": 2, "name": "VLC", "volume": 1.0}
+        coord.handle_sse_event(SseEvent(type="audio.updated", data=[new_client]))
+
+        coord.async_set_updated_data.assert_called_once_with({"audio": [existing, new_client]})
+
+    def test_unchanged_clients_preserved(self):
+        """Clients not in the event are kept as-is."""
+        a = {"id": 1, "name": "Spotify", "volume": 0.5}
+        b = {"id": 2, "name": "VLC", "volume": 1.0}
+        coord = self._make_coord_with_data([a, b])
+
+        updated_b = {"id": 2, "name": "VLC", "volume": 0.7}
+        coord.handle_sse_event(SseEvent(type="audio.updated", data=[updated_b]))
+
+        coord.async_set_updated_data.assert_called_once_with({"audio": [a, updated_b]})
+
+    def test_empty_event_preserves_existing(self):
+        """Empty event data leaves current list untouched."""
+        existing = [{"id": 1, "name": "Spotify", "volume": 0.5}]
+        coord = self._make_coord_with_data(existing)
+
+        coord.handle_sse_event(SseEvent(type="audio.updated", data=[]))
+
+        coord.async_set_updated_data.assert_called_once_with({"audio": existing})
+
+    def test_works_with_no_existing_data(self):
+        """handle_sse_event handles coordinator.data being None."""
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = None
         coord.async_set_updated_data = MagicMock()
 
-        event = SseEvent(type="audio.updated", data=[{"id": 1}])
-        coord.handle_sse_event(event)
+        client = {"id": 1, "name": "Spotify", "volume": 0.5}
+        coord.handle_sse_event(SseEvent(type="audio.updated", data=[client]))
 
-        coord.async_set_updated_data.assert_called_once_with({"audio": [{"id": 1}]})
+        coord.async_set_updated_data.assert_called_once_with({"audio": [client]})
 
     def test_non_list_data_ignored(self):
         """handle_sse_event does nothing when event data is not a list."""
@@ -146,12 +193,62 @@ class TestAudioCoordinatorHandleSseEvent:
 
         coord.async_set_updated_data.assert_not_called()
 
-    def test_empty_list_updates_data(self):
-        """handle_sse_event accepts an empty list."""
+
+# ---------------------------------------------------------------------------
+# OdioAudioCoordinator.handle_sse_remove_event
+# ---------------------------------------------------------------------------
+
+
+class TestAudioCoordinatorHandleSseRemoveEvent:
+
+    def _make_coord_with_data(self, clients):
         coord = _make_audio_coordinator(MagicMock())
+        coord.data = {"audio": clients}
+        coord.async_set_updated_data = MagicMock()
+        return coord
+
+    def test_marks_removed_client_as_corked(self):
+        """Removed client stays in list with corked=True → Idle state."""
+        a = {"id": 1, "name": "Spotify", "volume": 0.5, "corked": False}
+        b = {"id": 2, "name": "VLC", "volume": 1.0, "corked": False}
+        coord = self._make_coord_with_data([a, b])
+
+        coord.handle_sse_remove_event(SseEvent(type="audio.removed", data=[a]))
+
+        result = coord.async_set_updated_data.call_args[0][0]["audio"]
+        assert len(result) == 2
+        assert result[0]["name"] == "Spotify"
+        assert result[0]["corked"] is True
+        assert result[1] == b
+
+    def test_unknown_name_ignored(self):
+        """Removing an unknown client does not alter the existing list."""
+        existing = [{"id": 1, "name": "Spotify", "volume": 0.5, "corked": False}]
+        coord = self._make_coord_with_data(existing)
+
+        coord.handle_sse_remove_event(
+            SseEvent(type="audio.removed", data=[{"id": 99, "name": "Ghost"}])
+        )
+
+        coord.async_set_updated_data.assert_called_once_with({"audio": existing})
+
+    def test_non_list_data_ignored(self):
+        """handle_sse_remove_event does nothing when event data is not a list."""
+        coord = self._make_coord_with_data([])
+
+        coord.handle_sse_remove_event(SseEvent(type="audio.removed", data={"not": "a list"}))
+
+        coord.async_set_updated_data.assert_not_called()
+
+    def test_works_with_no_existing_data(self):
+        """handle_sse_remove_event handles coordinator.data being None."""
+        coord = _make_audio_coordinator(MagicMock())
+        coord.data = None
         coord.async_set_updated_data = MagicMock()
 
-        coord.handle_sse_event(SseEvent(type="audio.updated", data=[]))
+        coord.handle_sse_remove_event(
+            SseEvent(type="audio.removed", data=[{"id": 1, "name": "Spotify"}])
+        )
 
         coord.async_set_updated_data.assert_called_once_with({"audio": []})
 
