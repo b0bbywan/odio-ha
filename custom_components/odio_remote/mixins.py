@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    RepeatMode,
 )
 
 
@@ -229,7 +230,7 @@ class MappedEntityMixin:
         """Enable/disable shuffle mode."""
         await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
 
-    async def async_set_repeat(self, repeat: str) -> None:
+    async def async_set_repeat(self, repeat: RepeatMode) -> None:
         """Set repeat mode."""
         await self._delegate_to_hass("repeat_set", {"repeat": repeat})
 
