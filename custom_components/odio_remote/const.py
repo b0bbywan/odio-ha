@@ -13,35 +13,62 @@ DEFAULT_KEEPALIVE_INTERVAL: Final = 30  # seconds, server-side SSE keepalive (ra
 DEFAULT_NAME: Final = "Odio Remote"
 
 # API Endpoints
-ENDPOINT_SYSTEM_SERVER: Final = "/server"       # System info + backends
-ENDPOINT_SERVER: Final = "/audio/server"        # PulseAudio server (mute/volume only)
+# server info and SSE
+ENDPOINT_SYSTEM_SERVER: Final = "/server"
+ENDPOINT_EVENTS: Final = "/events"
+
+# PulseAudio Endpoints (mute/volume only)
+ENDPOINT_SERVER: Final = "/audio/server"
 ENDPOINT_CLIENTS: Final = "/audio/clients"
-ENDPOINT_SERVICES: Final = "/services"
 ENDPOINT_SERVER_MUTE: Final = "/audio/server/mute"
 ENDPOINT_SERVER_VOLUME: Final = "/audio/server/volume"
 ENDPOINT_CLIENT_MUTE: Final = "/audio/clients/{name}/mute"  # Utilise le name, pas l'id
 ENDPOINT_CLIENT_VOLUME: Final = "/audio/clients/{name}/volume"
+
+# Systemd Endpoints
+ENDPOINT_SERVICES: Final = "/services"
 ENDPOINT_SERVICE_ENABLE: Final = "/services/{scope}/{unit}/enable"
 ENDPOINT_SERVICE_DISABLE: Final = "/services/{scope}/{unit}/disable"
 ENDPOINT_SERVICE_RESTART: Final = "/services/{scope}/{unit}/restart"
+ENDPOINT_SERVICE_START: Final = "/services/{scope}/{unit}/start"
+ENDPOINT_SERVICE_STOP: Final = "/services/{scope}/{unit}/stop"
+
+# Power Endpoints
 ENDPOINT_POWER: Final = "/power"
 ENDPOINT_POWER_OFF: Final = "/power/power_off"
 ENDPOINT_POWER_REBOOT: Final = "/power/reboot"
-ENDPOINT_SERVICE_START: Final = "/services/{scope}/{unit}/start"
-ENDPOINT_SERVICE_STOP: Final = "/services/{scope}/{unit}/stop"
-ENDPOINT_EVENTS: Final = "/events"
+
+# Bluetooth Endpoints
 ENDPOINT_BLUETOOTH: Final = "/bluetooth"
 ENDPOINT_BLUETOOTH_POWER_UP: Final = "/bluetooth/power_up"
 ENDPOINT_BLUETOOTH_POWER_DOWN: Final = "/bluetooth/power_down"
 ENDPOINT_BLUETOOTH_PAIRING_MODE: Final = "/bluetooth/pairing_mode"
 
+# MPRIS Player Endpoints
+ENDPOINT_PLAYERS: Final = "/players"
+ENDPOINT_PLAYER_PLAY: Final = "/players/{player}/play"
+ENDPOINT_PLAYER_PAUSE: Final = "/players/{player}/pause"
+ENDPOINT_PLAYER_PLAY_PAUSE: Final = "/players/{player}/play_pause"
+ENDPOINT_PLAYER_STOP: Final = "/players/{player}/stop"
+ENDPOINT_PLAYER_NEXT: Final = "/players/{player}/next"
+ENDPOINT_PLAYER_PREVIOUS: Final = "/players/{player}/previous"
+ENDPOINT_PLAYER_SEEK: Final = "/players/{player}/seek"
+ENDPOINT_PLAYER_POSITION: Final = "/players/{player}/position"
+ENDPOINT_PLAYER_VOLUME: Final = "/players/{player}/volume"
+ENDPOINT_PLAYER_LOOP: Final = "/players/{player}/loop"
+ENDPOINT_PLAYER_SHUFFLE: Final = "/players/{player}/shuffle"
+
 # SSE event types
+SSE_EVENT_SERVER_INFO: Final = "server.info"
 SSE_EVENT_AUDIO_UPDATED: Final = "audio.updated"
 SSE_EVENT_AUDIO_REMOVED: Final = "audio.removed"
 SSE_EVENT_SERVICE_UPDATED: Final = "service.updated"
 SSE_EVENT_POWER_ACTION: Final = "power.action"
-SSE_EVENT_SERVER_INFO: Final = "server.info"
 SSE_EVENT_BLUETOOTH_UPDATED: Final = "bluetooth.updated"
+SSE_EVENT_PLAYER_UPDATED: Final = "player.updated"
+SSE_EVENT_PLAYER_ADDED: Final = "player.added"
+SSE_EVENT_PLAYER_REMOVED: Final = "player.removed"
+SSE_EVENT_PLAYER_POSITION: Final = "player.position"
 
 # SSE reconnection
 SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds
@@ -58,3 +85,5 @@ ATTR_CORKED: Final = "corked"
 ATTR_SERVICE_SCOPE: Final = "scope"
 ATTR_SERVICE_ENABLED: Final = "enabled"
 ATTR_SERVICE_ACTIVE: Final = "active_state"
+
+_MPRIS_BUS_PREFIX = "org.mpris.MediaPlayer2."
