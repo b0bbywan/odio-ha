@@ -32,25 +32,17 @@ rules:
     status: done
     comment: All API actions wrapped with @api_command decorator (HomeAssistantError).
   config-entry-unloading: done
-  docs-configuration-parameters:
-    status: todo
-    comment: Document SSE keepalive and service mapping options.
-  docs-installation-parameters:
-    status: todo
-    comment: Document API URL setup parameter.
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
   entity-unavailable: done
-  integration-owner:
-    status: todo
-    comment: Add CODEOWNERS file.
+  integration-owner: done
   log-when-unavailable: done
-  parallel-updates:
-    status: todo
-    comment: Define PARALLEL_UPDATES in each platform module.
+  parallel-updates: done
   reauthentication-flow:
     status: exempt
     comment: No authentication — API has no credentials.
   test-coverage:
     status: todo
     comment: |
-      90% global. Needs 95%.
-      Gaps: mixins.py (49%), __init__.py (58%), event_stream.py (61%), media_player.py (68%), api_client.py (71%).
+      92% global. Needs 95%.
+      Gaps: mixins.py (49%), __init__.py (58%), media_player.py (68%).
