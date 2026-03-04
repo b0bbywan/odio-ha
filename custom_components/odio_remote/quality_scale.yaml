@@ -52,5 +52,5 @@ rules:
   test-coverage:
     status: todo
     comment: |
-      86% global. Needs 95%.
-      Gaps: media_player.py (44%), mixins.py (49%), event_stream.py (61%), __init__.py (58%).
+      90% global. Needs 95%.
+      Gaps: mixins.py (49%), __init__.py (58%), event_stream.py (61%), media_player.py (68%), api_client.py (71%).
