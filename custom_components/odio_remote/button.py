@@ -70,6 +70,7 @@ class OdioPowerOffButton(_OdioPowerButtonBase):
 
     _attr_device_class = None
     _attr_translation_key = "power_off"
+    _attr_icon = "mdi:power"
 
     def __init__(
         self,
