@@ -12,6 +12,8 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    MediaType,
+    RepeatMode,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
@@ -21,6 +23,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
+    _MPRIS_BUS_PREFIX,
     ATTR_CLIENT_ID,
     ATTR_APP,
     ATTR_BACKEND,
@@ -31,13 +34,24 @@ from .const import (
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
 )
-from .coordinator import OdioAudioCoordinator, OdioServiceCoordinator
+from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
 from .mixins import MappedEntityMixin
 
 _LOGGER = logging.getLogger(__name__)
 
 
+def _extract_mpris_app_name(bus_name: str) -> str:
+    """Extract application name from an MPRIS D-Bus bus name.
+
+    Examples:
+        "org.mpris.MediaPlayer2.mpd"                → "mpd"
+        "org.mpris.MediaPlayer2.firefox.instance123" → "firefox"
+    """
+    if bus_name.startswith(_MPRIS_BUS_PREFIX):
+        suffix = bus_name[len(_MPRIS_BUS_PREFIX):]
+        return suffix.split(".")[0]
+    return bus_name
 # =============================================================================
 # Platform context
 # =============================================================================
@@ -57,6 +71,7 @@ class _MediaPlayerContext:
     event_stream: OdioEventStreamManager
     audio_coordinator: OdioAudioCoordinator | None
     service_coordinator: OdioServiceCoordinator | None
+    mpris_coordinator: OdioMPRISCoordinator | None
     api: OdioApiClient
     device_info: DeviceInfo
     service_mappings: dict[str, str]
@@ -82,6 +97,7 @@ async def async_setup_entry(
         event_stream=rd.event_stream,
         audio_coordinator=rd.audio_coordinator,
         service_coordinator=rd.service_coordinator,
+        mpris_coordinator=rd.mpris_coordinator,
         api=rd.api,
         device_info=rd.device_info,
         service_mappings=rd.service_mappings,
@@ -119,11 +135,18 @@ async def async_setup_entry(
             ):
                 entities.append(OdioPulseClientMediaPlayer(ctx, client))
 
+    # MPRIS player entities (only when mpris backend enabled and data available)
+    if ctx.mpris_coordinator is not None and ctx.mpris_coordinator.data:
+        for player in ctx.mpris_coordinator.data.get("mpris", []):
+            if player.get("bus_name") and player.get("available", True):
+                entities.append(OdioMPRISMediaPlayer(ctx, player))
+
     _LOGGER.info(
-        "Creating %d media_player entities (1 receiver + %d services + %d standalone clients)",
+        "Creating %d media_player entities (1 receiver + %d services + %d standalone clients + %d mpris)",
         len(entities),
         len([e for e in entities if isinstance(e, OdioServiceMediaPlayer)]),
         len([e for e in entities if isinstance(e, OdioPulseClientMediaPlayer)]),
+        len([e for e in entities if isinstance(e, OdioMPRISMediaPlayer)]),
     )
 
     async_add_entities(entities)
@@ -216,6 +239,40 @@ async def async_setup_entry(
 
         config_entry.async_on_unload(
             ctx.audio_coordinator.async_add_listener(_async_check_new_clients)
+        )
+
+    # -------------------------------------------------------------------------
+    # Dynamic MPRIS player entity creation
+    # Fires on every mpris coordinator update; adds entities for newly seen players.
+    # -------------------------------------------------------------------------
+    if ctx.mpris_coordinator is not None:
+        mpris_coordinator = ctx.mpris_coordinator  # narrowed for closure
+        known_mpris_players: dict[str, OdioMPRISMediaPlayer] = {
+            entity._player_name: entity
+            for entity in entities
+            if isinstance(entity, OdioMPRISMediaPlayer)
+        }
+
+        @callback
+        def _async_check_new_mpris_players() -> None:
+            if not mpris_coordinator.data:
+                return
+            new_entities: list[MediaPlayerEntity] = []
+            for player in mpris_coordinator.data.get("mpris", []):
+                bus_name = player.get("bus_name")
+                if not bus_name or bus_name in known_mpris_players:
+                    continue
+                if not player.get("available", True):
+                    continue
+                entity = OdioMPRISMediaPlayer(ctx, player)
+                new_entities.append(entity)
+                known_mpris_players[bus_name] = entity
+            if new_entities:
+                _LOGGER.info("Adding %d new MPRIS player entities", len(new_entities))
+                async_add_entities(new_entities)
+
+        config_entry.async_on_unload(
+            mpris_coordinator.async_add_listener(_async_check_new_mpris_players)
         )
 
 
@@ -703,3 +760,344 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
             return client.get("name") if client else None
 
         await self._mute_with_fallback(mute, get_client_name, self._api_client)
+
+
+class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+    """MPRIS media player entity with full native MPRIS support."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, ctx: _MediaPlayerContext, player: dict[str, Any]) -> None:
+        """Initialize the MPRIS media player."""
+        assert ctx.mpris_coordinator is not None
+        super().__init__(ctx.mpris_coordinator)
+        self._api_client = ctx.api
+        self._event_stream = ctx.event_stream
+
+        self._player_name = player.get("bus_name", "")
+
+        safe_name = re.sub(r"[^a-z0-9_]+", "_", self._player_name.lower()).strip("_")
+        self._attr_unique_id = f"{ctx.entry_id}_mpris_{safe_name}"
+        self._attr_device_info = ctx.device_info
+
+        identity = player.get("identity", "")
+        if identity:
+            self._attr_name = identity
+        else:
+            self._attr_name = _extract_mpris_app_name(self._player_name).replace("_", " ").title()
+
+        _LOGGER.debug(
+            "Initialized MPRIS player: unique_id=%s, name=%s, bus_name=%s",
+            self._attr_unique_id,
+            self._attr_name,
+            self._player_name,
+        )
+
+    @property
+    def _mapping_key(self) -> str:
+        """Return the key used in service_mappings."""
+        return f"mpris:{self._player_name}"
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if the player is reported by the coordinator and not removed."""
+        player = self._player_data
+        return self.coordinator.last_update_success and player is not None and player.get("available", True)
+
+    @property
+    def _player_data(self) -> dict[str, Any] | None:
+        """Get current player data from coordinator."""
+        if not self.coordinator.data:
+            return None
+        for player in self.coordinator.data.get("mpris", []):
+            if player.get("bus_name") == self._player_name:
+                return player
+        return None
+
+    @property
+    def state(self) -> MediaPlayerState:
+        """Return the state of the player."""
+        if not self.available:
+            return MediaPlayerState.OFF
+
+        player = self._player_data
+        if not player:
+            return MediaPlayerState.OFF
+
+        playback_status = player.get("playback_status", "")
+        if playback_status == "Playing":
+            return MediaPlayerState.PLAYING
+        elif playback_status == "Paused":
+            return MediaPlayerState.PAUSED
+        else:
+            return MediaPlayerState.IDLE
+
+    @property
+    def supported_features(self) -> MediaPlayerEntityFeature:
+        """Return supported features based on MPRIS capabilities and mapped entity."""
+        player = self._player_data
+        mapped_features = self._get_mapped_attribute("supported_features")
+
+        features = MediaPlayerEntityFeature(0)
+
+        if player:
+            caps = player.get("capabilities", {})
+            if caps.get("can_play"):
+                features |= MediaPlayerEntityFeature.PLAY
+            if caps.get("can_pause"):
+                features |= MediaPlayerEntityFeature.PAUSE
+            if caps.get("can_control"):
+                features |= MediaPlayerEntityFeature.STOP
+            if caps.get("can_go_next"):
+                features |= MediaPlayerEntityFeature.NEXT_TRACK
+            if caps.get("can_go_previous"):
+                features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
+            if caps.get("can_seek"):
+                features |= MediaPlayerEntityFeature.SEEK
+            if caps.get("can_control") and player.get("volume") is not None:
+                features |= MediaPlayerEntityFeature.VOLUME_SET | MediaPlayerEntityFeature.VOLUME_STEP
+            if player.get("shuffle") is not None:
+                features |= MediaPlayerEntityFeature.SHUFFLE_SET
+            if player.get("loop_status") is not None:
+                features |= MediaPlayerEntityFeature.REPEAT_SET
+
+        return self._get_supported_features(features, mapped_features)
+
+    # Media properties — native MPRIS data overrides mixin delegation
+
+    @property
+    def volume_level(self) -> float | None:
+        """Volume level of the media player (0..1)."""
+        player = self._player_data
+        if player:
+            return player.get("volume")
+        return None
+
+    @property
+    def media_content_type(self) -> str:
+        """Content type of current playing media."""
+        return MediaType.MUSIC
+
+    @property
+    def media_duration(self) -> int | None:
+        """Duration of current playing media in seconds."""
+        player = self._player_data
+        if player and player.get("metadata"):
+            length_us = player["metadata"].get("mpris:length")
+            if length_us is not None:
+                return int(length_us) // 1_000_000
+        return None
+
+    @property
+    def media_position(self) -> int | None:
+        """Position of current playing media in seconds."""
+        player = self._player_data
+        if player:
+            position_us = player.get("position")
+            if position_us is not None:
+                return int(position_us / 1_000_000)
+        return None
+
+    @property
+    def media_position_updated_at(self):
+        """When was the position of the current playing media valid."""
+        player = self._player_data
+        if player:
+            return player.get("position_updated_at")
+        return None
+
+    @property
+    def media_title(self) -> str | None:
+        """Title of current playing media."""
+        player = self._player_data
+        if player and player.get("metadata"):
+            return player["metadata"].get("xesam:title")
+        return None
+
+    @property
+    def media_artist(self) -> str | None:
+        """Artist of current playing media."""
+        player = self._player_data
+        if player and player.get("metadata"):
+            artists = player["metadata"].get("xesam:artist")
+            if isinstance(artists, list) and artists:
+                return ", ".join(artists)
+            elif isinstance(artists, str):
+                return artists
+        return None
+
+    @property
+    def media_album_name(self) -> str | None:
+        """Album name of current playing media."""
+        player = self._player_data
+        if player and player.get("metadata"):
+            return player["metadata"].get("xesam:album")
+        return None
+
+    @property
+    def media_image_url(self) -> str | None:
+        """Image url of current playing media (http/https only)."""
+        player = self._player_data
+        if player and player.get("metadata"):
+            url = player["metadata"].get("mpris:artUrl", "")
+            if url.startswith(("http://", "https://")):
+                return url
+        return None
+
+    @property
+    def shuffle(self) -> bool | None:
+        """Boolean if shuffle is enabled."""
+        player = self._player_data
+        if player:
+            return player.get("shuffle")
+        return None
+
+    @property
+    def repeat(self) -> RepeatMode | None:
+        """Return current repeat mode."""
+        player = self._player_data
+        if player:
+            loop_status = player.get("loop_status")
+            if loop_status == "None":
+                return RepeatMode.OFF
+            elif loop_status == "Track":
+                return RepeatMode.ONE
+            elif loop_status == "Playlist":
+                return RepeatMode.ALL
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        player = self._player_data
+        if not player:
+            return {}
+
+        caps = player.get("capabilities", {})
+        attrs = {
+            "player_name": self._player_name,
+            "identity": player.get("identity"),
+            "desktop_entry": player.get("desktop_entry"),
+            "playback_status": player.get("playback_status"),
+            "can_control": caps.get("can_control"),
+            "can_play": caps.get("can_play"),
+            "can_pause": caps.get("can_pause"),
+            "can_seek": caps.get("can_seek"),
+            "can_go_next": caps.get("can_go_next"),
+            "can_go_previous": caps.get("can_go_previous"),
+        }
+        if self._mapped_entity:
+            attrs["mapped_entity"] = self._mapped_entity
+        return attrs
+
+    # Media control — MPRIS API first if capability exists, else delegate to mapped entity
+
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_play"):
+            _LOGGER.debug("MPRIS play: %s", self._player_name)
+            await self._api_client.player_play(self._player_name)
+            return
+        await self._delegate_to_hass("media_play")
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_pause"):
+            _LOGGER.debug("MPRIS pause: %s", self._player_name)
+            await self._api_client.player_pause(self._player_name)
+            return
+        await self._delegate_to_hass("media_pause")
+
+    async def async_media_stop(self) -> None:
+        """Send stop command."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_control"):
+            _LOGGER.debug("MPRIS stop: %s", self._player_name)
+            await self._api_client.player_stop(self._player_name)
+            return
+        await self._delegate_to_hass("media_stop")
+
+    async def async_media_next_track(self) -> None:
+        """Send next track command."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_go_next"):
+            _LOGGER.debug("MPRIS next: %s", self._player_name)
+            await self._api_client.player_next(self._player_name)
+            return
+        await self._delegate_to_hass("media_next_track")
+
+    async def async_media_previous_track(self) -> None:
+        """Send previous track command."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_go_previous"):
+            _LOGGER.debug("MPRIS previous: %s", self._player_name)
+            await self._api_client.player_previous(self._player_name)
+            return
+        await self._delegate_to_hass("media_previous_track")
+
+    async def async_media_seek(self, position: float) -> None:
+        """Seek to position (in seconds)."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_seek"):
+            _LOGGER.debug("MPRIS seek to %s: %s", position, self._player_name)
+            position_us = int(position * 1_000_000)
+            track_id = (player.get("metadata") or {}).get("mpris:trackid", "/")
+            await self._api_client.player_set_position(self._player_name, track_id, position_us)
+            return
+        await self._delegate_to_hass("media_seek", {"seek_position": position})
+
+    async def async_set_volume_level(self, volume: float) -> None:
+        """Set volume level (0..1)."""
+        player = self._player_data
+        if player and player.get("capabilities", {}).get("can_control") and player.get("volume") is not None:
+            _LOGGER.debug("MPRIS set volume %s: %s", volume, self._player_name)
+            await self._api_client.player_set_volume(self._player_name, volume)
+            return
+        await self._delegate_to_hass("volume_set", {"volume_level": volume})
+
+    async def async_volume_up(self) -> None:
+        """Volume up by 5%."""
+        current = self.volume_level
+        if current is not None:
+            await self.async_set_volume_level(min(1.0, current + 0.05))
+
+    async def async_volume_down(self) -> None:
+        """Volume down by 5%."""
+        current = self.volume_level
+        if current is not None:
+            await self.async_set_volume_level(max(0.0, current - 0.05))
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Enable/disable shuffle mode."""
+        player = self._player_data
+        if player and player.get("shuffle") is not None:
+            _LOGGER.debug("MPRIS set shuffle %s: %s", shuffle, self._player_name)
+            await self._api_client.player_set_shuffle(self._player_name, shuffle)
+            return
+        await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
+
+    async def async_set_repeat(self, repeat: RepeatMode) -> None:
+        """Set repeat mode."""
+        player = self._player_data
+        if player and player.get("loop_status") is not None:
+            _LOGGER.debug("MPRIS set repeat %s: %s", repeat, self._player_name)
+            if repeat == RepeatMode.OFF:
+                loop_status = "None"
+            elif repeat == RepeatMode.ONE:
+                loop_status = "Track"
+            elif repeat == RepeatMode.ALL:
+                loop_status = "Playlist"
+            else:
+                loop_status = "None"
+            await self._api_client.player_set_loop(self._player_name, loop_status)
+            return
+        await self._delegate_to_hass("repeat_set", {"repeat": repeat})
