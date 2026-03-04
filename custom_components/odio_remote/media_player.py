@@ -86,6 +86,193 @@ class _MediaPlayerContext:
 # =============================================================================
 
 
+def _build_service_entities(
+    ctx: _MediaPlayerContext,
+) -> tuple[list[MediaPlayerEntity], set[str]]:
+    """Build service media player entities from coordinator data."""
+    entities: list[MediaPlayerEntity] = []
+    handled_client_patterns: set[str] = set()
+    if ctx.service_coordinator is None or not ctx.service_coordinator.data:
+        return entities, handled_client_patterns
+    for service in ctx.service_coordinator.data.get("services", []):
+        mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+        if service.get("exists") and mapping_key in ctx.service_mappings:
+            entities.append(OdioServiceMediaPlayer(ctx, service))
+            handled_client_patterns.add(
+                service["name"].replace(".service", "").lower()
+            )
+    return entities, handled_client_patterns
+
+
+def _build_remote_client_entities(
+    ctx: _MediaPlayerContext,
+) -> list[MediaPlayerEntity]:
+    """Build standalone remote client entities from audio coordinator data."""
+    entities: list[MediaPlayerEntity] = []
+    if ctx.audio_coordinator is None or not ctx.audio_coordinator.data:
+        return entities
+    hostname = ctx.server_hostname
+    for client in ctx.audio_coordinator.data.get("audio", []):
+        client_name = client.get("name", "")
+        client_host = client.get("host", "")
+        if hostname and client_host and client_host != hostname and client_name:
+            entities.append(OdioPulseClientMediaPlayer(ctx, client))
+    return entities
+
+
+def _build_mpris_entities(
+    ctx: _MediaPlayerContext,
+) -> list[MediaPlayerEntity]:
+    """Build MPRIS media player entities from coordinator data."""
+    entities: list[MediaPlayerEntity] = []
+    if ctx.mpris_coordinator is None or not ctx.mpris_coordinator.data:
+        return entities
+    for player in ctx.mpris_coordinator.data.get("mpris", []):
+        if player.get("bus_name") and player.get("available", True):
+            entities.append(OdioMPRISMediaPlayer(ctx, player))
+    return entities
+
+
+def _register_dynamic_services(
+    config_entry: OdioConfigEntry,
+    ctx: _MediaPlayerContext,
+    async_add_entities: AddEntitiesCallback,
+    initial_entities: list[MediaPlayerEntity],
+    handled_client_patterns: set[str],
+) -> None:
+    """Register listener for late-discovered service entities."""
+    if ctx.service_coordinator is None:
+        return
+    service_coordinator = ctx.service_coordinator
+    known_service_keys = {
+        f"{e._service_info['scope']}/{e._service_info['name']}"
+        for e in initial_entities
+        if isinstance(e, OdioServiceMediaPlayer)
+    }
+
+    @callback
+    def _async_check_new_services() -> None:
+        if not service_coordinator.data:
+            return
+        new_entities: list[MediaPlayerEntity] = []
+        for service in service_coordinator.data.get("services", []):
+            mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+            if (
+                service.get("exists")
+                and mapping_key in ctx.service_mappings
+                and mapping_key not in known_service_keys
+            ):
+                new_entities.append(OdioServiceMediaPlayer(ctx, service))
+                known_service_keys.add(mapping_key)
+                handled_client_patterns.add(
+                    service["name"].replace(".service", "").lower()
+                )
+        if new_entities:
+            _LOGGER.info(
+                "Dynamically adding %d service entities after late API connection",
+                len(new_entities),
+            )
+            async_add_entities(new_entities)
+
+    config_entry.async_on_unload(
+        service_coordinator.async_add_listener(_async_check_new_services)
+    )
+
+
+def _register_dynamic_clients(
+    config_entry: OdioConfigEntry,
+    ctx: _MediaPlayerContext,
+    async_add_entities: AddEntitiesCallback,
+    initial_entities: list[MediaPlayerEntity],
+    handled_client_patterns: set[str],
+) -> None:
+    """Register listener for newly discovered remote audio clients."""
+    if ctx.audio_coordinator is None:
+        return
+    audio_coordinator = ctx.audio_coordinator
+    known_remote_clients = {
+        entity._client_name: entity
+        for entity in initial_entities
+        if isinstance(entity, OdioPulseClientMediaPlayer)
+    }
+
+    @callback
+    def _async_check_new_clients() -> None:
+        hostname = ctx.server_hostname
+        if not audio_coordinator.data or not hostname:
+            return
+
+        new_entities: list[MediaPlayerEntity] = []
+        for client in audio_coordinator.data.get("audio", []):
+            client_name = client.get("name", "")
+            client_host = client.get("host", "")
+            app = client.get("app", "").lower()
+            binary = client.get("binary", "").lower()
+
+            if not (client_host and client_host != hostname and client_name):
+                continue
+            if client_name in known_remote_clients:
+                continue
+            if any(
+                pattern in [client_name.lower(), app, binary]
+                for pattern in handled_client_patterns
+            ):
+                continue
+
+            entity = OdioPulseClientMediaPlayer(ctx, client)
+            new_entities.append(entity)
+            known_remote_clients[client_name] = entity
+
+        if new_entities:
+            _LOGGER.info(
+                "Adding %d new remote client entities", len(new_entities)
+            )
+            async_add_entities(new_entities)
+
+    config_entry.async_on_unload(
+        audio_coordinator.async_add_listener(_async_check_new_clients)
+    )
+
+
+def _register_dynamic_mpris(
+    config_entry: OdioConfigEntry,
+    ctx: _MediaPlayerContext,
+    async_add_entities: AddEntitiesCallback,
+    initial_entities: list[MediaPlayerEntity],
+) -> None:
+    """Register listener for newly discovered MPRIS players."""
+    if ctx.mpris_coordinator is None:
+        return
+    mpris_coordinator = ctx.mpris_coordinator
+    known_mpris_players: dict[str, OdioMPRISMediaPlayer] = {
+        entity._player_name: entity
+        for entity in initial_entities
+        if isinstance(entity, OdioMPRISMediaPlayer)
+    }
+
+    @callback
+    def _async_check_new_mpris_players() -> None:
+        if not mpris_coordinator.data:
+            return
+        new_entities: list[MediaPlayerEntity] = []
+        for player in mpris_coordinator.data.get("mpris", []):
+            bus_name = player.get("bus_name")
+            if not bus_name or bus_name in known_mpris_players:
+                continue
+            if not player.get("available", True):
+                continue
+            entity = OdioMPRISMediaPlayer(ctx, player)
+            new_entities.append(entity)
+            known_mpris_players[bus_name] = entity
+        if new_entities:
+            _LOGGER.info("Adding %d new MPRIS player entities", len(new_entities))
+            async_add_entities(new_entities)
+
+    config_entry.async_on_unload(
+        mpris_coordinator.async_add_listener(_async_check_new_mpris_players)
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: OdioConfigEntry,
@@ -107,41 +294,12 @@ async def async_setup_entry(
         server_hostname=server_info.get("hostname"),
     )
 
-    # Receiver is always present
     entities: list[MediaPlayerEntity] = [OdioReceiverMediaPlayer(ctx)]
 
-    # Track which clients are handled by a service entity
-    handled_client_patterns: set[str] = set()
-
-    # Service entities (only when systemd backend enabled and data available)
-    if ctx.service_coordinator is not None and ctx.service_coordinator.data:
-        for service in ctx.service_coordinator.data.get("services", []):
-            mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
-            if service.get("exists") and mapping_key in ctx.service_mappings:
-                entities.append(OdioServiceMediaPlayer(ctx, service))
-                handled_client_patterns.add(
-                    service["name"].replace(".service", "").lower()
-                )
-
-    # Standalone remote client entities (only when pulseaudio backend enabled)
-    if ctx.audio_coordinator is not None and ctx.audio_coordinator.data:
-        _hostname = ctx.server_hostname
-        for client in ctx.audio_coordinator.data.get("audio", []):
-            client_name = client.get("name", "")
-            client_host = client.get("host", "")
-            if (
-                _hostname
-                and client_host
-                and client_host != _hostname
-                and client_name
-            ):
-                entities.append(OdioPulseClientMediaPlayer(ctx, client))
-
-    # MPRIS player entities (only when mpris backend enabled and data available)
-    if ctx.mpris_coordinator is not None and ctx.mpris_coordinator.data:
-        for player in ctx.mpris_coordinator.data.get("mpris", []):
-            if player.get("bus_name") and player.get("available", True):
-                entities.append(OdioMPRISMediaPlayer(ctx, player))
+    service_entities, handled_client_patterns = _build_service_entities(ctx)
+    entities += service_entities
+    entities += _build_remote_client_entities(ctx)
+    entities += _build_mpris_entities(ctx)
 
     _LOGGER.info(
         "Creating %d media_player entities (1 receiver + %d services + %d standalone clients + %d mpris)",
@@ -150,132 +308,11 @@ async def async_setup_entry(
         len([e for e in entities if isinstance(e, OdioPulseClientMediaPlayer)]),
         len([e for e in entities if isinstance(e, OdioMPRISMediaPlayer)]),
     )
-
     async_add_entities(entities)
 
-    # -------------------------------------------------------------------------
-    # Dynamic service entity creation
-    # Fires when service_coordinator first gets data after an API-down startup.
-    # -------------------------------------------------------------------------
-    if ctx.service_coordinator is not None:
-        service_coordinator = ctx.service_coordinator  # narrowed for closure
-        known_service_keys = {
-            f"{e._service_info['scope']}/{e._service_info['name']}"
-            for e in entities
-            if isinstance(e, OdioServiceMediaPlayer)
-        }
-
-        @callback
-        def _async_check_new_services() -> None:
-            if not service_coordinator.data:
-                return
-            new_entities: list[MediaPlayerEntity] = []
-            for service in service_coordinator.data.get("services", []):
-                mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
-                if (
-                    service.get("exists")
-                    and mapping_key in ctx.service_mappings
-                    and mapping_key not in known_service_keys
-                ):
-                    new_entities.append(OdioServiceMediaPlayer(ctx, service))
-                    known_service_keys.add(mapping_key)
-                    handled_client_patterns.add(
-                        service["name"].replace(".service", "").lower()
-                    )
-            if new_entities:
-                _LOGGER.info(
-                    "Dynamically adding %d service entities after late API connection",
-                    len(new_entities),
-                )
-                async_add_entities(new_entities)
-
-        config_entry.async_on_unload(
-            service_coordinator.async_add_listener(_async_check_new_services)
-        )
-
-    # -------------------------------------------------------------------------
-    # Dynamic remote client entity creation
-    # Fires on every audio coordinator update; adds entities for newly seen
-    # remote clients.
-    # -------------------------------------------------------------------------
-    if ctx.audio_coordinator is not None:
-        audio_coordinator = ctx.audio_coordinator  # narrowed for closure
-        known_remote_clients = {
-            entity._client_name: entity
-            for entity in entities
-            if isinstance(entity, OdioPulseClientMediaPlayer)
-        }
-
-        @callback
-        def _async_check_new_clients() -> None:
-            _hostname = ctx.server_hostname
-            if not audio_coordinator.data or not _hostname:
-                return
-
-            new_entities: list[MediaPlayerEntity] = []
-            for client in audio_coordinator.data.get("audio", []):
-                client_name = client.get("name", "")
-                client_host = client.get("host", "")
-                app = client.get("app", "").lower()
-                binary = client.get("binary", "").lower()
-
-                if not (client_host and client_host != _hostname and client_name):
-                    continue
-                if client_name in known_remote_clients:
-                    continue
-                if any(
-                    pattern in [client_name.lower(), app, binary]
-                    for pattern in handled_client_patterns
-                ):
-                    continue
-
-                entity = OdioPulseClientMediaPlayer(ctx, client)
-                new_entities.append(entity)
-                known_remote_clients[client_name] = entity
-
-            if new_entities:
-                _LOGGER.info(
-                    "Adding %d new remote client entities", len(new_entities)
-                )
-                async_add_entities(new_entities)
-
-        config_entry.async_on_unload(
-            ctx.audio_coordinator.async_add_listener(_async_check_new_clients)
-        )
-
-    # -------------------------------------------------------------------------
-    # Dynamic MPRIS player entity creation
-    # Fires on every mpris coordinator update; adds entities for newly seen players.
-    # -------------------------------------------------------------------------
-    if ctx.mpris_coordinator is not None:
-        mpris_coordinator = ctx.mpris_coordinator  # narrowed for closure
-        known_mpris_players: dict[str, OdioMPRISMediaPlayer] = {
-            entity._player_name: entity
-            for entity in entities
-            if isinstance(entity, OdioMPRISMediaPlayer)
-        }
-
-        @callback
-        def _async_check_new_mpris_players() -> None:
-            if not mpris_coordinator.data:
-                return
-            new_entities: list[MediaPlayerEntity] = []
-            for player in mpris_coordinator.data.get("mpris", []):
-                bus_name = player.get("bus_name")
-                if not bus_name or bus_name in known_mpris_players:
-                    continue
-                if not player.get("available", True):
-                    continue
-                entity = OdioMPRISMediaPlayer(ctx, player)
-                new_entities.append(entity)
-                known_mpris_players[bus_name] = entity
-            if new_entities:
-                _LOGGER.info("Adding %d new MPRIS player entities", len(new_entities))
-                async_add_entities(new_entities)
-
-        config_entry.async_on_unload(
-            mpris_coordinator.async_add_listener(_async_check_new_mpris_players)
-        )
+    _register_dynamic_services(config_entry, ctx, async_add_entities, entities, handled_client_patterns)
+    _register_dynamic_clients(config_entry, ctx, async_add_entities, entities, handled_client_patterns)
+    _register_dynamic_mpris(config_entry, ctx, async_add_entities, entities)
 
 
 # =============================================================================
