@@ -34,7 +34,8 @@ def _make_entry(bt_coordinator=None):
     entry.entry_id = ENTRY_ID
     entry.runtime_data.event_stream = _make_event_stream()
     entry.runtime_data.device_info = MOCK_DEVICE_INFO
-    entry.runtime_data.bluetooth_coordinator = bt_coordinator
+    from custom_components.odio_remote import OdioCoordinators
+    entry.runtime_data.coordinators = OdioCoordinators(bluetooth=bt_coordinator)
     return entry
 
 
