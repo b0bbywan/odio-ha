@@ -31,11 +31,11 @@ async def async_setup_entry(
     event_stream = entry.runtime_data.event_stream
 
     entities: list[ButtonEntity] = []
-    if caps.get("power_off"):
+    if caps.power_off:
         entities.append(OdioPowerOffButton(event_stream, api, entry_id, device_info))
-    if caps.get("reboot"):
+    if caps.reboot:
         entities.append(OdioRebootButton(event_stream, api, entry_id, device_info))
-    if entry.runtime_data.bluetooth_coordinator is not None:
+    if entry.runtime_data.coordinators.bluetooth is not None:
         entities.append(OdioBluetoothPairingButton(event_stream, api, entry_id, device_info))
 
     async_add_entities(entities)

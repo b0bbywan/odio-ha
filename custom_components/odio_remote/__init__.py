@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urlparse
 
 from homeassistant.config_entries import ConfigEntry
@@ -15,6 +14,8 @@ from homeassistant.helpers.entity import DeviceInfo
 
 from .api_client import OdioApiClient
 from .event_stream import OdioEventStreamManager
+from .exceptions import OdioError
+from .models import PowerCapabilities, ServerInfo, StartupData
 from .const import (
     CONF_API_URL,
     CONF_KEEPALIVE_INTERVAL,
@@ -47,18 +48,32 @@ PLATFORMS: list[Platform] = [
 
 
 @dataclass
+class OdioCoordinators:
+    """Groups the four optional SSE-driven coordinators."""
+
+    audio: OdioAudioCoordinator | None = None
+    service: OdioServiceCoordinator | None = None
+    bluetooth: OdioBluetoothCoordinator | None = None
+    mpris: OdioMPRISCoordinator | None = None
+
+    def refresh_all(self, hass: HomeAssistant) -> None:
+        """Schedule async_refresh on every active coordinator."""
+        for coord in (self.audio, self.service, self.bluetooth, self.mpris):
+            if coord is not None:
+                hass.async_create_task(coord.async_refresh())
+
+
+@dataclass
 class OdioRemoteRuntimeData:
     """Runtime data for the Odio Remote integration."""
 
     api: OdioApiClient
     device_info: DeviceInfo
-    audio_coordinator: OdioAudioCoordinator | None
-    service_coordinator: OdioServiceCoordinator | None
-    bluetooth_coordinator: OdioBluetoothCoordinator | None
-    mpris_coordinator: OdioMPRISCoordinator | None
+    server_info: ServerInfo
+    coordinators: OdioCoordinators
     event_stream: OdioEventStreamManager
     service_mappings: dict[str, str]
-    power_capabilities: dict[str, bool]
+    power_capabilities: PowerCapabilities
 
 
 type OdioConfigEntry = ConfigEntry[OdioRemoteRuntimeData]
@@ -88,28 +103,6 @@ async def _resolve_mac(
                 host,
             )
     return mac
-
-
-async def _fetch_power_capabilities(
-    hass: HomeAssistant,
-    entry: OdioConfigEntry,
-    api: OdioApiClient,
-) -> dict[str, bool]:
-    """Fetch power capabilities from API; fall back to cached value."""
-    try:
-        power_capabilities = await api.get_power_capabilities()
-        if power_capabilities != entry.data.get("power_capabilities"):
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, "power_capabilities": power_capabilities}
-            )
-        return power_capabilities
-    except Exception:
-        cached = entry.data.get("power_capabilities", {})
-        _LOGGER.warning(
-            "Failed to fetch power capabilities — using cached value: %s",
-            cached,
-        )
-        return cached
 
 
 async def _setup_audio_coordinator(
@@ -238,20 +231,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     session = async_get_clientsession(hass)
     api = OdioApiClient(api_url, session)
 
-    # Fetch server_info once at startup — it is static and never polled again.
+    # Fetch server_info + power capabilities once at startup — static, never polled again.
     try:
-        server_info: dict[str, Any] = await api.get_server_info()
-        if server_info != entry.data.get("server_info"):
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, "server_info": server_info}
-            )
-    except Exception:
-        server_info = entry.data.get("server_info", {})
+        startup = await StartupData.fetch(api)
+    except OdioError:
+        startup = StartupData.from_cache(entry.data)
         _LOGGER.warning(
-            "API unreachable at startup — using cached server_info (backends: %s)",
-            server_info.get("backends", {}),
+            "API unreachable at startup — using cached data (backends: %s)",
+            startup.server_info.backends,
         )
-    backends = server_info.get("backends", {})
+    startup.cache(hass, entry)
+    server_info = startup.server_info
+    backends = server_info.backends
     _LOGGER.debug("Detected backends: %s", backends)
 
     # Build SSE backends list from server capabilities.
@@ -279,66 +270,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
     )
 
-    power_capabilities = (
-        await _fetch_power_capabilities(hass, entry, api)
-        if backends.get("power") else {}
-    )
-
     # Build DeviceInfo once — shared by all platforms so every entity stays
     # consistent regardless of which platform registers first.
-    hostname = server_info.get("hostname", entry.entry_id)
+    hostname = server_info.hostname or entry.entry_id
     device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         connections=device_connections,
         name=f"Odio Remote ({hostname})",
         manufacturer="Odio",
-        sw_version=server_info.get("api_version"),
-        hw_version=server_info.get("os_version"),
+        sw_version=server_info.api_version,
+        hw_version=server_info.os_version,
         configuration_url=f"{api_url}/ui",
     )
 
-    audio_coordinator = (
-        await _setup_audio_coordinator(hass, entry, api, event_stream)
-        if backends.get("pulseaudio") else None
-    )
-    service_coordinator = (
-        await _setup_service_coordinator(hass, entry, api, event_stream)
-        if backends.get("systemd") else None
-    )
-    mpris_coordinator = (
-        await _setup_mpris_coordinator(hass, entry, api, event_stream)
-        if backends.get("mpris") else None
-    )
-    bluetooth_coordinator = (
-        await _setup_bluetooth_coordinator(hass, entry, api, event_stream)
-        if backends.get("bluetooth") else None
+    coordinators = OdioCoordinators(
+        audio=await _setup_audio_coordinator(hass, entry, api, event_stream)
+        if backends.get("pulseaudio") else None,
+        service=await _setup_service_coordinator(hass, entry, api, event_stream)
+        if backends.get("systemd") else None,
+        mpris=await _setup_mpris_coordinator(hass, entry, api, event_stream)
+        if backends.get("mpris") else None,
+        bluetooth=await _setup_bluetooth_coordinator(hass, entry, api, event_stream)
+        if backends.get("bluetooth") else None,
     )
 
     # Re-fetch coordinator data on SSE reconnect to avoid stale state.
     def _on_sse_reconnect() -> None:
         if not event_stream.sse_connected:
             return
-        if audio_coordinator is not None:
-            hass.async_create_task(audio_coordinator.async_refresh())
-        if service_coordinator is not None:
-            hass.async_create_task(service_coordinator.async_refresh())
-        if bluetooth_coordinator is not None:
-            hass.async_create_task(bluetooth_coordinator.async_refresh())
-        if mpris_coordinator is not None:
-            hass.async_create_task(mpris_coordinator.async_refresh())
+        coordinators.refresh_all(hass)
 
     entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
 
     entry.runtime_data = OdioRemoteRuntimeData(
         api=api,
         device_info=device_info,
-        audio_coordinator=audio_coordinator,
-        service_coordinator=service_coordinator,
-        bluetooth_coordinator=bluetooth_coordinator,
-        mpris_coordinator=mpris_coordinator,
+        server_info=server_info,
+        coordinators=coordinators,
         event_stream=event_stream,
         service_mappings=service_mappings,
-        power_capabilities=power_capabilities,
+        power_capabilities=startup.power,
     )
 
     _LOGGER.debug("Forwarding setup to platforms: %s", PLATFORMS)

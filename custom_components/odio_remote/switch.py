@@ -84,10 +84,10 @@ async def async_setup_entry(
     rd = entry.runtime_data
     entities: list[SwitchEntity] = []
 
-    if rd.bluetooth_coordinator is not None:
+    if rd.coordinators.bluetooth is not None:
         entities.append(
             OdioBluetoothSwitch(
-                rd.bluetooth_coordinator,
+                rd.coordinators.bluetooth,
                 rd.api,
                 entry.entry_id,
                 rd.device_info,
@@ -95,7 +95,7 @@ async def async_setup_entry(
             )
         )
 
-    service_coordinator = rd.service_coordinator
+    service_coordinator = rd.coordinators.service
     if service_coordinator is not None:
         ctx, service_switches = _build_service_switches(entry, service_coordinator)
         entities += service_switches
