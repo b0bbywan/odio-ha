@@ -12,6 +12,7 @@ from custom_components.odio_remote.button import (
     async_setup_entry,
 )
 from custom_components.odio_remote.const import DOMAIN
+from custom_components.odio_remote.models import PowerCapabilities
 
 from .conftest import MOCK_DEVICE_INFO
 
@@ -28,13 +29,18 @@ def _make_event_stream(sse_connected=True):
 class MockPowerRuntimeData:
     api: object
     device_info: object
-    power_capabilities: dict
+    power_capabilities: PowerCapabilities
     event_stream: object
-    bluetooth_coordinator: object = None
+    coordinators: object = None
+
+    def __post_init__(self):
+        if self.coordinators is None:
+            from custom_components.odio_remote import OdioCoordinators
+            self.coordinators = OdioCoordinators()
 
 
 class MockConfigEntry:
-    def __init__(self, caps, api=None):
+    def __init__(self, caps: PowerCapabilities, api=None):
         self.entry_id = ENTRY_ID
         self.runtime_data = MockPowerRuntimeData(
             api=api or MagicMock(),
@@ -49,14 +55,14 @@ class TestButtonSetup:
 
     @pytest.mark.asyncio
     async def test_no_buttons_when_power_backend_disabled(self):
-        entry = MockConfigEntry(caps={})
+        entry = MockConfigEntry(caps=PowerCapabilities())
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert added == []
 
     @pytest.mark.asyncio
     async def test_power_off_button_created(self):
-        entry = MockConfigEntry(caps={"power_off": True, "reboot": False})
+        entry = MockConfigEntry(caps=PowerCapabilities(power_off=True, reboot=False))
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert len(added) == 1
@@ -64,7 +70,7 @@ class TestButtonSetup:
 
     @pytest.mark.asyncio
     async def test_reboot_button_created(self):
-        entry = MockConfigEntry(caps={"reboot": True, "power_off": False})
+        entry = MockConfigEntry(caps=PowerCapabilities(reboot=True, power_off=False))
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert len(added) == 1
@@ -72,7 +78,7 @@ class TestButtonSetup:
 
     @pytest.mark.asyncio
     async def test_both_buttons_created(self):
-        entry = MockConfigEntry(caps={"power_off": True, "reboot": True})
+        entry = MockConfigEntry(caps=PowerCapabilities(power_off=True, reboot=True))
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert len(added) == 2
@@ -184,14 +190,15 @@ class TestOdioBluetoothPairingButton:
 class TestButtonSetupWithBluetooth:
     """Tests async_setup_entry pairing button creation."""
 
-    def _make_entry(self, caps, bt_coordinator=None):
+    def _make_entry(self, caps: PowerCapabilities, bt_coordinator=None):
         entry = MockConfigEntry(caps=caps)
-        entry.runtime_data.bluetooth_coordinator = bt_coordinator
+        from custom_components.odio_remote import OdioCoordinators
+        entry.runtime_data.coordinators = OdioCoordinators(bluetooth=bt_coordinator)
         return entry
 
     @pytest.mark.asyncio
     async def test_pairing_button_created_when_bt_coordinator_present(self):
-        entry = self._make_entry(caps={}, bt_coordinator=MagicMock())
+        entry = self._make_entry(caps=PowerCapabilities(), bt_coordinator=MagicMock())
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert len(added) == 1
@@ -199,14 +206,14 @@ class TestButtonSetupWithBluetooth:
 
     @pytest.mark.asyncio
     async def test_no_pairing_button_when_bt_coordinator_absent(self):
-        entry = self._make_entry(caps={}, bt_coordinator=None)
+        entry = self._make_entry(caps=PowerCapabilities(), bt_coordinator=None)
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert not any(isinstance(e, OdioBluetoothPairingButton) for e in added)
 
     @pytest.mark.asyncio
     async def test_all_three_buttons_with_full_caps_and_bt(self):
-        entry = self._make_entry(caps={"power_off": True, "reboot": True}, bt_coordinator=MagicMock())
+        entry = self._make_entry(caps=PowerCapabilities(power_off=True, reboot=True), bt_coordinator=MagicMock())
         added = []
         await async_setup_entry(None, entry, lambda entities: added.extend(entities))
         assert len(added) == 3

@@ -52,10 +52,10 @@ def _make_switch(service_info, coordinator=None):
 
 
 def _make_entry(service_coordinator):
+    from custom_components.odio_remote import OdioCoordinators
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
-    entry.runtime_data.service_coordinator = service_coordinator
-    entry.runtime_data.bluetooth_coordinator = None
+    entry.runtime_data.coordinators = OdioCoordinators(service=service_coordinator)
     entry.runtime_data.api = MagicMock()
     entry.runtime_data.device_info = MOCK_DEVICE_INFO
     entry.runtime_data.event_stream = _make_event_stream()
@@ -465,10 +465,10 @@ class TestOdioBluetoothSwitchActions:
 # ---------------------------------------------------------------------------
 
 def _make_entry_with_bt(bt_coordinator, service_coordinator=None):
+    from custom_components.odio_remote import OdioCoordinators
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
-    entry.runtime_data.service_coordinator = service_coordinator
-    entry.runtime_data.bluetooth_coordinator = bt_coordinator
+    entry.runtime_data.coordinators = OdioCoordinators(service=service_coordinator, bluetooth=bt_coordinator)
     entry.runtime_data.api = MagicMock()
     entry.runtime_data.device_info = MOCK_DEVICE_INFO
     entry.runtime_data.event_stream = _make_event_stream()

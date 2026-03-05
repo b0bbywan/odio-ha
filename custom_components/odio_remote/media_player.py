@@ -265,18 +265,18 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Remote media player based on a config entry."""
     rd = config_entry.runtime_data
-    server_info = config_entry.data.get("server_info", {})
+    server_info = rd.server_info
     ctx = _MediaPlayerContext(
         entry_id=config_entry.entry_id,
         event_stream=rd.event_stream,
-        audio_coordinator=rd.audio_coordinator,
-        service_coordinator=rd.service_coordinator,
-        mpris_coordinator=rd.mpris_coordinator,
+        audio_coordinator=rd.coordinators.audio,
+        service_coordinator=rd.coordinators.service,
+        mpris_coordinator=rd.coordinators.mpris,
         api=rd.api,
         device_info=rd.device_info,
         service_mappings=rd.service_mappings,
-        backends=server_info.get("backends", {}),
-        server_hostname=server_info.get("hostname"),
+        backends=server_info.backends,
+        server_hostname=server_info.hostname or None,
     )
 
     entities: list[MediaPlayerEntity] = [OdioReceiverMediaPlayer(ctx)]

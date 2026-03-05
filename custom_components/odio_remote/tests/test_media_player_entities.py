@@ -367,7 +367,7 @@ class TestServiceEntity:
     async def test_turn_on(self):
         entity = self._make_service()
         entity._api_client.control_service = AsyncMock()
-        with patch("custom_components.odio_remote.media_player.asyncio.sleep", new_callable=AsyncMock):
+        with patch("custom_components.odio_remote.media_player.asyncio.sleep"):
             await entity.async_turn_on()
         entity._api_client.control_service.assert_awaited_once_with("enable", "user", "mpd.service")
 
@@ -375,7 +375,7 @@ class TestServiceEntity:
     async def test_turn_off(self):
         entity = self._make_service()
         entity._api_client.control_service = AsyncMock()
-        with patch("custom_components.odio_remote.media_player.asyncio.sleep", new_callable=AsyncMock):
+        with patch("custom_components.odio_remote.media_player.asyncio.sleep"):
             await entity.async_turn_off()
         entity._api_client.control_service.assert_awaited_once_with("disable", "user", "mpd.service")
 
@@ -606,11 +606,11 @@ class TestMediaPlayerAsyncSetupEntry:
     async def test_creates_receiver_entity(self):
         hass = MagicMock()
         entry = MagicMock()
+        from custom_components.odio_remote.models import ServerInfo
         entry.entry_id = "test_entry"
-        entry.data = {"server_info": {"backends": {}, "hostname": "htpc"}}
-        entry.runtime_data.audio_coordinator = None
-        entry.runtime_data.service_coordinator = None
-        entry.runtime_data.mpris_coordinator = None
+        from custom_components.odio_remote import OdioCoordinators
+        entry.runtime_data.server_info = ServerInfo(hostname="htpc", backends={})
+        entry.runtime_data.coordinators = OdioCoordinators()
         entry.runtime_data.event_stream = _make_event_stream()
         entry.runtime_data.api = MagicMock()
         entry.runtime_data.device_info = MOCK_DEVICE_INFO
