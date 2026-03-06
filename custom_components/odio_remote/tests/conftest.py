@@ -116,6 +116,32 @@ MOCK_ALL_SERVICES = [
     },
 ]
 
+# Mock unified /audio response (new API)
+MOCK_AUDIO_UNIFIED = {
+    "clients": [
+        {
+            "id": 161,
+            "name": "Netflix",
+            "app": "Firefox",
+            "muted": False,
+            "volume": 1,
+            "corked": True,
+            "backend": "pipewire",
+            "binary": "firefox-esr",
+            "user": "xbmc",
+            "host": "htpc",
+            "props": {
+                "application.name": "Firefox",
+                "media.name": "Netflix",
+                "application.process.binary": "firefox-esr",
+                "media.class": "Stream/Output/Audio",
+            },
+        },
+    ],
+    "kind": "pipewire",
+    "outputs": [],
+}
+
 # Standard mock audio clients response (local clients, host == server hostname)
 MOCK_CLIENTS = [
     {

@@ -12,6 +12,7 @@ from custom_components.odio_remote.api_client import OdioApiClient
 from .conftest import (
     MOCK_SERVER_INFO,
     MOCK_AUDIO_SERVER_INFO,
+    MOCK_AUDIO_UNIFIED,
     MOCK_CLIENTS,
     MOCK_ALL_SERVICES,
 )
@@ -165,12 +166,12 @@ class TestOdioApiClientEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_clients(self):
-        """Test get_clients returns real-shaped client list."""
+        """Test get_clients extracts clients from unified /audio endpoint."""
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
             with aioresponses() as m:
-                m.get("http://test:8018/audio/clients", payload=MOCK_CLIENTS)
+                m.get("http://test:8018/audio", payload=MOCK_AUDIO_UNIFIED)
 
                 result = await api.get_clients()
 
@@ -182,12 +183,28 @@ class TestOdioApiClientEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_clients_empty(self):
-        """Test get_clients with empty response."""
+        """Test get_clients with empty clients list from unified endpoint."""
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
             with aioresponses() as m:
-                m.get("http://test:8018/audio/clients", body="")
+                m.get(
+                    "http://test:8018/audio",
+                    payload={"clients": [], "kind": "pipewire", "outputs": []},
+                )
+
+                result = await api.get_clients()
+
+                assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_clients_missing_clients_key(self):
+        """Test get_clients when unified response has no 'clients' key."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", payload={"kind": "pipewire"})
 
                 result = await api.get_clients()
 
@@ -195,14 +212,70 @@ class TestOdioApiClientEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_clients_invalid_response(self):
-        """Test get_clients with invalid response type."""
+        """Test get_clients with non-dict response from unified endpoint."""
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
             with aioresponses() as m:
-                m.get("http://test:8018/audio/clients", payload={"not": "a list"})
+                m.get("http://test:8018/audio", payload=["not", "a", "dict"])
+
+                with pytest.raises(ValueError, match="Expected dict"):
+                    await api.get_clients()
+
+    @pytest.mark.asyncio
+    async def test_get_clients_invalid_clients_type(self):
+        """Test get_clients when 'clients' key is not a list."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get(
+                    "http://test:8018/audio",
+                    payload={"clients": "not a list", "kind": "pipewire"},
+                )
 
                 with pytest.raises(ValueError, match="Expected list"):
+                    await api.get_clients()
+
+    @pytest.mark.asyncio
+    async def test_get_clients_fallback_on_404(self):
+        """Test get_clients falls back to /audio/clients on 404."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", status=404)
+                m.get("http://test:8018/audio/clients", payload=MOCK_CLIENTS)
+
+                result = await api.get_clients()
+
+                assert len(result) == 1
+                assert result[0]["name"] == "Netflix"
+
+    @pytest.mark.asyncio
+    async def test_get_clients_fallback_empty(self):
+        """Test get_clients fallback with empty legacy response."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", status=404)
+                m.get("http://test:8018/audio/clients", body="")
+
+                result = await api.get_clients()
+
+                assert result == []
+
+    @pytest.mark.asyncio
+    async def test_get_clients_non_404_error_propagates(self):
+        """Test get_clients does not swallow non-404 errors."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", status=500)
+
+                with pytest.raises(aiohttp.ClientResponseError):
                     await api.get_clients()
 
     @pytest.mark.asyncio

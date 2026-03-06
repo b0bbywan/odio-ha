@@ -17,9 +17,10 @@ DEFAULT_NAME: Final = "Odio Remote"
 ENDPOINT_SYSTEM_SERVER: Final = "/server"
 ENDPOINT_EVENTS: Final = "/events"
 
-# PulseAudio Endpoints (mute/volume only)
+# Audio Endpoints
+ENDPOINT_AUDIO: Final = "/audio"
 ENDPOINT_SERVER: Final = "/audio/server"
-ENDPOINT_CLIENTS: Final = "/audio/clients"
+ENDPOINT_CLIENTS: Final = "/audio/clients"  # DEPRECATED fallback — remove when old API is dropped
 ENDPOINT_SERVER_MUTE: Final = "/audio/server/mute"
 ENDPOINT_SERVER_VOLUME: Final = "/audio/server/volume"
 ENDPOINT_CLIENT_MUTE: Final = "/audio/clients/{name}/mute"  # Utilise le name, pas l'id
