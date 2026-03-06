@@ -21,6 +21,8 @@ All state is pushed by the server via **Server-Sent Events** — no polling afte
 
 ### Audio (PulseAudio / PipeWire backend)
 - Main receiver `media_player` with global volume/mute
+- **Audio output selection** via source list on the receiver. Unlike traditional media players, Odio has no exclusive source concept: all sources can be active simultaneously. The source list is used to select the **default audio output**, not to switch between inputs.
+- Default output sensor with full output attributes
 - Remote audio client entities (PipeWire tunnels from other machines)
 - No local clients for now due to name collision risks
 
@@ -116,14 +118,14 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 ### Always present
 | Entity | Description |
 |--------|-------------|
-| `media_player.odio_remote_[hostname]` | Main hub — state: `playing` / `idle` / `unavailable`. Global volume/mute when audio backend enabled. |
+| `media_player.odio_remote_[hostname]` | Main hub — state: `playing` / `idle` / `unavailable`. Global volume/mute and audio output selection when audio backend enabled. |
 | `binary_sensor.odio_remote_[hostname]_connection_status` | SSE stream connected (diagnostic) |
 
 ### Audio backend (PulseAudio / PipeWire)
 | Entity | Description |
 |--------|-------------|
-| `media_player.odio_remote_[hostname]_[app]` | Per-sink-input player (e.g. Firefox, VLC) — volume/mute, state follows corked/uncorked |
-| `media_player.odio_remote_[hostname]_[client]` | Remote audio client (PipeWire tunnel) — volume/mute, optional mapping |
+| `sensor.odio_remote_[hostname]_default_output` | Current default audio output with full attributes (name, volume, muted, state, driver, etc.) |
+| `media_player.odio_remote_[hostname]_[client]` | Remote audio client (PulseAudio/PipeWire tunnel) — volume/mute, optional mapping |
 
 ### Services backend (systemd)
 | Entity | Description |
@@ -152,7 +154,6 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 
 ## Roadmap
 
-- Audio outputs handling
 - More Sensors: Tell me what you need for your setup !
 - Improved error reporting & options flow
 
