@@ -97,8 +97,37 @@ class OdioApiClient:
         return result
 
     async def get_clients(self) -> list[dict[str, Any]]:
-        """Get audio clients."""
+        """Get audio clients.
+
+        Tries unified GET /audio first, falls back to GET /audio/clients on 404.
+        TODO: Remove fallback when /audio/clients is dropped from go-odio-api.
+        """
+        from .const import ENDPOINT_AUDIO
+
+        try:
+            result = await self.get(ENDPOINT_AUDIO)
+        except aiohttp.ClientResponseError as err:
+            if err.status == 404:
+                _LOGGER.debug("GET /audio returned 404 — falling back to /audio/clients")
+                return await self._get_clients_legacy()
+            raise
+
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from /audio endpoint, got {type(result)}")
+        clients = result.get("clients")
+        if clients is None:
+            return []
+        if not isinstance(clients, list):
+            raise ValueError(f"Expected list for 'clients' key, got {type(clients)}")
+        return clients
+
+    async def _get_clients_legacy(self) -> list[dict[str, Any]]:
+        """Fetch clients from old GET /audio/clients endpoint.
+
+        TODO: Remove this method when /audio/clients is dropped from go-odio-api.
+        """
         from .const import ENDPOINT_CLIENTS
+
         result = await self.get(ENDPOINT_CLIENTS)
         if result is None:
             return []
