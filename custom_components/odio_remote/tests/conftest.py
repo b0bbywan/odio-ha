@@ -116,6 +116,72 @@ MOCK_ALL_SERVICES = [
     },
 ]
 
+# Mock audio outputs (from GET /audio "outputs" key)
+MOCK_OUTPUTS = [
+    {
+        "id": 52,
+        "name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+        "description": "Built-in Audio Analog Stereo",
+        "nick": "ALC887-VD Analog",
+        "muted": False,
+        "volume": 1,
+        "state": "suspended",
+        "default": False,
+        "driver": "PipeWire",
+        "active_port": "analog-output-lineout",
+        "props": {},
+    },
+    {
+        "id": 68,
+        "name": "raop_sink.nas-2.local.2a01:cb0c:796:200:3285:a9ff:fe40:f90f.5000",
+        "description": "SnapAir",
+        "muted": False,
+        "volume": 0,
+        "state": "suspended",
+        "default": False,
+        "driver": "PipeWire",
+        "is_network": True,
+        "props": {},
+    },
+    {
+        "id": 73,
+        "name": "tunnel.rasponkyo.local.alsa_output.platform-soc_sound.stereo-fallback",
+        "description": "Built-in Audio Stereo on pi@rasponkyo",
+        "muted": False,
+        "volume": 1,
+        "state": "suspended",
+        "default": False,
+        "driver": "PipeWire",
+        "is_network": True,
+        "props": {},
+    },
+    {
+        "id": 78,
+        "name": "tunnel.rasponkyold.local.alsa_output.platform-2000b840.mailbox.stereo-fallback",
+        "description": "Audio interne Stéréo on pi@rasponkyold",
+        "muted": False,
+        "volume": 1,
+        "state": "suspended",
+        "default": True,
+        "driver": "PipeWire",
+        "is_network": True,
+        "props": {},
+    },
+    {
+        "id": 85,
+        "name": "alsa_output.pci-0000_01_00.1.hdmi-stereo",
+        "description": "GP104 High Definition Audio Controller Digital Stereo (HDMI)",
+        "nick": "24G2W1G4",
+        "muted": False,
+        "volume": 1,
+        "state": "suspended",
+        "default": False,
+        "driver": "PipeWire",
+        "active_port": "hdmi-output-0",
+        "props": {},
+    },
+]
+
 # Mock unified /audio response (new API)
 MOCK_AUDIO_UNIFIED = {
     "clients": [
@@ -139,7 +205,7 @@ MOCK_AUDIO_UNIFIED = {
         },
     ],
     "kind": "pipewire",
-    "outputs": [],
+    "outputs": MOCK_OUTPUTS,
 }
 
 # Standard mock audio clients response (local clients, host == server hostname)

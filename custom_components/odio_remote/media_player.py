@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.media_player import (
+    MediaPlayerDeviceClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -286,6 +287,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_device_class = MediaPlayerDeviceClass.RECEIVER
 
     def __init__(self, ctx: _MediaPlayerContext) -> None:
         """Initialize the receiver."""
@@ -352,9 +354,14 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
+        features = MediaPlayerEntityFeature(0)
         if self._get_backends().get("pulseaudio"):
-            return MediaPlayerEntityFeature.VOLUME_SET | MediaPlayerEntityFeature.VOLUME_MUTE
-        return MediaPlayerEntityFeature(0)
+            features |= (
+                MediaPlayerEntityFeature.VOLUME_SET
+                | MediaPlayerEntityFeature.VOLUME_MUTE
+                | MediaPlayerEntityFeature.SELECT_SOURCE
+            )
+        return features
 
     @property
     def volume_level(self) -> float | None:
@@ -388,6 +395,36 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
                 c for c in clients if not c.get("corked", True)
             ])
         return attrs
+
+    def _get_outputs(self) -> list[dict[str, Any]]:
+        """Return the outputs list from the audio coordinator."""
+        if self._audio_coordinator is None or not self._audio_coordinator.data:
+            return []
+        return self._audio_coordinator.data.get("outputs", [])
+
+    @property
+    def source_list(self) -> list[str] | None:
+        """Return the list of available audio outputs."""
+        outputs = self._get_outputs()
+        if not outputs:
+            return None
+        return [o.get("description") or o.get("name", "") for o in outputs]
+
+    @property
+    def source(self) -> str | None:
+        """Return the current default audio output."""
+        for o in self._get_outputs():
+            if o.get("default"):
+                return o.get("description") or o.get("name")
+        return None
+
+    async def async_select_source(self, source: str) -> None:
+        """Set the default audio output."""
+        for o in self._get_outputs():
+            label = o.get("description") or o.get("name", "")
+            if label == source:
+                await self._api_client.set_output_default(o["name"])
+                return
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""

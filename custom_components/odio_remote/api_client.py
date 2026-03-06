@@ -96,8 +96,8 @@ class OdioApiClient:
             raise ValueError(f"Expected dict from audio server endpoint, got {type(result)}")
         return result
 
-    async def get_clients(self) -> list[dict[str, Any]]:
-        """Get audio clients.
+    async def get_audio_data(self) -> dict[str, list]:
+        """Get audio data (clients + outputs).
 
         Tries unified GET /audio first, falls back to GET /audio/clients on 404.
         TODO: Remove fallback when /audio/clients is dropped from go-odio-api.
@@ -108,18 +108,52 @@ class OdioApiClient:
             result = await self.get(ENDPOINT_AUDIO)
         except aiohttp.ClientResponseError as err:
             if err.status == 404:
-                _LOGGER.debug("GET /audio returned 404 — falling back to /audio/clients")
-                return await self._get_clients_legacy()
+                _LOGGER.debug("GET /audio returned 404 — falling back to legacy endpoints")
+                clients = await self._get_clients_legacy()
+                outputs = await self._get_outputs_legacy()
+                return {"clients": clients, "outputs": outputs}
             raise
 
         if not isinstance(result, dict):
             raise ValueError(f"Expected dict from /audio endpoint, got {type(result)}")
-        clients = result.get("clients")
-        if clients is None:
+
+        raw_clients = result.get("clients")
+        if raw_clients is None:
+            raw_clients = []
+        if not isinstance(raw_clients, list):
+            raise ValueError(f"Expected list for 'clients' key, got {type(raw_clients)}")
+
+        raw_outputs = result.get("outputs")
+        if raw_outputs is None:
+            raw_outputs = []
+        if not isinstance(raw_outputs, list):
+            raise ValueError(f"Expected list for 'outputs' key, got {type(raw_outputs)}")
+
+        return {"clients": raw_clients, "outputs": raw_outputs}
+
+    async def get_clients(self) -> list[dict[str, Any]]:
+        """Get audio clients only (convenience wrapper)."""
+        data = await self.get_audio_data()
+        return data["clients"]
+
+    async def _get_outputs_legacy(self) -> list[dict[str, Any]]:
+        """Build a minimal outputs list from old GET /audio/server endpoint.
+
+        TODO: Remove this method when /audio/clients is dropped from go-odio-api.
+        """
+        try:
+            server = await self.get_audio_server_info()
+        except Exception:
             return []
-        if not isinstance(clients, list):
-            raise ValueError(f"Expected list for 'clients' key, got {type(clients)}")
-        return clients
+        default_sink = server.get("default_sink")
+        if not default_sink:
+            return []
+        return [{
+            "name": default_sink,
+            "default": True,
+            "volume": server.get("volume"),
+            "muted": server.get("muted", False),
+        }]
 
     async def _get_clients_legacy(self) -> list[dict[str, Any]]:
         """Fetch clients from old GET /audio/clients endpoint.
@@ -144,6 +178,14 @@ class OdioApiClient:
         if not isinstance(result, list):
             raise ValueError(f"Expected list from services endpoint, got {type(result)}")
         return result
+
+    # Output control
+    async def set_output_default(self, output_name: str) -> None:
+        """Set the default audio output."""
+        from .const import ENDPOINT_OUTPUT_DEFAULT
+        encoded_name = quote(output_name, safe='')
+        endpoint = ENDPOINT_OUTPUT_DEFAULT.format(output=encoded_name)
+        await self.post(endpoint)
 
     # Volume control
     async def set_server_volume(self, volume: float) -> None:

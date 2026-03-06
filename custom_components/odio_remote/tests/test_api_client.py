@@ -246,11 +246,47 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/audio", status=404)
                 m.get("http://test:8018/audio/clients", payload=MOCK_CLIENTS)
+                m.get("http://test:8018/audio/server", payload=MOCK_AUDIO_SERVER_INFO)
 
                 result = await api.get_clients()
 
                 assert len(result) == 1
                 assert result[0]["name"] == "Netflix"
+
+    @pytest.mark.asyncio
+    async def test_get_audio_data_fallback_includes_outputs(self):
+        """Test get_audio_data builds outputs from /audio/server on 404 fallback."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", status=404)
+                m.get("http://test:8018/audio/clients", payload=MOCK_CLIENTS)
+                m.get("http://test:8018/audio/server", payload=MOCK_AUDIO_SERVER_INFO)
+
+                result = await api.get_audio_data()
+
+                assert len(result["clients"]) == 1
+                assert len(result["outputs"]) == 1
+                assert result["outputs"][0]["name"] == "@DEFAULT_SINK@"
+                assert result["outputs"][0]["default"] is True
+                assert result["outputs"][0]["volume"] == pytest.approx(1.0000153)
+
+    @pytest.mark.asyncio
+    async def test_get_audio_data_fallback_outputs_empty_on_server_error(self):
+        """Test fallback outputs gracefully empty when /audio/server also fails."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            with aioresponses() as m:
+                m.get("http://test:8018/audio", status=404)
+                m.get("http://test:8018/audio/clients", payload=MOCK_CLIENTS)
+                m.get("http://test:8018/audio/server", status=500)
+
+                result = await api.get_audio_data()
+
+                assert len(result["clients"]) == 1
+                assert result["outputs"] == []
 
     @pytest.mark.asyncio
     async def test_get_clients_fallback_empty(self):
@@ -261,6 +297,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/audio", status=404)
                 m.get("http://test:8018/audio/clients", body="")
+                m.get("http://test:8018/audio/server", payload=MOCK_AUDIO_SERVER_INFO)
 
                 result = await api.get_clients()
 

@@ -43,14 +43,14 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         self.api = api
 
     async def _async_update_data(self) -> dict[str, list]:
-        """Fetch audio clients from API."""
+        """Fetch audio data (clients + outputs) from API."""
         try:
-            clients = await self.api.get_clients()
-            return {"audio": clients}
+            data = await self.api.get_audio_data()
+            return {"audio": data["clients"], "outputs": data["outputs"]}
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
         except Exception as err:
-            _LOGGER.exception("Unexpected error fetching audio clients")
+            _LOGGER.exception("Unexpected error fetching audio data")
             raise UpdateFailed(f"Unexpected error: {err}") from err
 
     def handle_sse_event(self, event: SseEvent) -> None:
@@ -65,7 +65,7 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         updated_by_name = {c["name"]: c for c in event.data if "name" in c}
         result = [updated_by_name.pop(c.get("name"), c) for c in current]
         result.extend(updated_by_name.values())
-        self.async_set_updated_data({"audio": result})
+        self.async_set_updated_data({**(self.data or {}), "audio": result})
 
     def handle_sse_remove_event(self, event: SseEvent) -> None:
         """Handle an audio.removed SSE event.
@@ -86,7 +86,34 @@ class OdioAudioCoordinator(DataUpdateCoordinator[dict[str, list]]):
         }
         current = list((self.data or {}).get("audio", []))
         result = [removed_by_name.get(c.get("name"), c) for c in current]
-        self.async_set_updated_data({"audio": result})
+        self.async_set_updated_data({**(self.data or {}), "audio": result})
+
+    def handle_sse_output_event(self, event: SseEvent) -> None:
+        """Handle an audio.output.updated SSE event (merge into outputs list)."""
+        if not isinstance(event.data, list):
+            _LOGGER.warning(
+                "audio.output.updated: expected list, got %s", type(event.data).__name__
+            )
+            return
+        _LOGGER.debug("SSE audio.output.updated: %d outputs", len(event.data))
+        current = list((self.data or {}).get("outputs", []))
+        updated_by_name = {o["name"]: o for o in event.data if "name" in o}
+        result = [updated_by_name.pop(o.get("name"), o) for o in current]
+        result.extend(updated_by_name.values())
+        self.async_set_updated_data({**(self.data or {}), "outputs": result})
+
+    def handle_sse_output_remove_event(self, event: SseEvent) -> None:
+        """Handle an audio.output.removed SSE event (remove from outputs list)."""
+        if not isinstance(event.data, list):
+            _LOGGER.warning(
+                "audio.output.removed: expected list, got %s", type(event.data).__name__
+            )
+            return
+        _LOGGER.debug("SSE audio.output.removed: %d outputs", len(event.data))
+        removed_names = {o["name"] for o in event.data if "name" in o}
+        current = list((self.data or {}).get("outputs", []))
+        result = [o for o in current if o.get("name") not in removed_names]
+        self.async_set_updated_data({**(self.data or {}), "outputs": result})
 
 
 class OdioBluetoothCoordinator(DataUpdateCoordinator[dict[str, Any]]):

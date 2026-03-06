@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
@@ -10,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
-from .coordinator import OdioBluetoothCoordinator
+from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,16 +23,76 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Remote sensor entities."""
     rd = entry.runtime_data
-    if rd.bluetooth_coordinator is None:
-        return
+    entities: list[SensorEntity] = []
 
-    async_add_entities([
-        OdioBluetoothConnectedDeviceSensor(
-            rd.bluetooth_coordinator,
-            entry.entry_id,
-            rd.device_info,
+    if rd.audio_coordinator is not None:
+        entities.append(
+            OdioDefaultOutputSensor(
+                rd.audio_coordinator,
+                entry.entry_id,
+                rd.device_info,
+            )
         )
-    ])
+
+    if rd.bluetooth_coordinator is not None:
+        entities.append(
+            OdioBluetoothConnectedDeviceSensor(
+                rd.bluetooth_coordinator,
+                entry.entry_id,
+                rd.device_info,
+            )
+        )
+
+    if entities:
+        async_add_entities(entities)
+
+
+class OdioDefaultOutputSensor(
+    CoordinatorEntity[OdioAudioCoordinator], SensorEntity
+):
+    """Sensor reporting the description of the default audio output."""
+
+    _attr_translation_key = "default_output"
+    _attr_icon = "mdi:speaker"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: OdioAudioCoordinator,
+        entry_id: str,
+        device_info: DeviceInfo,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_default_output"
+        self._attr_device_info = device_info
+
+    def _get_default_output(self) -> dict[str, Any] | None:
+        """Return the default output dict, or None."""
+        if not self.coordinator.data:
+            return None
+        for output in self.coordinator.data.get("outputs", []):
+            if output.get("default"):
+                return output
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the description of the default audio output, or None."""
+        output = self._get_default_output()
+        if output is None:
+            return None
+        return output.get("description") or output.get("name")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return attributes of the default audio output."""
+        output = self._get_default_output()
+        if output is None:
+            return None
+        return {
+            k: v for k, v in output.items()
+            if k not in ("default", "props")
+        }
 
 
 class OdioBluetoothConnectedDeviceSensor(

@@ -54,6 +54,9 @@
       "bluetooth_pairing": {"name": "Pairing Bluetooth"}
     },
     "sensor": {
+      "default_output": {
+        "name": "Sortie par défaut"
+      },
       "bluetooth_connected_device": {
         "name": "Appareil Connecté",
         "state": {"none": "Aucun"}
