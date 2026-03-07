@@ -3,8 +3,6 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
-
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.odio_remote.api_client import SseEvent
@@ -13,6 +11,7 @@ from custom_components.odio_remote.coordinator import (
     OdioBluetoothCoordinator,
     OdioServiceCoordinator,
 )
+from custom_components.odio_remote.exceptions import OdioConnectionError, OdioTimeoutError
 
 from .conftest import MOCK_BLUETOOTH_STATUS, MOCK_CLIENTS, MOCK_OUTPUTS, MOCK_SERVICES
 
@@ -64,10 +63,10 @@ class TestOdioAudioCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_connection_error(self):
-        """ClientConnectorError is wrapped in UpdateFailed."""
+        """OdioConnectionError is wrapped in UpdateFailed."""
         api = MagicMock()
         api.get_audio_data = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
+            side_effect=OdioConnectionError("connection failed")
         )
         coord = _make_audio_coordinator(api)
 
@@ -76,9 +75,9 @@ class TestOdioAudioCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_timeout(self):
-        """TimeoutError is wrapped in UpdateFailed."""
+        """OdioTimeoutError is wrapped in UpdateFailed."""
         api = MagicMock()
-        api.get_audio_data = AsyncMock(side_effect=asyncio.TimeoutError())
+        api.get_audio_data = AsyncMock(side_effect=OdioTimeoutError("timeout"))
         coord = _make_audio_coordinator(api)
 
         with pytest.raises(UpdateFailed):
@@ -106,10 +105,10 @@ class TestOdioServiceCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_connection_error(self):
-        """ClientConnectorError is wrapped in UpdateFailed."""
+        """OdioConnectionError is wrapped in UpdateFailed."""
         api = MagicMock()
         api.get_services = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
+            side_effect=OdioConnectionError("connection failed")
         )
         coord = _make_service_coordinator(api)
 
@@ -118,9 +117,9 @@ class TestOdioServiceCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_timeout(self):
-        """TimeoutError is wrapped in UpdateFailed."""
+        """OdioTimeoutError is wrapped in UpdateFailed."""
         api = MagicMock()
-        api.get_services = AsyncMock(side_effect=asyncio.TimeoutError())
+        api.get_services = AsyncMock(side_effect=OdioTimeoutError("timeout"))
         coord = _make_service_coordinator(api)
 
         with pytest.raises(UpdateFailed):
@@ -363,10 +362,10 @@ class TestOdioBluetoothCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_connection_error(self):
-        """ClientConnectorError is wrapped in UpdateFailed."""
+        """OdioConnectionError is wrapped in UpdateFailed."""
         api = MagicMock()
         api.get_bluetooth_status = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
+            side_effect=OdioConnectionError("connection failed")
         )
         coord = _make_bluetooth_coordinator(api)
 
@@ -375,9 +374,9 @@ class TestOdioBluetoothCoordinator:
 
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_timeout(self):
-        """TimeoutError is wrapped in UpdateFailed."""
+        """OdioTimeoutError is wrapped in UpdateFailed."""
         api = MagicMock()
-        api.get_bluetooth_status = AsyncMock(side_effect=asyncio.TimeoutError())
+        api.get_bluetooth_status = AsyncMock(side_effect=OdioTimeoutError("timeout"))
         coord = _make_bluetooth_coordinator(api)
 
         with pytest.raises(UpdateFailed):

@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator
 
+PARALLEL_UPDATES = 0
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -25,19 +27,19 @@ async def async_setup_entry(
     rd = entry.runtime_data
     entities: list[SensorEntity] = []
 
-    if rd.audio_coordinator is not None:
+    if rd.coordinators.audio is not None:
         entities.append(
             OdioDefaultOutputSensor(
-                rd.audio_coordinator,
+                rd.coordinators.audio,
                 entry.entry_id,
                 rd.device_info,
             )
         )
 
-    if rd.bluetooth_coordinator is not None:
+    if rd.coordinators.bluetooth is not None:
         entities.append(
             OdioBluetoothConnectedDeviceSensor(
-                rd.bluetooth_coordinator,
+                rd.coordinators.bluetooth,
                 entry.entry_id,
                 rd.device_info,
             )

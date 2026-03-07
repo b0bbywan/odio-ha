@@ -19,6 +19,8 @@ from . import OdioConfigEntry
 from .coordinator import OdioBluetoothCoordinator
 from .event_stream import OdioEventStreamManager
 
+PARALLEL_UPDATES = 0
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -36,10 +38,10 @@ async def async_setup_entry(
             runtime_data.device_info,
         )
     ]
-    if runtime_data.bluetooth_coordinator is not None:
+    if runtime_data.coordinators.bluetooth is not None:
         entities.append(
             OdioBluetoothPairingActiveSensor(
-                runtime_data.bluetooth_coordinator,
+                runtime_data.coordinators.bluetooth,
                 entry.entry_id,
                 runtime_data.device_info,
             )

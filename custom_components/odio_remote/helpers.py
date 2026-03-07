@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import logging
 import socket
+from functools import wraps
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+
+from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,3 +43,30 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
 
     _LOGGER.debug("No device_tracker entity found for %s (%s)", ip, resolved)
     return None
+
+
+def api_command(func):
+    """Decorate an async entity action that calls the Odio API.
+
+    Acts as the boundary between the Odio domain and Home Assistant:
+    OdioError subtypes (raised by the API client) are translated into
+    HomeAssistantError so HA can surface meaningful errors to the user.
+
+    Programming errors (TypeError, AttributeError, etc.) are intentionally
+    not caught — they bubble up naturally and appear in HA logs as real bugs.
+    """
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except HomeAssistantError:
+            raise
+        except OdioTimeoutError as err:
+            raise HomeAssistantError(str(err)) from err
+        except OdioConnectionError as err:
+            raise HomeAssistantError(str(err)) from err
+        except OdioApiError as err:
+            raise HomeAssistantError(str(err)) from err
+
+    return wrapper

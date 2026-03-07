@@ -11,6 +11,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .event_stream import OdioEventStreamManager
+from .helpers import api_command
+
+PARALLEL_UPDATES = 0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,11 +31,11 @@ async def async_setup_entry(
     event_stream = entry.runtime_data.event_stream
 
     entities: list[ButtonEntity] = []
-    if caps.get("power_off"):
+    if caps.power_off:
         entities.append(OdioPowerOffButton(event_stream, api, entry_id, device_info))
-    if caps.get("reboot"):
+    if caps.reboot:
         entities.append(OdioRebootButton(event_stream, api, entry_id, device_info))
-    if entry.runtime_data.bluetooth_coordinator is not None:
+    if entry.runtime_data.coordinators.bluetooth is not None:
         entities.append(OdioBluetoothPairingButton(event_stream, api, entry_id, device_info))
 
     async_add_entities(entities)
@@ -82,6 +85,7 @@ class OdioPowerOffButton(_OdioPowerButtonBase):
         super().__init__(event_stream, api, entry_id, device_info)
         self._attr_unique_id = f"{entry_id}_power_off"
 
+    @api_command
     async def async_press(self) -> None:
         """Handle the button press."""
         await self._api.power_off()
@@ -103,6 +107,7 @@ class OdioRebootButton(_OdioPowerButtonBase):
         super().__init__(event_stream, api, entry_id, device_info)
         self._attr_unique_id = f"{entry_id}_reboot"
 
+    @api_command
     async def async_press(self) -> None:
         """Handle the button press."""
         await self._api.reboot()
@@ -125,6 +130,7 @@ class OdioBluetoothPairingButton(_OdioPowerButtonBase):
         super().__init__(event_stream, api, entry_id, device_info)
         self._attr_unique_id = f"{entry_id}_bluetooth_pairing"
 
+    @api_command
     async def async_press(self) -> None:
         """Handle the button press."""
         await self._api.bluetooth_pairing_mode()

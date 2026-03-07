@@ -288,6 +288,183 @@ class TestEventStreamManagerDispatch:
         assert called == [True]
 
 
+class TestEventStreamManagerRunLoop:
+    """Tests for _run_loop, _consume_stream, _handle_server_info."""
+
+    @pytest.mark.asyncio
+    async def test_consume_stream_dispatches_events(self):
+        """Test that _consume_stream dispatches non-server.info events."""
+        _make_sse_bytes(
+            ("server.info", "connected"),
+            ("audio.updated", [{"id": 1}]),
+        )
+        manager = _make_manager(backends=["audio"])
+        received = []
+        manager.async_add_event_listener("audio.updated", received.append)
+
+        async def _fake_listen(**kwargs):
+            for e in [
+                SseEvent(type="server.info", data="connected"),
+                SseEvent(type="audio.updated", data=[{"id": 1}]),
+            ]:
+                yield e
+
+        manager._api.listen_events = _fake_listen
+        await manager._consume_stream()
+
+        assert len(received) == 1
+        assert received[0].type == "audio.updated"
+
+    @pytest.mark.asyncio
+    async def test_consume_stream_no_backends_waits(self):
+        """Test that _consume_stream with no backends sets connected and waits."""
+        manager = _make_manager(backends=[])
+        connected_states = []
+        manager.async_add_listener(lambda: connected_states.append(manager.sse_connected))
+
+        # Signal stop so _consume_stream returns immediately
+        manager._stop_event.set()
+        await manager._consume_stream()
+
+        assert True in connected_states
+
+    def test_handle_server_info_connected(self):
+        """Test server.info 'connected' sets sse_connected to True."""
+        manager = _make_manager()
+        assert not manager.sse_connected
+        manager._handle_server_info(SseEvent(type="server.info", data="connected"))
+        assert manager.sse_connected
+
+    def test_handle_server_info_love(self):
+        """Test server.info 'love' keepalive doesn't change state."""
+        manager = _make_manager()
+        manager._handle_server_info(SseEvent(type="server.info", data="connected"))
+        assert manager.sse_connected
+        manager._handle_server_info(SseEvent(type="server.info", data="love"))
+        assert manager.sse_connected
+
+    def test_handle_server_info_bye(self):
+        """Test server.info 'bye' doesn't crash."""
+        manager = _make_manager()
+        manager._handle_server_info(SseEvent(type="server.info", data="bye"))
+
+    def test_handle_server_info_unknown(self):
+        """Test server.info with unknown data doesn't crash."""
+        manager = _make_manager()
+        manager._handle_server_info(SseEvent(type="server.info", data="unknown_value"))
+
+    @pytest.mark.asyncio
+    async def test_run_loop_reconnects_on_client_error(self):
+        """Test _run_loop reconnects after aiohttp.ClientError."""
+        import aiohttp
+
+        manager = _make_manager(backends=["audio"])
+        call_count = 0
+
+        async def _fake_consume():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise aiohttp.ClientError("connection lost")
+            manager._stop_event.set()
+
+        manager._consume_stream = _fake_consume
+
+        # Use a very short backoff by patching constants
+        with patch("custom_components.odio_remote.event_stream.SSE_RECONNECT_MIN_INTERVAL", 0.01):
+            await manager._run_loop()
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_loop_reconnects_on_timeout(self):
+        """Test _run_loop reconnects after TimeoutError."""
+        manager = _make_manager(backends=["audio"])
+        call_count = 0
+
+        async def _fake_consume():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise asyncio.TimeoutError()
+            manager._stop_event.set()
+
+        manager._consume_stream = _fake_consume
+        with patch("custom_components.odio_remote.event_stream.SSE_RECONNECT_MIN_INTERVAL", 0.01):
+            await manager._run_loop()
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_loop_stops_on_cancel(self):
+        """Test _run_loop returns on CancelledError."""
+        manager = _make_manager(backends=["audio"])
+
+        async def _fake_consume():
+            raise asyncio.CancelledError()
+
+        manager._consume_stream = _fake_consume
+        await manager._run_loop()
+
+    @pytest.mark.asyncio
+    async def test_run_loop_reconnects_on_unexpected_error(self):
+        """Test _run_loop reconnects after unexpected exception."""
+        manager = _make_manager(backends=["audio"])
+        call_count = 0
+
+        async def _fake_consume():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("unexpected")
+            manager._stop_event.set()
+
+        manager._consume_stream = _fake_consume
+        with patch("custom_components.odio_remote.event_stream.SSE_RECONNECT_MIN_INTERVAL", 0.01):
+            await manager._run_loop()
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_loop_sets_disconnected_on_error(self):
+        """Test _run_loop sets sse_connected to False after error."""
+        manager = _make_manager(backends=["audio"])
+        manager._set_sse_connected(True)
+
+        async def _fake_consume():
+            raise asyncio.TimeoutError()
+
+        manager._consume_stream = _fake_consume
+
+        # Stop after first reconnect attempt
+        async def _stop_after_disconnect():
+            await asyncio.sleep(0.05)
+            manager._stop_event.set()
+
+        with patch("custom_components.odio_remote.event_stream.SSE_RECONNECT_MIN_INTERVAL", 0.01):
+            await asyncio.gather(manager._run_loop(), _stop_after_disconnect())
+
+        assert not manager.sse_connected
+
+    @pytest.mark.asyncio
+    async def test_run_loop_clean_end_reconnects_fast(self):
+        """Test _run_loop reconnects quickly after clean stream end."""
+        manager = _make_manager(backends=["audio"])
+        call_count = 0
+
+        async def _fake_consume():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                manager._stop_event.set()
+
+        manager._consume_stream = _fake_consume
+        with patch("custom_components.odio_remote.event_stream.SSE_RECONNECT_MIN_INTERVAL", 0.01):
+            await manager._run_loop()
+
+        assert call_count == 2
+
+
 class TestEventStreamManagerLifecycle:
     """Tests for start/stop lifecycle."""
 

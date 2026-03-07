@@ -8,6 +8,11 @@ from aioresponses import aioresponses
 from unittest.mock import MagicMock
 
 from custom_components.odio_remote.api_client import OdioApiClient
+from custom_components.odio_remote.exceptions import (
+    OdioApiError,
+    OdioConnectionError,
+    OdioTimeoutError,
+)
 
 from .conftest import (
     MOCK_SERVER_INFO,
@@ -73,7 +78,7 @@ class TestOdioApiClientErrors:
             with aioresponses() as m:
                 m.get("http://test:8018/server", exception=asyncio.TimeoutError())
 
-                with pytest.raises(asyncio.TimeoutError):
+                with pytest.raises(OdioTimeoutError):
                     await api.get("/server")
 
     @pytest.mark.asyncio
@@ -88,7 +93,7 @@ class TestOdioApiClientErrors:
                     exception=aiohttp.ClientConnectorError(MagicMock(), OSError()),
                 )
 
-                with pytest.raises(aiohttp.ClientConnectorError):
+                with pytest.raises(OdioConnectionError):
                     await api.get("/server")
 
     @pytest.mark.asyncio
@@ -100,7 +105,7 @@ class TestOdioApiClientErrors:
             with aioresponses() as m:
                 m.get("http://test:8018/server", status=500)
 
-                with pytest.raises(aiohttp.ClientResponseError):
+                with pytest.raises(OdioApiError):
                     await api.get("/server")
 
 
@@ -133,7 +138,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/server", payload=["not", "a", "dict"])
 
-                with pytest.raises(ValueError, match="Expected dict"):
+                with pytest.raises(OdioApiError, match="Expected dict"):
                     await api.get_server_info()
 
     @pytest.mark.asyncio
@@ -161,7 +166,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/audio/server", payload=["not", "a", "dict"])
 
-                with pytest.raises(ValueError, match="Expected dict"):
+                with pytest.raises(OdioApiError, match="Expected dict"):
                     await api.get_audio_server_info()
 
     @pytest.mark.asyncio
@@ -219,7 +224,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/audio", payload=["not", "a", "dict"])
 
-                with pytest.raises(ValueError, match="Expected dict"):
+                with pytest.raises(OdioApiError, match="Expected dict"):
                     await api.get_clients()
 
     @pytest.mark.asyncio
@@ -234,7 +239,7 @@ class TestOdioApiClientEndpoints:
                     payload={"clients": "not a list", "kind": "pipewire"},
                 )
 
-                with pytest.raises(ValueError, match="Expected list"):
+                with pytest.raises(OdioApiError, match="Expected list"):
                     await api.get_clients()
 
     @pytest.mark.asyncio
@@ -312,7 +317,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/audio", status=500)
 
-                with pytest.raises(aiohttp.ClientResponseError):
+                with pytest.raises(OdioApiError):
                     await api.get_clients()
 
     @pytest.mark.asyncio
@@ -356,7 +361,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/services", payload={"not": "a list"})
 
-                with pytest.raises(ValueError, match="Expected list"):
+                with pytest.raises(OdioApiError, match="Expected list"):
                     await api.get_services()
 
     @pytest.mark.asyncio
@@ -382,7 +387,7 @@ class TestOdioApiClientEndpoints:
             with aioresponses() as m:
                 m.get("http://test:8018/power", payload=["not", "a", "dict"])
 
-                with pytest.raises(ValueError, match="Expected dict"):
+                with pytest.raises(OdioApiError, match="Expected dict"):
                     await api.get_power_capabilities()
 
 
@@ -583,6 +588,218 @@ class TestOdioApiClientServiceControl:
 
             with pytest.raises(ValueError, match="Unknown service action"):
                 await api.control_service("invalid_action", "user", "kodi.service")
+
+
+class TestOdioApiClientBluetooth:
+    """Tests for Bluetooth control methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_bluetooth_status(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get("http://test:8018/bluetooth", payload={"powered": True, "discoverable": False})
+                result = await api.get_bluetooth_status()
+                assert result["powered"] is True
+
+    @pytest.mark.asyncio
+    async def test_get_bluetooth_status_invalid_response(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get("http://test:8018/bluetooth", payload=["not", "a", "dict"])
+                with pytest.raises(OdioApiError, match="Expected dict"):
+                    await api.get_bluetooth_status()
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_power_up(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/power_up", status=204)
+                await api.bluetooth_power_up()
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_power_down(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/power_down", status=204)
+                await api.bluetooth_power_down()
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_pairing_mode(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/pairing_mode", status=204)
+                await api.bluetooth_pairing_mode()
+                assert len(m.requests) == 1
+
+
+class TestOdioApiClientMPRIS:
+    """Tests for MPRIS player control methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_players(self):
+        from unittest.mock import patch, AsyncMock
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            mock_resp = AsyncMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.json = AsyncMock(return_value=[{"bus_name": "org.mpris.MediaPlayer2.spotify"}])
+            mock_resp.headers = {"x-cache-updated-at": "2025-01-01T00:00:00Z"}
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+            with patch.object(session, "get", return_value=mock_resp):
+                players, cache_ts = await api.get_players()
+
+            assert len(players) == 1
+            assert players[0]["bus_name"] == "org.mpris.MediaPlayer2.spotify"
+            assert cache_ts == "2025-01-01T00:00:00Z"
+
+    @pytest.mark.asyncio
+    async def test_get_players_invalid_response(self):
+        from unittest.mock import patch, AsyncMock
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+
+            mock_resp = AsyncMock()
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.json = AsyncMock(return_value={"not": "a list"})
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+            with patch.object(session, "get", return_value=mock_resp):
+                with pytest.raises(OdioApiError, match="Expected list"):
+                    await api.get_players()
+
+    @pytest.mark.asyncio
+    async def test_get_players_404_returns_empty(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get("http://test:8018/players", status=404)
+                players, cache_ts = await api.get_players()
+                assert players == []
+                assert cache_ts is None
+
+    @pytest.mark.asyncio
+    async def test_player_play(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/play", status=204)
+                await api.player_play("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_pause(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/pause", status=204)
+                await api.player_pause("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_play_pause(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/play_pause", status=204)
+                await api.player_play_pause("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_stop(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/stop", status=204)
+                await api.player_stop("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_next(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/next", status=204)
+                await api.player_next("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_previous(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/previous", status=204)
+                await api.player_previous("org.mpris.MediaPlayer2.spotify")
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_player_seek(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/seek", status=204)
+                await api.player_seek("org.mpris.MediaPlayer2.spotify", 5000000)
+                request = list(m.requests.values())[0][0]
+                assert request.kwargs["json"] == {"offset": 5000000}
+
+    @pytest.mark.asyncio
+    async def test_player_set_position(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/position", status=204)
+                await api.player_set_position("org.mpris.MediaPlayer2.spotify", "/track/1", 30000000)
+                request = list(m.requests.values())[0][0]
+                assert request.kwargs["json"] == {"track_id": "/track/1", "position": 30000000}
+
+    @pytest.mark.asyncio
+    async def test_player_set_volume(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/volume", status=204)
+                await api.player_set_volume("org.mpris.MediaPlayer2.spotify", 0.75)
+                request = list(m.requests.values())[0][0]
+                assert request.kwargs["json"] == {"volume": 0.75}
+
+    @pytest.mark.asyncio
+    async def test_player_set_loop(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/loop", status=204)
+                await api.player_set_loop("org.mpris.MediaPlayer2.spotify", "Track")
+                request = list(m.requests.values())[0][0]
+                assert request.kwargs["json"] == {"loop": "Track"}
+
+    @pytest.mark.asyncio
+    async def test_player_set_shuffle(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/shuffle", status=204)
+                await api.player_set_shuffle("org.mpris.MediaPlayer2.spotify", True)
+                request = list(m.requests.values())[0][0]
+                assert request.kwargs["json"] == {"shuffle": True}
+
+    @pytest.mark.asyncio
+    async def test_player_url_encodes_name(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/players/org.mpris.MediaPlayer2.firefox.instance%231/play", status=204)
+                await api.player_play("org.mpris.MediaPlayer2.firefox.instance#1")
+                assert len(m.requests) == 1
 
 
 if __name__ == "__main__":

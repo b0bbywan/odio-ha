@@ -15,6 +15,9 @@ from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .coordinator import OdioBluetoothCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
+from .helpers import api_command
+
+PARALLEL_UPDATES = 0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,10 +84,10 @@ async def async_setup_entry(
     rd = entry.runtime_data
     entities: list[SwitchEntity] = []
 
-    if rd.bluetooth_coordinator is not None:
+    if rd.coordinators.bluetooth is not None:
         entities.append(
             OdioBluetoothSwitch(
-                rd.bluetooth_coordinator,
+                rd.coordinators.bluetooth,
                 rd.api,
                 entry.entry_id,
                 rd.device_info,
@@ -92,7 +95,7 @@ async def async_setup_entry(
             )
         )
 
-    service_coordinator = rd.service_coordinator
+    service_coordinator = rd.coordinators.service
     if service_coordinator is not None:
         ctx, service_switches = _build_service_switches(entry, service_coordinator)
         entities += service_switches
@@ -187,12 +190,14 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
             and bool(self.coordinator.data)
         )
 
+    @api_command
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start the service."""
         await self._api.control_service(
             "start", self._service_info["scope"], self._service_info["name"]
         )
 
+    @api_command
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Stop the service."""
         await self._api.control_service(
@@ -248,11 +253,13 @@ class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEnt
             and bool(self.coordinator.data)
         )
 
+    @api_command
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Power on Bluetooth adapter."""
         await self._api.bluetooth_power_up()
         await self.coordinator.async_refresh()
 
+    @api_command
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Power off Bluetooth adapter."""
         await self._api.bluetooth_power_down()

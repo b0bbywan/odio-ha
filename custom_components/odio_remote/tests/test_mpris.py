@@ -5,13 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import aiohttp
-
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState, RepeatMode
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.odio_remote.api_client import SseEvent
 from custom_components.odio_remote.coordinator import OdioMPRISCoordinator
+from custom_components.odio_remote.exceptions import OdioConnectionError, OdioTimeoutError
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
 
 from .conftest import MOCK_DEVICE_INFO, MOCK_PLAYERS
@@ -119,7 +118,7 @@ class TestMPRISCoordinatorFetch:
     async def test_raises_update_failed_on_connection_error(self):
         api = MagicMock()
         api.get_players = AsyncMock(
-            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError())
+            side_effect=OdioConnectionError("connection failed")
         )
         coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
 
@@ -129,7 +128,7 @@ class TestMPRISCoordinatorFetch:
     @pytest.mark.asyncio
     async def test_raises_update_failed_on_timeout(self):
         api = MagicMock()
-        api.get_players = AsyncMock(side_effect=asyncio.TimeoutError())
+        api.get_players = AsyncMock(side_effect=OdioTimeoutError("timeout"))
         coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
 
         with pytest.raises(UpdateFailed):
