@@ -58,7 +58,7 @@ jobs:
 
     - name: Create GitHub release
       if: steps.tag.outputs.skip == 'false'
-      uses: softprops/action-gh-release@v3
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.tag }}
         prerelease: ${{ steps.tag.outputs.prerelease }}
