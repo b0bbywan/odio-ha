@@ -846,7 +846,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
     def available(self) -> bool:
         """Return True if the player is reported by the coordinator and not removed."""
         player = self._player_data
-        return self.coordinator.last_update_success and player is not None and player.get("available", True)
+        return self._event_stream.sse_connected and self.coordinator.last_update_success and player is not None and player.get("available", True)
 
     @property
     def _player_data(self) -> dict[str, Any] | None:

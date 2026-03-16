@@ -367,6 +367,11 @@ class TestMPRISEntityProperties:
         entity = _make_entity(MOCK_SPOTIFY, last_update_success=False)
         assert entity.available is False
 
+    def test_available_false_when_sse_disconnected(self):
+        entity = _make_entity(MOCK_SPOTIFY)
+        entity._event_stream.sse_connected = False
+        assert entity.available is False
+
     def test_media_position_converts_us_to_seconds(self):
         """28962000 µs → 28 seconds."""
         entity = _make_entity({**MOCK_SPOTIFY, "position": 28962000})
