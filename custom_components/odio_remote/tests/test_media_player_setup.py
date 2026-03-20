@@ -189,6 +189,18 @@ class TestBuildMprisEntities:
         entities = _build_mpris_entities(ctx)
         assert entities == []
 
+    def test_deduplicates_same_app_name(self):
+        players = [
+            {**MOCK_PLAYERS[1], "bus_name": "org.mpris.MediaPlayer2.chromium.instance1"},
+            {**MOCK_PLAYERS[1], "bus_name": "org.mpris.MediaPlayer2.chromium.instance2"},
+            {**MOCK_PLAYERS[1], "bus_name": "org.mpris.MediaPlayer2.chromium.instance3"},
+        ]
+        coord = _make_coordinator({"mpris": players})
+        ctx = _make_ctx(mpris_coordinator=coord)
+        entities = _build_mpris_entities(ctx)
+        assert len(entities) == 1
+        assert entities[0]._player_name == "org.mpris.MediaPlayer2.chromium.instance1"
+
 
 # ---------------------------------------------------------------------------
 # _register_dynamic_services
@@ -362,3 +374,53 @@ class TestRegisterDynamicMpris:
         listener = coord.async_add_listener.call_args[0][0]
         listener()
         async_add.assert_not_called()
+
+    def test_listener_skips_same_app_name(self):
+        # Start with chromium.instance1 already registered
+        coord = _make_coordinator({"mpris": [MOCK_PLAYERS[1]]})
+        ctx = _make_ctx(mpris_coordinator=coord)
+        initial = _build_mpris_entities(ctx)
+        entry = _make_entry(ctx)
+        async_add = MagicMock()
+        _register_dynamic_mpris(entry, ctx, async_add, initial)
+
+        # A new chromium instance appears — should be ignored (same app name)
+        coord.data = {"mpris": [
+            MOCK_PLAYERS[1],
+            {**MOCK_PLAYERS[1], "bus_name": "org.mpris.MediaPlayer2.chromium.instance2"},
+        ]}
+        listener = coord.async_add_listener.call_args[0][0]
+        listener()
+        async_add.assert_not_called()
+
+    def test_listener_rebinds_unavailable_entity_to_new_bus_name(self):
+        # chromium.instance1 starts available, then gets removed
+        coord = _make_coordinator({"mpris": [MOCK_PLAYERS[1]]})
+        ctx = _make_ctx(mpris_coordinator=coord)
+        initial = _build_mpris_entities(ctx)
+        assert len(initial) == 1
+        entity = initial[0]
+        assert entity._player_name == "org.mpris.MediaPlayer2.chromium.instance1"
+
+        entry = _make_entry(ctx)
+        async_add = MagicMock()
+        _register_dynamic_mpris(entry, ctx, async_add, initial)
+
+        # Simulate instance1 removed: entity is now unavailable (available=False in data)
+        instance2_bus = "org.mpris.MediaPlayer2.chromium.instance2"
+        coord.data = {"mpris": [
+            {**MOCK_PLAYERS[1], "available": False},
+            {**MOCK_PLAYERS[1], "bus_name": instance2_bus, "playback_status": "Playing"},
+        ]}
+        # Make the entity's available property return False (SSE connected but player unavailable)
+        entity._event_stream.sse_connected = True
+        entity.coordinator.last_update_success = True
+        entity.async_write_ha_state = MagicMock()
+
+        listener = coord.async_add_listener.call_args[0][0]
+        listener()
+
+        # No new entity created — existing one was rebound
+        async_add.assert_not_called()
+        assert entity._player_name == instance2_bus
+        entity.async_write_ha_state.assert_called_once()

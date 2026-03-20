@@ -120,13 +120,24 @@ def _build_remote_client_entities(
 def _build_mpris_entities(
     ctx: _MediaPlayerContext,
 ) -> list[MediaPlayerEntity]:
-    """Build MPRIS media player entities from coordinator data."""
+    """Build MPRIS media player entities from coordinator data.
+
+    Deduplicates by app name so multi-instance players (e.g. Chrome) produce
+    only one entity.
+    """
     entities: list[MediaPlayerEntity] = []
     if ctx.mpris_coordinator is None or not ctx.mpris_coordinator.data:
         return entities
+    seen_app_names: set[str] = set()
     for player in ctx.mpris_coordinator.data.get("mpris", []):
-        if player.get("bus_name") and player.get("available", True):
-            entities.append(OdioMPRISMediaPlayer(ctx, player))
+        bus_name = player.get("bus_name")
+        if not bus_name or not player.get("available", True):
+            continue
+        app_name = _extract_mpris_app_name(bus_name)
+        if app_name in seen_app_names:
+            continue
+        seen_app_names.add(app_name)
+        entities.append(OdioMPRISMediaPlayer(ctx, player))
     return entities
 
 
@@ -234,6 +245,9 @@ def _register_dynamic_mpris(
         for entity in initial_entities
         if isinstance(entity, OdioMPRISMediaPlayer)
     }
+    known_app_names: set[str] = {
+        _extract_mpris_app_name(bus_name) for bus_name in known_mpris_players
+    }
 
     @callback
     def _async_check_new_mpris_players() -> None:
@@ -246,9 +260,29 @@ def _register_dynamic_mpris(
                 continue
             if not player.get("available", True):
                 continue
+            app_name = _extract_mpris_app_name(bus_name)
+            if app_name in known_app_names:
+                # The app already has an entity — rebind it if it is currently
+                # unavailable (e.g. Chrome restarted with a new bus_name / PID).
+                existing = next(
+                    (
+                        e for e in known_mpris_players.values()
+                        if _extract_mpris_app_name(e._player_name) == app_name
+                        and not e.available
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    old_bus_name = existing._player_name
+                    existing._player_name = bus_name
+                    known_mpris_players.pop(old_bus_name, None)
+                    known_mpris_players[bus_name] = existing
+                    existing.async_write_ha_state()
+                continue
             entity = OdioMPRISMediaPlayer(ctx, player)
             new_entities.append(entity)
             known_mpris_players[bus_name] = entity
+            known_app_names.add(app_name)
         if new_entities:
             _LOGGER.info("Adding %d new MPRIS player entities", len(new_entities))
             async_add_entities(new_entities)
