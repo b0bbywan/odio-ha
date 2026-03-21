@@ -350,6 +350,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         self._backends = ctx.backends
         self._audio_coordinator = ctx.audio_coordinator
         self._service_coordinator = ctx.service_coordinator
+        self._mpris_coordinator = ctx.mpris_coordinator
         self._api_client = ctx.api
         self._attr_unique_id = f"{ctx.entry_id}_receiver"
         self._attr_device_info = ctx.device_info
@@ -369,6 +370,12 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         if self._service_coordinator is not None:
             self.async_on_remove(
                 self._service_coordinator.async_add_listener(
+                    self._handle_coordinator_update
+                )
+            )
+        if self._mpris_coordinator is not None:
+            self.async_on_remove(
+                self._mpris_coordinator.async_add_listener(
                     self._handle_coordinator_update
                 )
             )
@@ -404,7 +411,15 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
 
         clients = audio_data.get("audio", [])
         has_active_client = any(not c.get("corked", True) for c in clients)
-        return MediaPlayerState.PLAYING if has_active_client else MediaPlayerState.IDLE
+        if has_active_client:
+            return MediaPlayerState.PLAYING
+
+        if self._mpris_coordinator is not None and self._mpris_coordinator.data:
+            mpris_players = self._mpris_coordinator.data.get("mpris", [])
+            if any(p.get("playback_status") == "Playing" for p in mpris_players):
+                return MediaPlayerState.PLAYING
+
+        return MediaPlayerState.IDLE
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
