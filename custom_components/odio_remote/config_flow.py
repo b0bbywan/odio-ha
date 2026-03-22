@@ -391,6 +391,33 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration (e.g. changing the port)."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            api_url = user_input[CONF_API_URL]
+            errors = await self._async_validate_api_url(api_url)
+
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={CONF_API_URL: api_url},
+                )
+
+        current_url = self._get_reconfigure_entry().data.get(
+            CONF_API_URL, "http://localhost:8018"
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, {CONF_API_URL: current_url}
+            ),
+            errors=errors,
+        )
+
     def _create_entry(self) -> ConfigFlowResult:
         """Create the config entry."""
         return self.async_create_entry(
