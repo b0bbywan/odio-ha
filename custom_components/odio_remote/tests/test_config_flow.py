@@ -1222,5 +1222,87 @@ class TestValidationHelpers:
         assert isinstance(result, OdioOptionsFlow)
 
 
+# =============================================================================
+# Config Flow: async_step_reconfigure
+# =============================================================================
+
+
+class TestConfigFlowReconfigure:
+    """Tests for the reconfigure step of the config flow."""
+
+    def _create_reconfigure_flow(self, current_url="http://test:8018"):
+        """Create a config flow ready for reconfigure."""
+        flow = _create_config_flow()
+        mock_entry = MagicMock()
+        mock_entry.data = {CONF_API_URL: current_url}
+        flow._get_reconfigure_entry = MagicMock(return_value=mock_entry)
+        flow.async_update_reload_and_abort = MagicMock(
+            return_value={"type": FlowResultType.ABORT, "reason": "reconfigure_successful"}
+        )
+        return flow
+
+    @pytest.mark.asyncio
+    async def test_shows_form_prefilled_with_current_url(self):
+        """Reconfigure form is shown pre-filled with current API URL."""
+        flow = self._create_reconfigure_flow(current_url="http://test:8018")
+
+        result = await flow.async_step_reconfigure(user_input=None)
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "reconfigure"
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_validate_api",
+        return_value=MOCK_API_INFO,
+    )
+    async def test_success_updates_entry(self, mock_validate):
+        """Valid new URL updates the config entry and reloads."""
+        flow = self._create_reconfigure_flow(current_url="http://test:8018")
+
+        result = await flow.async_step_reconfigure(
+            user_input={CONF_API_URL: "http://test:9999"}
+        )
+
+        flow.async_update_reload_and_abort.assert_called_once_with(
+            flow._get_reconfigure_entry(),
+            data_updates={CONF_API_URL: "http://test:9999"},
+        )
+        assert result["type"] is FlowResultType.ABORT
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_validate_api",
+        side_effect=CannotConnect,
+    )
+    async def test_cannot_connect_shows_error(self, mock_validate):
+        """Connection failure shows error on form."""
+        flow = self._create_reconfigure_flow()
+
+        result = await flow.async_step_reconfigure(
+            user_input={CONF_API_URL: "http://bad:9999"}
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "reconfigure"
+        assert result["errors"] == {"base": "cannot_connect"}
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.config_flow.async_validate_api",
+        side_effect=InvalidResponse,
+    )
+    async def test_invalid_response_shows_error(self, mock_validate):
+        """Invalid API response shows error on form."""
+        flow = self._create_reconfigure_flow()
+
+        result = await flow.async_step_reconfigure(
+            user_input={CONF_API_URL: "http://test:9999"}
+        )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "invalid_response"}
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

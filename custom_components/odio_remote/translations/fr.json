@@ -21,6 +21,16 @@
           "keepalive_interval": "Intervalle de heartbeat serveur, 10-120s (recommandé : 30s)"
         }
       },
+      "reconfigure": {
+        "title": "Reconfigurer Odio Remote",
+        "description": "Mettez à jour l'URL de l'API (ex: si le port a changé)",
+        "data": {
+          "api_url": "URL de l'API"
+        },
+        "data_description": {
+          "api_url": "L'URL de base de votre API go-odio-api (ex: http://192.168.1.100:8018)"
+        }
+      },
       "zeroconf_confirm": {
         "title": "Odio Remote découvert",
         "description": "Odio Remote a été découvert sur votre réseau à **{host}** ({api_url}). Voulez-vous l'ajouter ?"
@@ -40,7 +50,8 @@
     },
     "abort": {
       "already_configured": "Cette API est déjà configurée",
-      "cannot_connect": "Impossible de se connecter à l'API"
+      "cannot_connect": "Impossible de se connecter à l'API",
+      "reconfigure_successful": "URL de l'API mise à jour avec succès"
     }
   },
   "entity": {
