@@ -7,7 +7,7 @@
   "zeroconf": [
     {"type": "_http._tcp.local.", "name": "odio-api*"}
   ],
-  "documentation": "https://github.com/b0bbywan/odio-ha",
+  "documentation": "https://docs.odio.love/guides/home-assistant/",
   "iot_class": "local_push",
   "integration_type": "device",
   "issue_tracker": "https://github.com/b0bbywan/odio-ha/issues",
