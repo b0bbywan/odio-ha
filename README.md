@@ -1,4 +1,34 @@
-# Odio Remote - Home Assistant Integration
+<p align="center">                                    
+  <a href="https://odio.love"><img src="https://odio.love/logo.png" alt="odio" width="160" /></a>   
+  </p>
+  <h1 align="center">odio-ha</h1>
+  <p align="center"><em>Native Home Assistant integration for odio, every node exposed as HA entities.</em></p>
+  <p align="center">
+  <a href="https://github.com/b0bbywan/odio-ha/releases"><img src="https://img.shields.io/github/v/release/b0bbywan/odio-ha?include_prereleases" alt="Release" /></a>
+  <a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/#silver"><img src="https://img.shields.io/badge/HA%20integration-Silver-A8A8A8?logo=homeassistant&logoColor=white" alt="Home    
+  Assistant Silver integration" /></a>
+  <a href="https://github.com/b0bbywan/odio-ha/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+  <a href="https://github.com/b0bbywan/odio-ha/actions/workflows/ci.yml"><img src="https://github.com/b0bbywan/odio-ha/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/sponsors/b0bbywan"><img src="https://img.shields.io/github/sponsors/b0bbywan?label=Sponsor&logo=GitHub" alt="GitHub Sponsors" /></a>   
+  </p>
+  <p align="center"> 
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=b0bbywan&repository=odio-ha&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Add to HACS" 
+  /></a>
+  <a href="https://docs.odio.love/guides/home-assistant/#media-players"><img src="https://img.shields.io/badge/Media%20players-1DB954" alt="Media players" /></a>
+  <a href="https://docs.odio.love/guides/home-assistant/#real-time-updates"><img src="https://img.shields.io/badge/Real--time%20SSE-F97316" alt="Real-time SSE" /></a>
+  <a href="https://docs.odio.love/api/zeroconf/"><img src="https://img.shields.io/badge/Zeroconf%20discovery-6B21A8" alt="Zeroconf discovery" /></a>   
+  </p>
+  <p align="center">   
+  Part of the <a href="https://odio.love">odio</a> project — <a href="https://docs.odio.love/guides/home-assistant/">full documentation</a>.
+  </p>
+  <p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" /></a>
+  <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-18BCF2?logo=homeassistant&logoColor=white" alt="Home Assistant" /></a>
+  <a href="https://hacs.xyz/"><img src="https://img.shields.io/badge/HACS-03A9F4" alt="HACS" /></a>
+  <a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/GitHub%20Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions" /></a>
+  </p>
+  
+  # Odio Remote - Home Assistant Integration
 
 Control your Linux multimedia setup remotely from Home Assistant.
 
