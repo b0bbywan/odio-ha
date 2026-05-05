@@ -9,6 +9,8 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
     RepeatMode,
 )
+from homeassistant.core import callback
+from homeassistant.helpers.event import async_track_state_change_event
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,6 +28,28 @@ class MappedEntityMixin:
 
     coordinator: Any
     hass: Any
+
+    async def async_added_to_hass(self) -> None:
+        """Track state changes of the mapped entity.
+
+        Without this, properties delegated to the mapped entity (media_title,
+        position, etc.) only refresh when our own coordinator pushes an update.
+        Under SSE that happens rarely, so the wrapper would appear frozen
+        whenever the underlying player's state changed independently.
+        """
+        await super().async_added_to_hass()  # type: ignore[misc]
+        mapped = self._mapped_entity
+        if mapped:
+            self.async_on_remove(  # type: ignore[attr-defined]
+                async_track_state_change_event(
+                    self.hass, [mapped], self._handle_mapped_state_change
+                )
+            )
+
+    @callback
+    def _handle_mapped_state_change(self, event) -> None:
+        """Refresh this entity when the mapped entity's state changes."""
+        self.async_write_ha_state()  # type: ignore[attr-defined]
 
     @property
     def _mapping_key(self) -> str:
