@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import socket
 from functools import wraps
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -11,6 +12,9 @@ from homeassistant.exceptions import HomeAssistantError
 from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
@@ -45,7 +49,9 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
     return None
 
 
-def api_command(func):
+def api_command(
+    func: Callable[_P, Coroutine[Any, Any, _R]],
+) -> Callable[_P, Coroutine[Any, Any, _R]]:
     """Decorate an async entity action that calls the Odio API.
 
     Acts as the boundary between the Odio domain and Home Assistant:
@@ -57,7 +63,7 @@ def api_command(func):
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         try:
             return await func(*args, **kwargs)
         except HomeAssistantError:
