@@ -1,3 +1,0 @@
-[flake8]
-# Ignore les erreurs de longueur de ligne
-ignore = E501,W503
