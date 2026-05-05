@@ -22,7 +22,7 @@ pytest custom_components/odio_remote/tests/test_api_client.py -v
 pytest custom_components/odio_remote/tests/test_config_flow.py::TestConfigFlowUser::test_show_form_no_input -v
 
 # Linting
-flake8 custom_components/odio_remote/
+ruff check custom_components/odio_remote/
 
 # Type checking
 mypy custom_components/odio_remote/
