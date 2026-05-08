@@ -12,5 +12,5 @@
   "integration_type": "device",
   "issue_tracker": "https://github.com/b0bbywan/odio-ha/issues",
   "quality_scale": "silver",
-  "version": "0.9.1-rc.1"
+  "version": "0.9.1-rc.2"
 }
