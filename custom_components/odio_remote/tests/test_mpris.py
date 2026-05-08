@@ -88,10 +88,24 @@ def _make_entity(player_data, extra_players=None, mappings=None, last_update_suc
 class TestMPRISCoordinatorFetch:
 
     @pytest.mark.asyncio
-    async def test_stamps_position_updated_at_from_header(self):
-        """x-cache-updated-at header is parsed and stamped on each player."""
+    async def test_uses_per_player_position_updated_at_when_present(self):
+        """Per-player position_updated_at takes precedence over the cache header."""
+        player = {**MOCK_SPOTIFY, "position_updated_at": "2027-09-12T08:30:00Z"}
         api = MagicMock()
-        api.get_players = AsyncMock(return_value=([MOCK_SPOTIFY], "2026-03-04T19:06:44Z"))
+        api.get_players = AsyncMock(return_value=([player], "2026-03-04T19:06:44Z"))
+        coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
+
+        result = await coord._async_update_data()
+
+        ts = result["mpris"][0]["position_updated_at"]
+        assert ts.year == 2027
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_header_when_no_per_player_field(self):
+        """x-cache-updated-at header is used when player has no per-player field."""
+        legacy_player = {k: v for k, v in MOCK_SPOTIFY.items() if k != "position_updated_at"}
+        api = MagicMock()
+        api.get_players = AsyncMock(return_value=([legacy_player], "2025-01-01T00:00:00Z"))
         coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
 
         result = await coord._async_update_data()
@@ -101,13 +115,14 @@ class TestMPRISCoordinatorFetch:
         ts = players[0]["position_updated_at"]
         assert ts is not None
         assert ts.tzinfo is not None
-        assert ts.year == 2026
+        assert ts.year == 2025
 
     @pytest.mark.asyncio
     async def test_falls_back_to_utcnow_when_no_header(self):
         """position_updated_at falls back to utcnow when header is absent."""
+        legacy_player = {k: v for k, v in MOCK_SPOTIFY.items() if k != "position_updated_at"}
         api = MagicMock()
-        api.get_players = AsyncMock(return_value=([MOCK_SPOTIFY], None))
+        api.get_players = AsyncMock(return_value=([legacy_player], None))
         coord = OdioMPRISCoordinator(_make_hass(), MagicMock(), api)
 
         result = await coord._async_update_data()
@@ -178,9 +193,19 @@ class TestMPRISCoordinatorSseUpdate:
         result = coord.async_set_updated_data.call_args[0][0]["mpris"]
         assert len(result) == 2
 
-    def test_stamps_position_updated_at_from_emitted_at(self):
+    def test_uses_per_player_position_updated_at_over_emitted_at(self):
+        """Per-player position_updated_at wins over the SSE wrapper's emitted_at."""
         coord = self._coord_with_players([])
-        coord.handle_sse_update_event(self._sse_event(MOCK_SPOTIFY, emitted_at=EMITTED_AT_MS))
+        player = {**MOCK_SPOTIFY, "position_updated_at": "2027-09-12T08:30:00Z"}
+        coord.handle_sse_update_event(self._sse_event(player, emitted_at=EMITTED_AT_MS))
+
+        result = coord.async_set_updated_data.call_args[0][0]["mpris"]
+        assert result[0]["position_updated_at"].year == 2027
+
+    def test_stamps_position_updated_at_from_emitted_at_when_field_absent(self):
+        coord = self._coord_with_players([])
+        legacy_player = {k: v for k, v in MOCK_SPOTIFY.items() if k != "position_updated_at"}
+        coord.handle_sse_update_event(self._sse_event(legacy_player, emitted_at=EMITTED_AT_MS))
 
         result = coord.async_set_updated_data.call_args[0][0]["mpris"]
         expected_ts = datetime.fromtimestamp(EMITTED_AT_MS / 1000, tz=timezone.utc)
@@ -221,9 +246,10 @@ class TestMPRISCoordinatorSseUpdate:
         coord.async_set_updated_data.assert_not_called()
 
     def test_emitted_at_none_falls_back_to_utcnow(self):
-        """_merge_player uses utcnow() when emitted_at_ms is None."""
+        """_merge_player uses utcnow() when both per-player field and emitted_at are missing."""
         coord = self._coord_with_players([])
-        coord.handle_sse_update_event(self._sse_event(MOCK_SPOTIFY, emitted_at=None))
+        legacy_player = {k: v for k, v in MOCK_SPOTIFY.items() if k != "position_updated_at"}
+        coord.handle_sse_update_event(self._sse_event(legacy_player, emitted_at=None))
         result = coord.async_set_updated_data.call_args[0][0]["mpris"]
         assert result[0]["position_updated_at"] is not None
 

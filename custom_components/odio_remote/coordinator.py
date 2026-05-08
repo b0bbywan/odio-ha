@@ -181,8 +181,14 @@ class OdioMPRISCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch MPRIS status from API."""
         try:
             players, cache_ts = await self.api.get_players()
-            position_updated_at = dt_util.parse_datetime(cache_ts) if cache_ts else dt_util.utcnow()
-            stamped = [{**p, "position_updated_at": position_updated_at} for p in players]
+            fallback_ts = dt_util.parse_datetime(cache_ts) if cache_ts else None
+            if fallback_ts is None:
+                fallback_ts = dt_util.utcnow()
+            stamped = []
+            for p in players:
+                raw = p.get("position_updated_at")
+                ts = dt_util.parse_datetime(raw) if isinstance(raw, str) else None
+                stamped.append({**p, "position_updated_at": ts or fallback_ts})
             return {"mpris": stamped}
         except (OdioConnectionError, OdioTimeoutError) as err:
             raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
@@ -195,10 +201,16 @@ class OdioMPRISCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         bus_name = player_data.get("bus_name")
         if not bus_name:
             return
-        if emitted_at_ms is not None:
-            ts = dt_util.utc_from_timestamp(emitted_at_ms / 1000)
-        else:
-            ts = dt_util.utcnow()
+        # Prefer the per-player position_updated_at from the backend; fall back
+        # to the SSE wrapper's emitted_at, which can be newer than the actual
+        # position write (e.g. a player.updated triggered by a Volume change).
+        raw_pos_ts = player_data.get("position_updated_at")
+        ts = dt_util.parse_datetime(raw_pos_ts) if isinstance(raw_pos_ts, str) else None
+        if ts is None:
+            if emitted_at_ms is not None:
+                ts = dt_util.utc_from_timestamp(emitted_at_ms / 1000)
+            else:
+                ts = dt_util.utcnow()
         stamped = {**player_data, "position_updated_at": ts}
         current = list((self.data or {}).get("mpris", []))
         for i, p in enumerate(current):

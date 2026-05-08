@@ -278,6 +278,7 @@ MOCK_PLAYERS = [
         "shuffle": True,
         "volume": 0.8,
         "position": 28962000,
+        "position_updated_at": "2026-03-04T19:06:00Z",
         "rate": 1,
         "metadata": {
             "mpris:artUrl": "https://i.scdn.co/image/abc123",
@@ -302,6 +303,7 @@ MOCK_PLAYERS = [
         "playback_status": "Paused",
         "volume": 1.0,
         "position": 987200000,
+        "position_updated_at": "2026-03-04T19:06:00Z",
         "metadata": {
             "mpris:artUrl": "file:///tmp/.com.google.Chrome.abc",
             "mpris:length": "987200000",
