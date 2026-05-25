@@ -210,7 +210,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Odio Remote."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialize config flow."""

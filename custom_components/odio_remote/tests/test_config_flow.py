@@ -722,7 +722,7 @@ class TestOptionsFlowMappings:
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
         mappings = result["data"][CONF_SERVICE_MAPPINGS]
-        assert mappings["mpris:org.mpris.MediaPlayer2.spotify"] == "media_player.spotify_ha"
+        assert mappings["mpris:spotify"] == "media_player.spotify_ha"
 
     @pytest.mark.asyncio
     @patch(
@@ -755,7 +755,7 @@ class TestOptionsFlowMappings:
         assert result["type"] is FlowResultType.CREATE_ENTRY
         mappings = result["data"][CONF_SERVICE_MAPPINGS]
         assert mappings["user/mpd.service"] == "media_player.mpd"
-        assert mappings["mpris:org.mpris.MediaPlayer2.spotify"] == "media_player.spotify_ha"
+        assert mappings["mpris:spotify"] == "media_player.spotify_ha"
 
     @pytest.mark.asyncio
     @patch(
@@ -778,7 +778,7 @@ class TestOptionsFlowMappings:
         flow._data = {CONF_API_URL: "http://test:8018"}
         flow._options = {
             CONF_SERVICE_MAPPINGS: {
-                "mpris:org.mpris.MediaPlayer2.vlc": "media_player.vlc_ha",
+                "mpris:vlc": "media_player.vlc_ha",
             },
         }
 
@@ -790,7 +790,7 @@ class TestOptionsFlowMappings:
         mappings = result["data"][CONF_SERVICE_MAPPINGS]
         assert mappings["user/mpd.service"] == "media_player.mpd"
         # Offline player mapping preserved
-        assert mappings["mpris:org.mpris.MediaPlayer2.vlc"] == "media_player.vlc_ha"
+        assert mappings["mpris:vlc"] == "media_player.vlc_ha"
 
 
 # =============================================================================

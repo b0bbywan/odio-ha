@@ -9,12 +9,26 @@ from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .const import _MPRIS_BUS_PREFIX
 from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def extract_mpris_app_name(bus_name: str) -> str:
+    """Extract application name from an MPRIS D-Bus bus name.
+
+    Examples:
+        "org.mpris.MediaPlayer2.mpd"                → "mpd"
+        "org.mpris.MediaPlayer2.firefox.instance123" → "firefox"
+    """
+    if bus_name.startswith(_MPRIS_BUS_PREFIX):
+        suffix = bus_name[len(_MPRIS_BUS_PREFIX):]
+        return suffix.split(".")[0]
+    return bus_name
 
 
 async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
