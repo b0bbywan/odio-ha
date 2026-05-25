@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState
 
+from custom_components.odio_remote.helpers import extract_mpris_app_name
 from custom_components.odio_remote.media_player import (
     OdioReceiverMediaPlayer,
     OdioServiceMediaPlayer,
     OdioPulseClientMediaPlayer,
     _MediaPlayerContext,
-    _extract_mpris_app_name,
     async_setup_entry,
 )
 
@@ -73,20 +73,20 @@ def _make_ctx(
 
 
 # ---------------------------------------------------------------------------
-# _extract_mpris_app_name
+# extract_mpris_app_name
 # ---------------------------------------------------------------------------
 
 
 class TestExtractMprisAppName:
 
     def test_standard_bus_name(self):
-        assert _extract_mpris_app_name("org.mpris.MediaPlayer2.mpd") == "mpd"
+        assert extract_mpris_app_name("org.mpris.MediaPlayer2.mpd") == "mpd"
 
     def test_instance_bus_name(self):
-        assert _extract_mpris_app_name("org.mpris.MediaPlayer2.firefox.instance123") == "firefox"
+        assert extract_mpris_app_name("org.mpris.MediaPlayer2.firefox.instance123") == "firefox"
 
     def test_non_mpris_bus_name(self):
-        assert _extract_mpris_app_name("com.example.player") == "com.example.player"
+        assert extract_mpris_app_name("com.example.player") == "com.example.player"
 
 
 # ---------------------------------------------------------------------------

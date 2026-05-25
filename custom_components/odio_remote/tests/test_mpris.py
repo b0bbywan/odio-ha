@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.odio_remote.api_client import SseEvent
 from custom_components.odio_remote.coordinator import OdioMPRISCoordinator
 from custom_components.odio_remote.exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
+from custom_components.odio_remote.helpers import extract_mpris_app_name
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
 
 from .conftest import MOCK_DEVICE_INFO, MOCK_PLAYERS
@@ -74,7 +75,8 @@ def _make_entity(player_data, extra_players=None, mappings=None, last_update_suc
     entity._api_client = ctx.api
     entity._event_stream = ctx.event_stream
     entity._player_name = player_data["bus_name"]
-    entity._attr_unique_id = f"test_entry_mpris_{player_data['bus_name']}"
+    entity._app_name = extract_mpris_app_name(player_data["bus_name"])
+    entity._attr_unique_id = f"test_entry_mpris_{entity._app_name}"
     entity._attr_name = player_data.get("identity", "Unknown")
     entity._attr_device_info = MOCK_DEVICE_INFO
     return entity
@@ -378,6 +380,52 @@ class TestMPRISCoordinatorSsePosition:
         coord.data = {"mpris": [MOCK_SPOTIFY]}
         coord.handle_sse_position_event(SseEvent(type="player.position", data=[]))
         coord.async_set_updated_data.assert_not_called()
+
+
+# ===========================================================================
+# OdioMPRISMediaPlayer — unique_id stability
+# ===========================================================================
+
+
+class TestMPRISUniqueId:
+    """unique_id must derive from the app name, not the full bus_name.
+
+    Bus names like `org.mpris.MediaPlayer2.firefox.instance_1_52` carry a
+    volatile `.instanceXXX` suffix that changes on every browser restart;
+    encoding it into unique_id leaks orphan entities into the registry.
+    """
+
+    def _build(self, bus_name: str, identity: str = "") -> OdioMPRISMediaPlayer:
+        player = {"bus_name": bus_name, "identity": identity}
+        coordinator = MagicMock()
+        coordinator.data = {"mpris": [player]}
+        ctx = MagicMock(spec=_MediaPlayerContext)
+        ctx.mpris_coordinator = coordinator
+        ctx.api = MagicMock()
+        ctx.event_stream = MagicMock()
+        ctx.entry_id = "test_entry"
+        ctx.device_info = MOCK_DEVICE_INFO
+        return OdioMPRISMediaPlayer(ctx, player)
+
+    def test_unique_id_stable_across_firefox_instance_suffix(self):
+        a = self._build("org.mpris.MediaPlayer2.firefox.instance_1_52")
+        b = self._build("org.mpris.MediaPlayer2.firefox.instance_1_99")
+        assert a.unique_id == b.unique_id == "test_entry_mpris_firefox"
+
+    def test_unique_id_stable_across_chrome_instance_suffix(self):
+        a = self._build("org.mpris.MediaPlayer2.chromium.instance1")
+        b = self._build("org.mpris.MediaPlayer2.chromium.instance999")
+        assert a.unique_id == b.unique_id == "test_entry_mpris_chromium"
+
+    def test_unique_id_for_app_without_instance_suffix(self):
+        entity = self._build("org.mpris.MediaPlayer2.mpd")
+        assert entity.unique_id == "test_entry_mpris_mpd"
+
+    def test_mapping_key_stable_across_instance_suffix(self):
+        """_mapping_key must also be app-name based so service_mappings survives restarts."""
+        a = self._build("org.mpris.MediaPlayer2.firefox.instance_1_52")
+        b = self._build("org.mpris.MediaPlayer2.firefox.instance_1_99")
+        assert a._mapping_key == b._mapping_key == "mpris:firefox"
 
 
 # ===========================================================================

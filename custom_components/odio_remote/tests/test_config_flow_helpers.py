@@ -295,15 +295,15 @@ class TestPlayerKeys:
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == "player_org_mpris_mediaplayer2_spotify"
-        assert mapping_key == "mpris:org.mpris.MediaPlayer2.spotify"
+        assert mapping_key == "mpris:spotify"
 
     def test_bus_name_with_instance(self):
-        """Test bus name with instance number."""
+        """Test bus name with instance number — mapping_key strips the suffix."""
         player = {"bus_name": "org.mpris.MediaPlayer2.chromium.instance1"}
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == "player_org_mpris_mediaplayer2_chromium_instance1"
-        assert mapping_key == "mpris:org.mpris.MediaPlayer2.chromium.instance1"
+        assert mapping_key == "mpris:chromium"
 
     def test_empty_bus_name(self):
         """Test player with empty bus_name."""

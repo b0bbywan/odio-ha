@@ -23,7 +23,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
-    _MPRIS_BUS_PREFIX,
     ATTR_CLIENT_ID,
     ATTR_APP,
     ATTR_BACKEND,
@@ -36,7 +35,7 @@ from .const import (
 )
 from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
-from .helpers import api_command
+from .helpers import api_command, extract_mpris_app_name
 from .mixins import MappedEntityMixin
 
 PARALLEL_UPDATES = 0
@@ -44,17 +43,6 @@ PARALLEL_UPDATES = 0
 _LOGGER = logging.getLogger(__name__)
 
 
-def _extract_mpris_app_name(bus_name: str) -> str:
-    """Extract application name from an MPRIS D-Bus bus name.
-
-    Examples:
-        "org.mpris.MediaPlayer2.mpd"                → "mpd"
-        "org.mpris.MediaPlayer2.firefox.instance123" → "firefox"
-    """
-    if bus_name.startswith(_MPRIS_BUS_PREFIX):
-        suffix = bus_name[len(_MPRIS_BUS_PREFIX):]
-        return suffix.split(".")[0]
-    return bus_name
 # =============================================================================
 # Platform context
 # =============================================================================
@@ -133,7 +121,7 @@ def _build_mpris_entities(
         bus_name = player.get("bus_name")
         if not bus_name or not player.get("available", True):
             continue
-        app_name = _extract_mpris_app_name(bus_name)
+        app_name = extract_mpris_app_name(bus_name)
         if app_name in seen_app_names:
             continue
         seen_app_names.add(app_name)
@@ -245,9 +233,7 @@ def _register_dynamic_mpris(
         for entity in initial_entities
         if isinstance(entity, OdioMPRISMediaPlayer)
     }
-    known_app_names: set[str] = {
-        _extract_mpris_app_name(bus_name) for bus_name in known_mpris_players
-    }
+    known_app_names: set[str] = {e._app_name for e in known_mpris_players.values()}
 
     @callback
     def _async_check_new_mpris_players() -> None:
@@ -260,15 +246,14 @@ def _register_dynamic_mpris(
                 continue
             if not player.get("available", True):
                 continue
-            app_name = _extract_mpris_app_name(bus_name)
+            app_name = extract_mpris_app_name(bus_name)
             if app_name in known_app_names:
                 # The app already has an entity — rebind it if it is currently
                 # unavailable (e.g. Chrome restarted with a new bus_name / PID).
                 existing = next(
                     (
                         e for e in known_mpris_players.values()
-                        if _extract_mpris_app_name(e._player_name) == app_name
-                        and not e.available
+                        if e._app_name == app_name and not e.available
                     ),
                     None,
                 )
@@ -806,8 +791,9 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
         self._event_stream = ctx.event_stream
 
         self._player_name = player.get("bus_name", "")
+        self._app_name = extract_mpris_app_name(self._player_name)
 
-        safe_name = re.sub(r"[^a-z0-9_]+", "_", self._player_name.lower()).strip("_")
+        safe_name = re.sub(r"[^a-z0-9_]+", "_", self._app_name.lower()).strip("_")
         self._attr_unique_id = f"{ctx.entry_id}_mpris_{safe_name}"
         self._attr_device_info = ctx.device_info
 
@@ -815,7 +801,7 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
         if identity:
             self._attr_name = identity
         else:
-            self._attr_name = _extract_mpris_app_name(self._player_name).replace("_", " ").title()
+            self._attr_name = self._app_name.replace("_", " ").title()
 
         _LOGGER.debug(
             "Initialized MPRIS player: unique_id=%s, name=%s, bus_name=%s",
@@ -826,8 +812,12 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
 
     @property
     def _mapping_key(self) -> str:
-        """Return the key used in service_mappings."""
-        return f"mpris:{self._player_name}"
+        """Return the key used in service_mappings.
+
+        Keyed by app name (stable across browser/HA restarts), not the
+        volatile bus_name — see also unique_id derivation in __init__.
+        """
+        return f"mpris:{self._app_name}"
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to SSE connectivity changes in addition to coordinator updates."""

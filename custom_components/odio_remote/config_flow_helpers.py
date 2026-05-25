@@ -5,6 +5,8 @@ from typing import Any, Callable
 import voluptuous as vol
 from homeassistant.helpers import selector
 
+from .helpers import extract_mpris_app_name
+
 
 def build_mapping_schema(
     entities: list[dict[str, Any]],
@@ -134,6 +136,11 @@ def get_client_keys(client: dict[str, Any]) -> tuple[str, str]:
 def get_player_keys(player: dict[str, Any]) -> tuple[str, str]:
     """Get form_key and mapping_key for an MPRIS player.
 
+    mapping_key is keyed by the extracted app name (stable across browser
+    restarts) so the mapping survives the volatile `.instanceXXX` bus_name
+    suffix; the form_key keeps a per-bus_name id to disambiguate the UI when
+    several instances coexist.
+
     Returns:
         (form_key, mapping_key) tuple
     """
@@ -141,7 +148,7 @@ def get_player_keys(player: dict[str, Any]) -> tuple[str, str]:
     if not bus_name:
         return "", ""
 
-    safe_name = re.sub(r"[^a-z0-9_]+", "_", bus_name.lower()).strip("_")
-    form_key = f"player_{safe_name}"
-    mapping_key = f"mpris:{bus_name}"
+    safe_bus = re.sub(r"[^a-z0-9_]+", "_", bus_name.lower()).strip("_")
+    form_key = f"player_{safe_bus}"
+    mapping_key = f"mpris:{extract_mpris_app_name(bus_name)}"
     return form_key, mapping_key
