@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState, RepeatMode
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.odio_remote.api_client import SseEvent
+from custom_components.odio_remote.api_client import OdioApiClient, SseEvent
 from custom_components.odio_remote.coordinator import OdioMPRISCoordinator
 from custom_components.odio_remote.exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 from custom_components.odio_remote.helpers import extract_mpris_app_name
@@ -483,13 +483,28 @@ class TestMPRISEntityProperties:
         entity = _make_entity({**MOCK_SPOTIFY, "position_updated_at": ts})
         assert entity.media_position_updated_at == ts
 
-    def test_media_image_url_https_allowed(self):
+    def test_media_image_url_https_routed_through_cover_proxy(self):
         entity = _make_entity(MOCK_SPOTIFY)
-        assert entity.media_image_url == "https://i.scdn.co/image/abc123"
+        entity._api_client = OdioApiClient("http://test:8018", MagicMock())
+        assert entity.media_image_url == (
+            "http://test:8018/players/org.mpris.MediaPlayer2.spotify/cover"
+            "?t=%2Fcom%2Fspotify%2Ftrack%2Fabc&a=https%3A%2F%2Fi.scdn.co%2Fimage%2Fabc123"
+        )
 
-    def test_media_image_url_file_filtered(self):
-        """file:// URLs must be rejected to avoid HA URL parsing errors."""
+    def test_media_image_url_file_routed_through_cover_proxy(self):
+        """file:// art is served by the proxy (HA cannot reach the host FS directly)."""
         entity = _make_entity(MOCK_CHROME)
+        entity._api_client = OdioApiClient("http://test:8018", MagicMock())
+        assert entity.media_image_url == (
+            "http://test:8018/players/org.mpris.MediaPlayer2.chromium.instance1/cover"
+            "?t=%2Forg%2Fchromium%2FMediaPlayer2%2FTrackList%2FTrack1"
+            "&a=file%3A%2F%2F%2Ftmp%2F.com.google.Chrome.abc"
+        )
+
+    def test_media_image_url_none_when_no_art(self):
+        player = {**MOCK_SPOTIFY, "metadata": {k: v for k, v in MOCK_SPOTIFY["metadata"].items() if k != "mpris:artUrl"}}
+        entity = _make_entity(player)
+        entity._api_client = OdioApiClient("http://test:8018", MagicMock())
         assert entity.media_image_url is None
 
     def test_media_title(self):

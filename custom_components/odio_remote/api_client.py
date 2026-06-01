@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import aiohttp
 
@@ -373,6 +373,22 @@ class OdioApiClient:
         from .const import ENDPOINT_PLAYER_SHUFFLE
         endpoint = ENDPOINT_PLAYER_SHUFFLE.format(player=quote(player, safe=''))
         await self.post(endpoint, {"shuffle": shuffle})
+
+    def player_cover_url(
+        self, player: str, art_url: str, track_id: str | None = None
+    ) -> str:
+        """Build absolute URL to the MPRIS cover proxy endpoint.
+
+        The /cover endpoint reads mpris:artUrl server-side and serves the
+        file:// path or redirects to the http(s) URL, so HA never needs
+        filesystem access. The art_url and track_id are passed only as
+        cache-busting query params (the server ignores them otherwise),
+        mirroring the go-odio-api UI.
+        """
+        from .const import ENDPOINT_PLAYER_COVER
+        endpoint = ENDPOINT_PLAYER_COVER.format(player=quote(player, safe=''))
+        query = urlencode({"t": track_id or "", "a": art_url})
+        return f"{self._api_url}{endpoint}?{query}"
 
     # SSE event stream
     async def listen_events(

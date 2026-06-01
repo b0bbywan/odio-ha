@@ -964,12 +964,22 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
 
     @property
     def media_image_url(self) -> str | None:
-        """Image url of current playing media (http/https only)."""
+        """Image url of current playing media.
+
+        Routes through the go-odio-api /cover proxy so file:// artwork
+        (served from the Odio host's filesystem) is reachable by HA, while
+        http(s) URLs are redirected by the proxy. Cache-busts on trackid and
+        artUrl, matching the go-odio-api UI.
+        """
         player = self._player_data
         if player and player.get("metadata"):
-            url = player["metadata"].get("mpris:artUrl", "")
-            if url.startswith(("http://", "https://")):
-                return url
+            art_url = player["metadata"].get("mpris:artUrl", "")
+            if art_url:
+                return self._api_client.player_cover_url(
+                    self._player_name,
+                    art_url,
+                    player["metadata"].get("mpris:trackid"),
+                )
         return None
 
     @property

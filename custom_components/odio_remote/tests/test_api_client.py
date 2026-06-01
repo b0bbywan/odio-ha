@@ -792,6 +792,28 @@ class TestOdioApiClientMPRIS:
                 request = list(m.requests.values())[0][0]
                 assert request.kwargs["json"] == {"shuffle": True}
 
+    def test_player_cover_url(self):
+        """Cover proxy URL encodes the player name and cache-busts on trackid + artUrl."""
+        api = OdioApiClient("http://test:8018", MagicMock())
+        url = api.player_cover_url(
+            "org.mpris.MediaPlayer2.spotify",
+            "file:///tmp/cover.jpg",
+            "/com/spotify/track/abc",
+        )
+        assert url == (
+            "http://test:8018/players/org.mpris.MediaPlayer2.spotify/cover"
+            "?t=%2Fcom%2Fspotify%2Ftrack%2Fabc&a=file%3A%2F%2F%2Ftmp%2Fcover.jpg"
+        )
+
+    def test_player_cover_url_without_trackid(self):
+        """track_id is optional; missing trackid yields an empty t param."""
+        api = OdioApiClient("http://test:8018", MagicMock())
+        url = api.player_cover_url("org.mpris.MediaPlayer2.mpd", "https://art/x.png")
+        assert url == (
+            "http://test:8018/players/org.mpris.MediaPlayer2.mpd/cover"
+            "?t=&a=https%3A%2F%2Fart%2Fx.png"
+        )
+
     @pytest.mark.asyncio
     async def test_player_url_encodes_name(self):
         async with ClientSession() as session:
