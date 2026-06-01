@@ -59,6 +59,7 @@ ENDPOINT_PLAYER_POSITION: Final = "/players/{player}/position"
 ENDPOINT_PLAYER_VOLUME: Final = "/players/{player}/volume"
 ENDPOINT_PLAYER_LOOP: Final = "/players/{player}/loop"
 ENDPOINT_PLAYER_SHUFFLE: Final = "/players/{player}/shuffle"
+ENDPOINT_PLAYER_COVER: Final = "/players/{player}/cover"
 
 # SSE event types
 SSE_EVENT_SERVER_INFO: Final = "server.info"
