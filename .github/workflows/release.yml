@@ -1,13 +1,15 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,30 +18,22 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       with:
-        ref: ${{ github.event.workflow_run.head_sha }}
         fetch-depth: 0
 
-    - name: Detect version tag
+    - name: Detect prerelease
       id: tag
       run: |
-        TAG=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$' | head -1)
-        if [ -z "$TAG" ]; then
-          echo "skip=true" >> "$GITHUB_OUTPUT"
+        TAG="${{ github.ref_name }}"
+        if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+          echo "prerelease=true" >> "$GITHUB_OUTPUT"
         else
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Build release notes
-      if: steps.tag.outputs.skip == 'false'
       id: notes
       run: |
-        TAG="${{ steps.tag.outputs.tag }}"
+        TAG="${{ github.ref_name }}"
 
         # Last stable tag: x.y.z only, excluding current tag
         LAST_STABLE=$(git tag --sort=-version:refname \
@@ -56,10 +50,16 @@ jobs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
 
+    - name: Build release zip
+      run: |
+        cd custom_components/odio_remote
+        zip -r "$GITHUB_WORKSPACE/odio_remote.zip" . \
+          -x "tests/*" "*/__pycache__/*" "*.pyc"
+
     - name: Create GitHub release
-      if: steps.tag.outputs.skip == 'false'
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
-        tag_name: ${{ steps.tag.outputs.tag }}
+        tag_name: ${{ github.ref_name }}
         prerelease: ${{ steps.tag.outputs.prerelease }}
         body: ${{ steps.notes.outputs.content }}
+        files: odio_remote.zip
