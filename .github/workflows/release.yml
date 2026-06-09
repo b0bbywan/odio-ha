@@ -56,6 +56,13 @@ jobs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
 
+    - name: Build release zip
+      if: steps.tag.outputs.skip == 'false'
+      run: |
+        cd custom_components/odio_remote
+        zip -r "$GITHUB_WORKSPACE/odio_remote.zip" . \
+          -x "tests/*" "*/__pycache__/*" "*.pyc"
+
     - name: Create GitHub release
       if: steps.tag.outputs.skip == 'false'
       uses: softprops/action-gh-release@v2
@@ -63,3 +70,4 @@ jobs:
         tag_name: ${{ steps.tag.outputs.tag }}
         prerelease: ${{ steps.tag.outputs.prerelease }}
         body: ${{ steps.notes.outputs.content }}
+        files: odio_remote.zip
