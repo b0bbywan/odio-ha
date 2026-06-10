@@ -94,4 +94,4 @@ Tests live in `custom_components/odio_remote/tests/`. Shared fixtures (mock serv
 - `test_mixins.py` — Entity delegation, feature inheritance, state/attribute/service-call delegation
 - `test_mpris.py` — MPRIS coordinator SSE handlers (update/added/removed/position) and entity properties/actions
 
-CI runs on Python 3.13 and 3.14 via `.github/workflows/ci.yml`.
+CI runs on Python 3.14 via `.github/workflows/ci.yml` (Home Assistant 2026.3+ requires Python 3.14).
