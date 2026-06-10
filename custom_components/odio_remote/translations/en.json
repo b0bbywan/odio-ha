@@ -37,10 +37,7 @@
       },
       "services": {
         "title": "Service Mapping",
-        "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities.",
-        "data_description": {
-          "services_info": "Select an existing media_player entity for each service you want to map. Leave empty to create a new entity."
-        }
+        "description": "Map your audio services to existing media_player entities (optional). Unmapped services will be created as new entities. Select an existing media_player entity for each service you want to map; leave empty to create a new entity."
       }
     },
     "error": {
@@ -113,9 +110,6 @@
           "user_shairport-sync.service_delete": "Delete shairport-sync mapping",
           "client_rasponkyo": "Rasponkyo Client",
           "client_rasponkyo_delete": "Delete Rasponkyo client mapping"
-        },
-        "data_description": {
-          "info": "Select an existing media_player entity for each service or client."
         }
       }
     },

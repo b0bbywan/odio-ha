@@ -4,13 +4,13 @@
   "codeowners": ["@b0bbywan"],
   "config_flow": true,
   "dependencies": ["zeroconf"],
-  "zeroconf": [
-    {"type": "_http._tcp.local.", "name": "odio-api*"}
-  ],
   "documentation": "https://docs.odio.love/guides/home-assistant/",
-  "iot_class": "local_push",
   "integration_type": "device",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/b0bbywan/odio-ha/issues",
   "quality_scale": "silver",
-  "version": "0.9.2"
+  "version": "0.9.2",
+  "zeroconf": [
+    {"type": "_http._tcp.local.", "name": "odio-api*"}
+  ]
 }

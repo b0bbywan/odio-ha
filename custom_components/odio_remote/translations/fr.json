@@ -37,10 +37,7 @@
       },
       "services": {
         "title": "Association des services",
-        "description": "Associez vos services audio à des entités media_player existantes (optionnel). Les services non associés seront créés comme de nouvelles entités.",
-        "data_description": {
-          "services_info": "Sélectionnez une entité media_player existante pour chaque service que vous souhaitez associer. Laissez vide pour créer une nouvelle entité."
-        }
+        "description": "Associez vos services audio à des entités media_player existantes (optionnel). Les services non associés seront créés comme de nouvelles entités. Sélectionnez une entité media_player existante pour chaque service que vous souhaitez associer ; laissez vide pour créer une nouvelle entité."
       }
     },
     "error": {
@@ -113,9 +110,6 @@
           "user_shairport-sync.service_delete": "Supprimer shairport-sync",
           "client_rasponkyo": "Client Rasponkyo",
           "client_rasponkyo_delete": "Supprimer client Rasponkyo"
-        },
-        "data_description": {
-          "info": "Sélectionnez une entité media_player existante pour chaque service ou client."
         }
       }
     },
