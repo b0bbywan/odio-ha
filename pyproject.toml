@@ -1,2 +1,41 @@
+[dependency-groups]
+dev = [
+    "homeassistant==2026.3.4",
+    "mypy==1.19.1",
+    "mypy_extensions==1.1.0",
+    "ruff==0.15.12",
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "aiohttp>=3.8.0",
+    "aioresponses==0.7.8",
+]
+
 [tool.ruff]
 line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["custom_components/odio_remote/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Add project root to Python path
+pythonpath = ["."]
+filterwarnings = [
+    # Python 3.14 AsyncMock GC artifact — internal _execute_mock_call coroutine
+    # gets collected by a later test's GC cycle; does not indicate a real leak.
+    "ignore::RuntimeWarning:unittest.mock",
+]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--color=yes",
+]
+
+[tool.mypy]
+explicit_package_bases = true
+ignore_missing_imports = true
+strict = false

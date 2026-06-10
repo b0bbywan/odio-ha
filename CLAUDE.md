@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Install dev dependencies
-pip install -r requirements-dev.txt
+pip install --group dev
 
 # Run all tests
 pytest custom_components/odio_remote/tests/ -v
