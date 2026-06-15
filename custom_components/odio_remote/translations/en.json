@@ -72,6 +72,9 @@
     },
     "switch": {
       "bluetooth_power": {"name": "Bluetooth"}
+    },
+    "update": {
+      "software": {"name": "Firmware"}
     }
   },
   "options": {
