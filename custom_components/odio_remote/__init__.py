@@ -7,7 +7,8 @@ from urllib.parse import urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -33,8 +34,16 @@ from .const import (
     SSE_EVENT_PLAYER_REMOVED,
     SSE_EVENT_PLAYER_POSITION,
     SSE_EVENT_SERVICE_UPDATED,
+    SSE_EVENT_UPGRADE_INFO,
+    SSE_EVENT_UPGRADE_PROGRESS,
 )
-from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
+from .coordinator import (
+    OdioAudioCoordinator,
+    OdioBluetoothCoordinator,
+    OdioMPRISCoordinator,
+    OdioServiceCoordinator,
+    OdioUpgradeCoordinator,
+)
 from .helpers import async_get_mac_from_ip
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,21 +54,23 @@ PLATFORMS: list[Platform] = [
     Platform.MEDIA_PLAYER,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.UPDATE,
 ]
 
 
 @dataclass
 class OdioCoordinators:
-    """Groups the four optional SSE-driven coordinators."""
+    """Groups the optional SSE-driven coordinators."""
 
     audio: OdioAudioCoordinator | None = None
     service: OdioServiceCoordinator | None = None
     bluetooth: OdioBluetoothCoordinator | None = None
     mpris: OdioMPRISCoordinator | None = None
+    upgrade: OdioUpgradeCoordinator | None = None
 
     def refresh_all(self, hass: HomeAssistant) -> None:
         """Schedule async_refresh on every active coordinator."""
-        for coord in (self.audio, self.service, self.bluetooth, self.mpris):
+        for coord in (self.audio, self.service, self.bluetooth, self.mpris, self.upgrade):
             if coord is not None:
                 hass.async_create_task(coord.async_refresh())
 
@@ -214,6 +225,43 @@ async def _setup_bluetooth_coordinator(
     return coordinator
 
 
+async def _setup_upgrade_coordinator(
+    hass: HomeAssistant,
+    entry: OdioConfigEntry,
+    api: OdioApiClient,
+    event_stream: OdioEventStreamManager,
+) -> OdioUpgradeCoordinator:
+    """Create upgrade coordinator, refresh, and wire SSE listeners."""
+    coordinator = OdioUpgradeCoordinator(hass, entry, api)
+    await coordinator.async_refresh()
+    for sse_event in (SSE_EVENT_UPGRADE_INFO, SSE_EVENT_UPGRADE_PROGRESS):
+        entry.async_on_unload(
+            event_stream.async_add_event_listener(
+                sse_event, coordinator.handle_sse_event
+            )
+        )
+
+    # Keep the device registry's software version in sync with the detector's
+    # current version (seeded into DeviceInfo at setup).
+    last_synced: str | None = (coordinator.data or {}).get("current")
+
+    @callback
+    def _sync_device_sw_version() -> None:
+        nonlocal last_synced
+        current = (coordinator.data or {}).get("current")
+        if not current or current == last_synced:
+            return
+        last_synced = current
+        dev_reg = dr.async_get(hass)
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+        if device is not None and device.sw_version != current:
+            dev_reg.async_update_device(device.id, sw_version=current)
+
+    entry.async_on_unload(coordinator.async_add_listener(_sync_device_sw_version))
+    _LOGGER.debug("Upgrade coordinator created (upgrade backend enabled)")
+    return coordinator
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool:
     """Set up Odio Remote from a config entry."""
     _LOGGER.info("Setting up Odio Remote integration")
@@ -258,6 +306,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         sse_backends.append("bluetooth")
     if backends.get("mpris"):
         sse_backends.append("mpris")
+    if backends.get("upgrade"):
+        sse_backends.append("upgrade")
 
     event_stream = OdioEventStreamManager(
         hass=hass,
@@ -271,19 +321,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
     )
 
-    # Build DeviceInfo once — shared by all platforms so every entity stays
-    # consistent regardless of which platform registers first.
-    hostname = server_info.hostname or entry.entry_id
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        connections=device_connections,
-        name=f"Odio Remote ({hostname})",
-        manufacturer="Odio",
-        sw_version=server_info.api_version,
-        hw_version=server_info.os_version,
-        configuration_url=f"{api_url}/ui",
-    )
-
     coordinators = OdioCoordinators(
         audio=await _setup_audio_coordinator(hass, entry, api, event_stream)
         if backends.get("pulseaudio") else None,
@@ -293,6 +330,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         if backends.get("mpris") else None,
         bluetooth=await _setup_bluetooth_coordinator(hass, entry, api, event_stream)
         if backends.get("bluetooth") else None,
+        upgrade=await _setup_upgrade_coordinator(hass, entry, api, event_stream)
+        if backends.get("upgrade") else None,
+    )
+
+    # Build DeviceInfo once — shared by all platforms so every entity stays
+    # consistent regardless of which platform registers first. The displayed
+    # software version comes from the upgrade detector's current version when
+    # the upgrade backend is enabled, falling back to the API's own version.
+    hostname = server_info.hostname or entry.entry_id
+    sw_version = (coordinators.upgrade.data or {}).get(
+        "current"
+    ) if coordinators.upgrade else None
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        connections=device_connections,
+        name=f"Odio Remote ({hostname})",
+        manufacturer="Odio",
+        sw_version=sw_version or server_info.api_version,
+        hw_version=server_info.os_version,
+        configuration_url=f"{api_url}/ui",
     )
 
     # Re-fetch coordinator data on SSE reconnect to avoid stale state.

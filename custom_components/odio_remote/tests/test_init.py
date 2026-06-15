@@ -10,6 +10,7 @@ from custom_components.odio_remote import (
     _setup_service_coordinator,
     _setup_mpris_coordinator,
     _setup_bluetooth_coordinator,
+    _setup_upgrade_coordinator,
 )
 from custom_components.odio_remote.const import (
     SSE_EVENT_AUDIO_UPDATED,
@@ -20,6 +21,8 @@ from custom_components.odio_remote.const import (
     SSE_EVENT_PLAYER_REMOVED,
     SSE_EVENT_PLAYER_POSITION,
     SSE_EVENT_SERVICE_UPDATED,
+    SSE_EVENT_UPGRADE_INFO,
+    SSE_EVENT_UPGRADE_PROGRESS,
 )
 
 
@@ -406,6 +409,110 @@ class TestSetupBluetoothCoordinator:
 
         # 1 (coordinator shutdown) + 1 SSE listener = 2 unload callbacks
         assert len(entry._unload_callbacks) == 2
+
+
+class TestSetupUpgradeCoordinator:
+    """Tests for _setup_upgrade_coordinator."""
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_creates_coordinator(self, mock_refresh):
+        """Test that upgrade coordinator is created and refreshed."""
+        hass = _make_hass()
+        entry = _make_entry()
+        api = MagicMock()
+        stream = _make_event_stream()
+
+        result = await _setup_upgrade_coordinator(hass, entry, api, stream)
+
+        assert result is not None
+        assert result.api is api
+        mock_refresh.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_wires_both_sse_listeners(self, mock_refresh):
+        """Test that both upgrade.info and upgrade.progress events are wired."""
+        hass = _make_hass()
+        entry = _make_entry()
+        stream = _make_event_stream()
+
+        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
+
+        assert SSE_EVENT_UPGRADE_INFO in stream._registered
+        assert SSE_EVENT_UPGRADE_PROGRESS in stream._registered
+        assert stream._registered[SSE_EVENT_UPGRADE_INFO][0] == coordinator.handle_sse_event
+        assert (
+            stream._registered[SSE_EVENT_UPGRADE_PROGRESS][0]
+            == coordinator.handle_sse_event
+        )
+
+    @pytest.mark.asyncio
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_registers_unload(self, mock_refresh):
+        """Test that unload callbacks are registered for both SSE listeners."""
+        entry = _make_entry()
+        stream = _make_event_stream()
+
+        await _setup_upgrade_coordinator(_make_hass(), entry, MagicMock(), stream)
+
+        # 1 (coordinator shutdown) + 2 SSE listeners + 1 sw_version sync listener
+        assert len(entry._unload_callbacks) == 4
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.dr.async_get")
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_syncs_device_sw_version_on_update(self, mock_refresh, mock_dr):
+        """Test that the device registry sw_version follows the detector current."""
+        hass = _make_hass()
+        entry = _make_entry()
+        stream = _make_event_stream()
+
+        device = MagicMock(id="dev1", sw_version="old")
+        registry = MagicMock()
+        registry.async_get_device.return_value = device
+        mock_dr.return_value = registry
+
+        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
+        coordinator.async_set_updated_data({"current": "2026.6.0b1"})
+
+        registry.async_update_device.assert_called_once_with(
+            "dev1", sw_version="2026.6.0b1"
+        )
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.dr.async_get")
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_skips_sw_version_update_when_unchanged(self, mock_refresh, mock_dr):
+        """Test that no registry write happens when the version is unchanged."""
+        hass = _make_hass()
+        entry = _make_entry()
+        stream = _make_event_stream()
+
+        device = MagicMock(id="dev1", sw_version="2026.6.0b1")
+        registry = MagicMock()
+        registry.async_get_device.return_value = device
+        mock_dr.return_value = registry
+
+        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
+        coordinator.async_set_updated_data({"current": "2026.6.0b1"})
+
+        registry.async_update_device.assert_not_called()
 
 
 # =============================================================================
