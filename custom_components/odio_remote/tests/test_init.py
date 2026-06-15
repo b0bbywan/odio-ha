@@ -514,6 +514,31 @@ class TestSetupUpgradeCoordinator:
 
         registry.async_update_device.assert_not_called()
 
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.dr.async_get")
+    @patch(
+        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
+        new_callable=AsyncMock,
+    )
+    async def test_skips_registry_lookup_when_version_repeats(self, mock_refresh, mock_dr):
+        """Repeated updates with the same current (e.g. progress ticks) skip the registry."""
+        hass = _make_hass()
+        entry = _make_entry()
+        stream = _make_event_stream()
+
+        device = MagicMock(id="dev1", sw_version="old")
+        registry = MagicMock()
+        registry.async_get_device.return_value = device
+        mock_dr.return_value = registry
+
+        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
+        coordinator.async_set_updated_data({"current": "2.0.0"})
+        coordinator.async_set_updated_data({"current": "2.0.0", "percent": 50})
+        coordinator.async_set_updated_data({"current": "2.0.0", "percent": 80})
+
+        registry.async_update_device.assert_called_once_with("dev1", sw_version="2.0.0")
+        assert registry.async_get_device.call_count == 1
+
 
 # =============================================================================
 # async_setup_entry
