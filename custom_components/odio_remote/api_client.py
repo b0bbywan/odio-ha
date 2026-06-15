@@ -260,6 +260,28 @@ class OdioApiClient:
         from .const import ENDPOINT_BLUETOOTH_PAIRING_MODE
         await self.post(ENDPOINT_BLUETOOTH_PAIRING_MODE)
 
+    # Upgrade control
+    async def get_upgrade_status(self) -> dict[str, Any] | None:
+        """Get the last upgrade detector status, or None if none yet.
+
+        Returns the detector body — ``{current, latest, upgrade_available,
+        can_upgrade, can_check, checked_at, extra, run?}`` (``run`` present only
+        while an upgrade is active) — or None when the detector has not produced
+        a result file yet (API returns null).
+        """
+        from .const import ENDPOINT_UPGRADE
+        result = await self.get(ENDPOINT_UPGRADE)
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise OdioApiError(f"Expected dict from upgrade endpoint, got {type(result)}")
+        return result
+
+    async def upgrade_start(self) -> None:
+        """Start the upgrade process (202 Accepted; 409 if already running)."""
+        from .const import ENDPOINT_UPGRADE_START
+        await self.post(ENDPOINT_UPGRADE_START)
+
     # MPRIS Player control
     async def get_players(self) -> tuple[list[dict[str, Any]], str | None]:
         """Get MPRIS media players and cache timestamp from x-cache-updated-at header."""

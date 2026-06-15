@@ -46,6 +46,10 @@ ENDPOINT_BLUETOOTH_POWER_UP: Final = "/bluetooth/power_up"
 ENDPOINT_BLUETOOTH_POWER_DOWN: Final = "/bluetooth/power_down"
 ENDPOINT_BLUETOOTH_PAIRING_MODE: Final = "/bluetooth/pairing_mode"
 
+# Upgrade Endpoints
+ENDPOINT_UPGRADE: Final = "/upgrade"
+ENDPOINT_UPGRADE_START: Final = "/upgrade/start"
+
 # MPRIS Player Endpoints
 ENDPOINT_PLAYERS: Final = "/players"
 ENDPOINT_PLAYER_PLAY: Final = "/players/{player}/play"
@@ -74,6 +78,7 @@ SSE_EVENT_PLAYER_UPDATED: Final = "player.updated"
 SSE_EVENT_PLAYER_ADDED: Final = "player.added"
 SSE_EVENT_PLAYER_REMOVED: Final = "player.removed"
 SSE_EVENT_PLAYER_POSITION: Final = "player.position"
+SSE_EVENT_UPGRADE_INFO: Final = "upgrade.info"
 
 # SSE reconnection
 SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds
