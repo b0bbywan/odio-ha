@@ -79,6 +79,7 @@ SSE_EVENT_PLAYER_ADDED: Final = "player.added"
 SSE_EVENT_PLAYER_REMOVED: Final = "player.removed"
 SSE_EVENT_PLAYER_POSITION: Final = "player.position"
 SSE_EVENT_UPGRADE_INFO: Final = "upgrade.info"
+SSE_EVENT_UPGRADE_PROGRESS: Final = "upgrade.progress"
 
 # SSE reconnection
 SSE_RECONNECT_MIN_INTERVAL: Final = 1  # seconds

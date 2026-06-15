@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.util import dt as dt_util
 
 from .api_client import OdioApiClient, SseEvent
-from .const import DOMAIN
+from .const import DOMAIN, SSE_EVENT_UPGRADE_INFO, SSE_EVENT_UPGRADE_PROGRESS
 from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
@@ -275,6 +275,199 @@ class OdioMPRISCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
         _LOGGER.debug("SSE player.position: %d players updated", len(updates))
         self.async_set_updated_data({**(self.data or {}), "mpris": current})
+
+
+class OdioUpgradeCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for software upgrade state (detector status + run progress).
+
+    Seeded once from GET /upgrade, then driven by two SSE events. The stored
+    dict merges three distinct payload shapes, dispatched by ``handle_sse_event``:
+
+    - Detector status (``upgrade.info``) ``{current, latest, upgrade_available,
+      can_upgrade, run?}`` — the installed/available versions, whether an upgrade
+      may be started, and (during a run only) a nested ``run`` object. Mirrors
+      the GET /upgrade body. ``can_check`` is ignored (re-detection is not
+      exposed).
+    - Run lifecycle (``upgrade.info``) ``{state: "running"|"finished", success?}``
+      — toggles ``in_progress``. This is the systemd job result and is
+      **authoritative** for completion: ``finished`` clears the run state.
+    - Run progress (``upgrade.progress``) ``{event: "begin"|"progress"|"end",
+      percent?, step?, total?, current?, success?}`` — drives
+      ``percent``/``step`` only. It never clears ``in_progress`` (the script's
+      ``end`` can precede the systemd job result), leaving completion to the
+      lifecycle event above.
+    """
+
+    config_entry: ConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        api: OdioApiClient,
+    ) -> None:
+        """Initialize upgrade coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_upgrade",
+            update_interval=None,
+            config_entry=config_entry,
+        )
+        self.api = api
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch the last upgrade detector status from API."""
+        try:
+            status = await self.api.get_upgrade_status()
+        except (OdioConnectionError, OdioTimeoutError) as err:
+            raise UpdateFailed(f"Unable to connect to Odio Remote API: {err}") from err
+        except OdioApiError as err:
+            _LOGGER.error("API error fetching upgrade status: %s", err)
+            raise UpdateFailed(f"API error: {err}") from err
+
+        # GET /upgrade is authoritative: it reports the active run (if any) under
+        # "run", so there is no need to preserve in-flight state across a refresh.
+        previous = self.data or {}
+        merged: dict[str, Any] = {
+            "in_progress": False,
+            "percent": None,
+            "step": None,
+            "can_upgrade": False,
+        }
+        if status:
+            merged.update(
+                current=status.get("current"),
+                latest=status.get("latest"),
+                upgrade_available=bool(status.get("upgrade_available")),
+                can_upgrade=bool(status.get("can_upgrade")),
+            )
+            self._apply_run(merged, status.get("run"))
+        else:
+            # Detector has produced no result yet; keep whatever we already had.
+            merged.update(
+                current=previous.get("current"),
+                latest=previous.get("latest"),
+                upgrade_available=previous.get("upgrade_available", False),
+                can_upgrade=previous.get("can_upgrade", False),
+                in_progress=previous.get("in_progress", False),
+                percent=previous.get("percent"),
+                step=previous.get("step"),
+            )
+        return merged
+
+    @staticmethod
+    def _apply_run(target: dict[str, Any], run: Any) -> None:
+        """Merge a nested ``run`` object ``{state, percent, step}`` into target.
+
+        Present in GET /upgrade (and the detector ``upgrade.info`` event) only
+        while a run is active; a missing/non-dict ``run`` means no active run.
+        """
+        if not isinstance(run, dict):
+            return
+        target["in_progress"] = run.get("state") == "running"
+        if isinstance(run.get("percent"), (int, float)):
+            target["percent"] = int(run["percent"])
+        if run.get("step") is not None:
+            target["step"] = run.get("step")
+
+    @staticmethod
+    def _apply_progress(target: dict[str, Any], data: dict[str, Any]) -> bool:
+        """Apply an ``upgrade.progress`` payload. Returns False on unknown event.
+
+        Drives percent/step only; completion is owned by the lifecycle event,
+        so this never clears in_progress.
+        """
+        ev = data.get("event")
+        if ev == "begin":
+            target["in_progress"] = True
+            target["percent"] = 0
+            if data.get("step") is not None:
+                target["step"] = data.get("step")
+        elif ev == "progress":
+            if isinstance(data.get("percent"), (int, float)):
+                target["percent"] = int(data["percent"])
+            if data.get("step") is not None:
+                target["step"] = data.get("step")
+        elif ev == "end":
+            if data.get("success"):
+                target["percent"] = 100
+        else:
+            _LOGGER.warning("upgrade.progress: unknown event %s", ev)
+            return False
+        _LOGGER.debug(
+            "SSE upgrade.progress: event=%s percent=%s step=%s",
+            ev, data.get("percent"), data.get("step"),
+        )
+        return True
+
+    @staticmethod
+    def _apply_lifecycle(target: dict[str, Any], data: dict[str, Any]) -> None:
+        """Apply an ``upgrade.info`` run-lifecycle payload (systemd job result)."""
+        running = data.get("state") == "running"
+        target["in_progress"] = running
+        if not running:
+            target["percent"] = None
+            target["step"] = None
+            if data.get("success") is False:
+                _LOGGER.warning(
+                    "Upgrade run finished unsuccessfully (state=%s)",
+                    data.get("state"),
+                )
+            elif data.get("success"):
+                # Installed latest; clear without waiting for re-detection.
+                target["upgrade_available"] = False
+        _LOGGER.debug(
+            "SSE upgrade.info lifecycle: state=%s success=%s",
+            data.get("state"), data.get("success"),
+        )
+
+    def _apply_detector(self, target: dict[str, Any], data: dict[str, Any]) -> None:
+        """Apply an ``upgrade.info`` detector-status payload (versions + flags)."""
+        target.update(
+            current=data.get("current"),
+            latest=data.get("latest"),
+            upgrade_available=bool(data.get("upgrade_available")),
+        )
+        if "can_upgrade" in data:
+            target["can_upgrade"] = bool(data.get("can_upgrade"))
+        self._apply_run(target, data.get("run"))
+        _LOGGER.debug(
+            "SSE upgrade.info detector: current=%s latest=%s available=%s can_upgrade=%s",
+            data.get("current"), data.get("latest"),
+            data.get("upgrade_available"), data.get("can_upgrade"),
+        )
+
+    def handle_sse_event(self, event: SseEvent) -> None:
+        """Handle an upgrade event, dispatched by ``event.type``.
+
+        ``upgrade.progress`` is the script's progress stream. ``upgrade.info``
+        carries two shapes sharing one event name: run lifecycle (top-level
+        ``state``) and detector status (``upgrade_available``).
+        """
+        if not isinstance(event.data, dict):
+            _LOGGER.warning(
+                "upgrade event: expected dict, got %s", type(event.data).__name__
+            )
+            return
+
+        data = event.data
+        current = {**(self.data or {})}
+
+        if event.type == SSE_EVENT_UPGRADE_PROGRESS:
+            if not self._apply_progress(current, data):
+                return
+        elif event.type == SSE_EVENT_UPGRADE_INFO and "state" in data:
+            self._apply_lifecycle(current, data)
+        elif event.type == SSE_EVENT_UPGRADE_INFO and "upgrade_available" in data:
+            self._apply_detector(current, data)
+        else:
+            _LOGGER.warning(
+                "upgrade event: unrecognized %s payload %s", event.type, data
+            )
+            return
+
+        self.async_set_updated_data(current)
 
 
 class OdioServiceCoordinator(DataUpdateCoordinator[dict[str, Any]]):

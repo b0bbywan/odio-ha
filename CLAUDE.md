@@ -37,8 +37,14 @@ mypy custom_components/odio_remote/
 - `OdioAudioCoordinator` — SSE-driven, fetches audio clients. Created only if `backends["pulseaudio"]` is `True`.
 - `OdioServiceCoordinator` — SSE-driven, fetches systemd services. Created only if `backends["systemd"]` is `True`.
 - `OdioMPRISCoordinator` — SSE-driven, fetches MPRIS media players. Created only if `backends["mpris"]` is `True`.
+- `OdioBluetoothCoordinator` — SSE-driven, fetches Bluetooth adapter/device state. Created only if `backends["bluetooth"]` is `True`.
+- `OdioUpgradeCoordinator` — SSE-driven, tracks software-upgrade state. Created only if `backends["upgrade"]` is `True`. Seeded from `GET /upgrade`, then driven by two SSE events that merge three payload shapes (all routed to `handle_sse_event`, dispatched by `event.type` first, then by key within `upgrade.info`): `upgrade.info` carries detector status (`{current, latest, upgrade_available, can_upgrade, run?}` — `run` only during a run) and run lifecycle (`{state: "running"|"finished", success?}`, distinguished by the top-level `state` key); `upgrade.progress` carries script progress (`{event: "begin"|"progress"|"end", percent?, step?, …}`). The lifecycle `finished` event is the **systemd job result and is authoritative for completion** — `upgrade.progress` drives `percent`/`step` only and never clears `in_progress` (the script's `end` can precede the job result). `GET /upgrade`'s `run` object is likewise authoritative on refresh, so no in-flight state is preserved across reconnects.
 
-All coordinators are `| None` in `OdioRemoteRuntimeData` (defined in `__init__.py`). All state is accessed via `entry.runtime_data`.
+All coordinators are grouped in the `OdioCoordinators` dataclass (each field `| None`) and accessed via `entry.runtime_data.coordinators`.
+
+### Update Platform (`update.py`)
+
+`OdioUpdateEntity` (`CoordinatorEntity` over `OdioUpgradeCoordinator`, only created when the upgrade coordinator exists) exposes the HA `update` entity. `installed_version` is the detector `current` (fallback `server_info.api_version`); `latest_version` mirrors the installed version when no upgrade is available so HA reports "up to date". `supported_features` always includes `PROGRESS`, and adds `INSTALL` only when the detector reports `can_upgrade: true` (gates `POST /upgrade/start`). `async_install` → `POST /upgrade/start`. Re-detection (`POST /upgrade/check`) is intentionally **not** exposed — detection is driven by the server-side detector (systemd timer).
 
 ### Entity Types (`media_player.py`)
 
@@ -61,6 +67,8 @@ Endpoints used:
 - `GET /audio/clients` — audio clients list (requires pulseaudio backend)
 - `GET /services` — systemd services (requires systemd backend)
 - `GET /players` — MPRIS media players (requires mpris backend); returns `x-cache-updated-at` header for position timestamping
+- `GET /upgrade` — last upgrade detector status (requires upgrade backend); `null` when no detection has run yet. Body: `{current, latest, upgrade_available, can_upgrade, can_check, checked_at, extra, run?}` (`run` present only during a run; `can_check` is ignored — re-detection is not exposed)
+- `POST /upgrade/start` — start the upgrade (202 Accepted; 409 if already running)
 - `POST /audio/server/{mute,volume}` — server-level control
 - `POST /audio/clients/{name}/{mute,volume}` — per-client control
 - `POST /services/{scope}/{unit}/{enable,disable,restart}` — service control
