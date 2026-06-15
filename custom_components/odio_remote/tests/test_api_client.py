@@ -824,5 +824,49 @@ class TestOdioApiClientMPRIS:
                 assert len(m.requests) == 1
 
 
+class TestOdioApiClientUpgrade:
+    """Tests for software upgrade methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_upgrade_status(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get(
+                    "http://test:8018/upgrade",
+                    payload={"current": "1.0.0", "latest": "1.1.0", "upgrade_available": True},
+                )
+                result = await api.get_upgrade_status()
+                assert result["upgrade_available"] is True
+                assert result["latest"] == "1.1.0"
+
+    @pytest.mark.asyncio
+    async def test_get_upgrade_status_null(self):
+        """API returns null before the detector has produced a result."""
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get("http://test:8018/upgrade", payload=None)
+                assert await api.get_upgrade_status() is None
+
+    @pytest.mark.asyncio
+    async def test_get_upgrade_status_invalid_response(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.get("http://test:8018/upgrade", payload=["not", "a", "dict"])
+                with pytest.raises(OdioApiError, match="Expected dict"):
+                    await api.get_upgrade_status()
+
+    @pytest.mark.asyncio
+    async def test_upgrade_start(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/upgrade/start", status=202)
+                await api.upgrade_start()
+                assert len(m.requests) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
