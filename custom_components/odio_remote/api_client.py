@@ -282,6 +282,26 @@ class OdioApiClient:
         from .const import ENDPOINT_UPGRADE_START
         await self.post(ENDPOINT_UPGRADE_START)
 
+    async def bluetooth_scan(self) -> None:
+        """Start scanning for nearby Bluetooth audio devices."""
+        from .const import ENDPOINT_BLUETOOTH_SCAN
+        await self.post(ENDPOINT_BLUETOOTH_SCAN)
+
+    async def bluetooth_scan_stop(self) -> None:
+        """Stop an active Bluetooth scan (idempotent server-side)."""
+        from .const import ENDPOINT_BLUETOOTH_SCAN_STOP
+        await self.post(ENDPOINT_BLUETOOTH_SCAN_STOP)
+
+    async def bluetooth_connect(self, address: str) -> None:
+        """Connect to a Bluetooth device by MAC address."""
+        from .const import ENDPOINT_BLUETOOTH_CONNECT
+        await self.post(ENDPOINT_BLUETOOTH_CONNECT, {"address": address})
+
+    async def bluetooth_disconnect(self, address: str) -> None:
+        """Disconnect a Bluetooth device by MAC address."""
+        from .const import ENDPOINT_BLUETOOTH_DISCONNECT
+        await self.post(ENDPOINT_BLUETOOTH_DISCONNECT, {"address": address})
+
     # MPRIS Player control
     async def get_players(self) -> tuple[list[dict[str, Any]], str | None]:
         """Get MPRIS media players and cache timestamp from x-cache-updated-at header."""
