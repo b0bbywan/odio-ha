@@ -73,9 +73,14 @@ All state is pushed by the server via **Server-Sent Events** — no polling afte
 ### Bluetooth
 Control your Bluetooth adapter directly from Home Assistant:
 - **Power** switch — turn the adapter on or off
-- **Pairing mode** button — make the device discoverable for 60 seconds
+- **Pairing mode** button — make the device discoverable for 60 seconds (inbound: host acts as a speaker)
 - **Pairing active** sensor — know when pairing is in progress (diagnostic)
 - **Connected device** sensor — name of the currently connected device
+
+Connect to **external Bluetooth speakers / headphones** (outbound):
+- **Scan** switch — start/stop discovery of nearby Bluetooth audio devices
+- **One switch per known device** (paired/bonded) — turn on to connect, off to disconnect. Created dynamically; a device that leaves the known list goes unavailable instead of disappearing.
+- Once connected, the device becomes a PulseAudio/PipeWire sink — so it shows up in the receiver's **output source list** and is selectable as the default output, no extra setup.
 
 ### Power (power backend)
 - Shutdown and reboot buttons
@@ -179,6 +184,8 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 | Entity | Description |
 |--------|-------------|
 | `switch.odio_remote_[hostname]_bluetooth_power` | Power the Bluetooth adapter on/off |
+| `switch.odio_remote_[hostname]_bluetooth_scan` | Start/stop discovery of nearby Bluetooth audio devices |
+| `switch.odio_remote_[hostname]_bluetooth_device_[address]` | One per paired/bonded device — connect/disconnect (dynamic) |
 | `button.odio_remote_[hostname]_bluetooth_pairing` | Trigger pairing mode (60s server-side timeout) |
 | `binary_sensor.odio_remote_[hostname]_bluetooth_pairing_active` | Pairing mode currently active (diagnostic) |
 | `sensor.odio_remote_[hostname]_bluetooth_connected_device` | Name of the connected device, empty when none |
