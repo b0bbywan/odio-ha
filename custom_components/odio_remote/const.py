@@ -45,6 +45,10 @@ ENDPOINT_BLUETOOTH: Final = "/bluetooth"
 ENDPOINT_BLUETOOTH_POWER_UP: Final = "/bluetooth/power_up"
 ENDPOINT_BLUETOOTH_POWER_DOWN: Final = "/bluetooth/power_down"
 ENDPOINT_BLUETOOTH_PAIRING_MODE: Final = "/bluetooth/pairing_mode"
+ENDPOINT_BLUETOOTH_SCAN: Final = "/bluetooth/scan"
+ENDPOINT_BLUETOOTH_SCAN_STOP: Final = "/bluetooth/scan/stop"
+ENDPOINT_BLUETOOTH_CONNECT: Final = "/bluetooth/connect"
+ENDPOINT_BLUETOOTH_DISCONNECT: Final = "/bluetooth/disconnect"
 
 # Upgrade Endpoints
 ENDPOINT_UPGRADE: Final = "/upgrade"
