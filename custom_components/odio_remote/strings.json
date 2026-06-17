@@ -68,7 +68,8 @@
       }
     },
     "switch": {
-      "bluetooth_power": {"name": "Bluetooth"}
+      "bluetooth_power": {"name": "Bluetooth"},
+      "bluetooth_scan": {"name": "Bluetooth Scan"}
     },
     "update": {
       "firmware": {"name": "Firmware"}

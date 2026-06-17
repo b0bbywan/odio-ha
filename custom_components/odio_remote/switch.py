@@ -15,7 +15,8 @@ from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .coordinator import OdioBluetoothCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
-from .helpers import api_command
+from .helpers import api_command, is_persistent_bt_device
+from .mixins import OdioBluetoothEntity
 
 PARALLEL_UPDATES = 0
 
@@ -75,6 +76,76 @@ def _build_service_switches(
     return ctx, entities
 
 
+def _build_bluetooth_device_switches(
+    entry: OdioConfigEntry,
+    coordinator: OdioBluetoothCoordinator,
+) -> list["OdioBluetoothDeviceSwitch"]:
+    """Build connect/disconnect switches for known (paired/bonded) BT devices."""
+    rd = entry.runtime_data
+    devices = (coordinator.data or {}).get("known_devices", [])
+    return [
+        OdioBluetoothDeviceSwitch(
+            coordinator,
+            rd.api,
+            entry.entry_id,
+            rd.device_info,
+            rd.event_stream,
+            device["address"],
+            device.get("name") or device["address"],
+        )
+        for device in devices
+        if device.get("address") and is_persistent_bt_device(device)
+    ]
+
+
+def _register_dynamic_bluetooth_devices(
+    entry: OdioConfigEntry,
+    coordinator: OdioBluetoothCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    initial_entities: list[SwitchEntity],
+) -> None:
+    """Add a switch when a newly paired/bonded BT device appears via SSE."""
+    rd = entry.runtime_data
+    known_addresses = {
+        e.address
+        for e in initial_entities
+        if isinstance(e, OdioBluetoothDeviceSwitch)
+    }
+
+    @callback
+    def _async_check_new_devices() -> None:
+        if not coordinator.data:
+            return
+        new_entities = []
+        for device in coordinator.data.get("known_devices", []):
+            address = device.get("address")
+            if (
+                address
+                and address not in known_addresses
+                and is_persistent_bt_device(device)
+            ):
+                new_entities.append(
+                    OdioBluetoothDeviceSwitch(
+                        coordinator,
+                        rd.api,
+                        entry.entry_id,
+                        rd.device_info,
+                        rd.event_stream,
+                        address,
+                        device.get("name") or address,
+                    )
+                )
+                known_addresses.add(address)
+        if new_entities:
+            _LOGGER.info(
+                "Dynamically adding %d Bluetooth device switch(es)",
+                len(new_entities),
+            )
+            async_add_entities(new_entities)
+
+    entry.async_on_unload(coordinator.async_add_listener(_async_check_new_devices))
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: OdioConfigEntry,
@@ -84,16 +155,27 @@ async def async_setup_entry(
     rd = entry.runtime_data
     entities: list[SwitchEntity] = []
 
-    if rd.coordinators.bluetooth is not None:
+    bluetooth_coordinator = rd.coordinators.bluetooth
+    if bluetooth_coordinator is not None:
         entities.append(
             OdioBluetoothSwitch(
-                rd.coordinators.bluetooth,
+                bluetooth_coordinator,
                 rd.api,
                 entry.entry_id,
                 rd.device_info,
                 rd.event_stream,
             )
         )
+        entities.append(
+            OdioBluetoothScanSwitch(
+                bluetooth_coordinator,
+                rd.api,
+                entry.entry_id,
+                rd.device_info,
+                rd.event_stream,
+            )
+        )
+        entities += _build_bluetooth_device_switches(entry, bluetooth_coordinator)
 
     service_coordinator = rd.coordinators.service
     if service_coordinator is not None:
@@ -101,6 +183,11 @@ async def async_setup_entry(
         entities += service_switches
 
     async_add_entities(entities)
+
+    if bluetooth_coordinator is not None:
+        _register_dynamic_bluetooth_devices(
+            entry, bluetooth_coordinator, async_add_entities, entities
+        )
 
     if service_coordinator is None:
         return
@@ -205,32 +292,11 @@ class OdioServiceSwitch(CoordinatorEntity[OdioServiceCoordinator], SwitchEntity)
         )
 
 
-class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEntity):
+class OdioBluetoothSwitch(OdioBluetoothEntity, SwitchEntity):
     """Switch that powers the Bluetooth adapter on or off."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "bluetooth_power"
-
-    def __init__(
-        self,
-        coordinator: OdioBluetoothCoordinator,
-        api: OdioApiClient,
-        entry_id: str,
-        device_info: DeviceInfo,
-        event_stream: OdioEventStreamManager,
-    ) -> None:
-        super().__init__(coordinator)
-        self._api = api
-        self._event_stream = event_stream
-        self._attr_unique_id = f"{entry_id}_bluetooth_power"
-        self._attr_device_info = device_info
-
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self.async_write_ha_state)
-        )
+    _unique_suffix = "bluetooth_power"
 
     @property
     def icon(self) -> str:
@@ -244,15 +310,6 @@ class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEnt
             return False
         return self.coordinator.data.get("powered", False)
 
-    @property
-    def available(self) -> bool:
-        """Return False when SSE is disconnected or coordinator has no data."""
-        return (
-            self._event_stream.sse_connected
-            and self.coordinator.last_update_success
-            and bool(self.coordinator.data)
-        )
-
     @api_command
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Power on Bluetooth adapter."""
@@ -263,4 +320,103 @@ class OdioBluetoothSwitch(CoordinatorEntity[OdioBluetoothCoordinator], SwitchEnt
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Power off Bluetooth adapter."""
         await self._api.bluetooth_power_down()
+        await self.coordinator.async_refresh()
+
+
+class OdioBluetoothScanSwitch(OdioBluetoothEntity, SwitchEntity):
+    """Switch that starts/stops Bluetooth discovery of nearby audio devices."""
+
+    _attr_translation_key = "bluetooth_scan"
+    _attr_icon = "mdi:bluetooth-settings"
+    _unique_suffix = "bluetooth_scan"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while a scan is in progress."""
+        if not self.coordinator.data:
+            return False
+        return self.coordinator.data.get("scanning", False)
+
+    @api_command
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Start scanning for Bluetooth devices."""
+        await self._api.bluetooth_scan()
+        await self.coordinator.async_refresh()
+
+    @api_command
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Stop the active Bluetooth scan."""
+        await self._api.bluetooth_scan_stop()
+        await self.coordinator.async_refresh()
+
+
+class OdioBluetoothDeviceSwitch(OdioBluetoothEntity, SwitchEntity):
+    """Switch that connects/disconnects a known Bluetooth audio device.
+
+    Once connected, the device becomes a PulseAudio/PipeWire sink and is
+    selectable as the default output on the receiver media_player.
+    """
+
+    def __init__(
+        self,
+        coordinator: OdioBluetoothCoordinator,
+        api: OdioApiClient,
+        entry_id: str,
+        device_info: DeviceInfo,
+        event_stream: OdioEventStreamManager,
+        address: str,
+        name: str,
+    ) -> None:
+        self._address = address
+        self._fallback_name = name
+        self._unique_suffix = f"bluetooth_device_{address}"
+        super().__init__(coordinator, api, entry_id, device_info, event_stream)
+
+    @property
+    def address(self) -> str:
+        """Return the device MAC address."""
+        return self._address
+
+    @property
+    def name(self) -> str:
+        """Friendly name, refreshed live as BlueZ resolves it."""
+        device = self._device()
+        if device and device.get("name"):
+            return device["name"]
+        return self._fallback_name
+
+    def _has_data(self) -> bool:
+        """Available only while the device is present in known_devices."""
+        return self._device() is not None
+
+    def _device(self) -> dict[str, Any] | None:
+        """Return this device's entry in known_devices, or None if gone."""
+        if not self.coordinator.data:
+            return None
+        for device in self.coordinator.data.get("known_devices", []):
+            if device.get("address") == self._address:
+                return device
+        return None
+
+    @property
+    def icon(self) -> str:
+        """Return icon based on connection state."""
+        return "mdi:bluetooth-audio" if self.is_on else "mdi:bluetooth-off"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the device is connected."""
+        device = self._device()
+        return bool(device and device.get("connected"))
+
+    @api_command
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Connect the device."""
+        await self._api.bluetooth_connect(self._address)
+        await self.coordinator.async_refresh()
+
+    @api_command
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disconnect the device."""
+        await self._api.bluetooth_disconnect(self._address)
         await self.coordinator.async_refresh()
