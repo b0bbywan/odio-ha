@@ -61,6 +61,9 @@
       "reboot": {"name": "Redémarrer"},
       "bluetooth_pairing": {"name": "Pairing Bluetooth"}
     },
+    "select": {
+      "bluetooth_pair": {"name": "Appairer un appareil Bluetooth"}
+    },
     "sensor": {
       "default_output": {
         "name": "Sortie par défaut"

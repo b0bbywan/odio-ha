@@ -61,6 +61,9 @@
       "reboot": {"name": "Reboot"},
       "bluetooth_pairing": {"name": "Bluetooth Pairing"}
     },
+    "select": {
+      "bluetooth_pair": {"name": "Pair Bluetooth Device"}
+    },
     "sensor": {
       "bluetooth_connected_device": {
         "name": "Connected Device",
