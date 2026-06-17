@@ -244,10 +244,13 @@ MOCK_BLUETOOTH_STATUS = {
     "discoverable": False,
     "pairable": False,
     "pairing_active": False,
+    "scanning": False,
     "known_devices": [
         {
             "address": "AA:BB:CC:DD:EE:FF",
             "name": "Pixel 6a",
+            "paired": True,
+            "bonded": True,
             "trusted": True,
             "connected": True,
         }

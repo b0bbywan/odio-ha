@@ -638,6 +638,44 @@ class TestOdioApiClientBluetooth:
                 await api.bluetooth_pairing_mode()
                 assert len(m.requests) == 1
 
+    @pytest.mark.asyncio
+    async def test_bluetooth_scan(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/scan", status=204)
+                await api.bluetooth_scan()
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_scan_stop(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/scan/stop", status=204)
+                await api.bluetooth_scan_stop()
+                assert len(m.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_connect_sends_address(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/connect", status=204)
+                await api.bluetooth_connect("AA:BB:CC:DD:EE:FF")
+                request = next(iter(m.requests.values()))[0]
+                assert request.kwargs["json"] == {"address": "AA:BB:CC:DD:EE:FF"}
+
+    @pytest.mark.asyncio
+    async def test_bluetooth_disconnect_sends_address(self):
+        async with ClientSession() as session:
+            api = OdioApiClient("http://test:8018", session)
+            with aioresponses() as m:
+                m.post("http://test:8018/bluetooth/disconnect", status=204)
+                await api.bluetooth_disconnect("AA:BB:CC:DD:EE:FF")
+                request = next(iter(m.requests.values()))[0]
+                assert request.kwargs["json"] == {"address": "AA:BB:CC:DD:EE:FF"}
+
 
 class TestOdioApiClientMPRIS:
     """Tests for MPRIS player control methods."""
