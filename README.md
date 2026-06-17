@@ -79,6 +79,7 @@ Control your Bluetooth adapter directly from Home Assistant:
 
 Connect to **external Bluetooth speakers / headphones** (outbound):
 - **Scan** switch — start/stop discovery of nearby Bluetooth audio devices
+- **Pair device** select — lists devices found during a scan that aren't paired yet; pick one to connect & pair it. Available only while pairable devices are in range.
 - **One switch per known device** (paired/bonded) — turn on to connect, off to disconnect. Created dynamically; a device that leaves the known list goes unavailable instead of disappearing.
 - Once connected, the device becomes a PulseAudio/PipeWire sink — so it shows up in the receiver's **output source list** and is selectable as the default output, no extra setup.
 
@@ -185,6 +186,7 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 |--------|-------------|
 | `switch.odio_remote_[hostname]_bluetooth_power` | Power the Bluetooth adapter on/off |
 | `switch.odio_remote_[hostname]_bluetooth_scan` | Start/stop discovery of nearby Bluetooth audio devices |
+| `select.odio_remote_[hostname]_bluetooth_pair` | Pair a newly discovered (unpaired) device by selecting it |
 | `switch.odio_remote_[hostname]_bluetooth_device_[address]` | One per paired/bonded device — connect/disconnect (dynamic) |
 | `button.odio_remote_[hostname]_bluetooth_pairing` | Trigger pairing mode (60s server-side timeout) |
 | `binary_sensor.odio_remote_[hostname]_bluetooth_pairing_active` | Pairing mode currently active (diagnostic) |
