@@ -29,6 +29,7 @@ from .const import (
     SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_BLUETOOTH_UPDATED,
+    SSE_EVENT_BLUETOOTH_DISCOVERED,
     SSE_EVENT_PLAYER_UPDATED,
     SSE_EVENT_PLAYER_ADDED,
     SSE_EVENT_PLAYER_REMOVED,
@@ -52,6 +53,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.MEDIA_PLAYER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.UPDATE,
@@ -219,6 +221,11 @@ async def _setup_bluetooth_coordinator(
     entry.async_on_unload(
         event_stream.async_add_event_listener(
             SSE_EVENT_BLUETOOTH_UPDATED, coordinator.handle_sse_event
+        )
+    )
+    entry.async_on_unload(
+        event_stream.async_add_event_listener(
+            SSE_EVENT_BLUETOOTH_DISCOVERED, coordinator.handle_sse_discovered_event
         )
     )
     _LOGGER.debug("Bluetooth coordinator created (bluetooth backend enabled)")

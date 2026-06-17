@@ -155,6 +155,32 @@ class OdioBluetoothCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("SSE bluetooth.updated: powered=%s", event.data.get("powered"))
         self.async_set_updated_data(event.data)
 
+    def handle_sse_discovered_event(self, event: SseEvent) -> None:
+        """Handle a bluetooth.discovered SSE event.
+
+        The payload is a single device dict (``{address, name, ...}``). Merge it
+        into known_devices without clobbering the adapter state so discovered
+        devices show up live during a scan.
+        """
+        if not isinstance(event.data, dict) or not event.data.get("address"):
+            _LOGGER.warning(
+                "bluetooth.discovered: expected device dict, got %s",
+                type(event.data).__name__,
+            )
+            return
+        device = event.data
+        current = dict(self.data or {})
+        devices = list(current.get("known_devices", []))
+        for i, existing in enumerate(devices):
+            if existing.get("address") == device["address"]:
+                devices[i] = {**existing, **device}
+                break
+        else:
+            devices.append(device)
+        current["known_devices"] = devices
+        _LOGGER.debug("SSE bluetooth.discovered: %s", device["address"])
+        self.async_set_updated_data(current)
+
 
 class OdioMPRISCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for MPRIS players data."""
