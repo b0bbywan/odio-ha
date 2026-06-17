@@ -460,6 +460,62 @@ class TestBluetoothCoordinatorHandleSseEvent:
         coord.async_set_updated_data.assert_called_once_with(data)
 
 
+class TestBluetoothCoordinatorHandleSseDiscoveredEvent:
+
+    def _make_coord(self, data):
+        coord = _make_bluetooth_coordinator(MagicMock())
+        coord.data = data
+        coord.async_set_updated_data = MagicMock()
+        return coord
+
+    def test_appends_new_device_without_clobbering_adapter(self):
+        coord = self._make_coord({"powered": True, "scanning": True, "known_devices": []})
+        device = {"address": "11:22:33:44:55:66", "name": "Speaker", "paired": False}
+
+        coord.handle_sse_discovered_event(
+            SseEvent(type="bluetooth.discovered", data=device)
+        )
+
+        result = coord.async_set_updated_data.call_args[0][0]
+        assert result["powered"] is True
+        assert result["scanning"] is True
+        assert result["known_devices"] == [device]
+
+    def test_merges_existing_device_by_address(self):
+        existing = {"address": "11:22:33:44:55:66", "name": "Speaker", "connected": False}
+        coord = self._make_coord({"known_devices": [existing]})
+
+        coord.handle_sse_discovered_event(
+            SseEvent(
+                type="bluetooth.discovered",
+                data={"address": "11:22:33:44:55:66", "connected": True},
+            )
+        )
+
+        result = coord.async_set_updated_data.call_args[0][0]
+        assert len(result["known_devices"]) == 1
+        assert result["known_devices"][0]["name"] == "Speaker"
+        assert result["known_devices"][0]["connected"] is True
+
+    def test_handles_none_data(self):
+        coord = self._make_coord(None)
+        device = {"address": "11:22:33:44:55:66", "name": "Speaker"}
+
+        coord.handle_sse_discovered_event(
+            SseEvent(type="bluetooth.discovered", data=device)
+        )
+
+        result = coord.async_set_updated_data.call_args[0][0]
+        assert result["known_devices"] == [device]
+
+    def test_ignores_payload_without_address(self):
+        coord = self._make_coord({"known_devices": []})
+        coord.handle_sse_discovered_event(
+            SseEvent(type="bluetooth.discovered", data={"name": "no address"})
+        )
+        coord.async_set_updated_data.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # OdioAudioCoordinator.handle_sse_output_event
 # ---------------------------------------------------------------------------

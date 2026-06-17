@@ -16,6 +16,7 @@ from custom_components.odio_remote.const import (
     SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_BLUETOOTH_UPDATED,
+    SSE_EVENT_BLUETOOTH_DISCOVERED,
     SSE_EVENT_PLAYER_UPDATED,
     SSE_EVENT_PLAYER_ADDED,
     SSE_EVENT_PLAYER_REMOVED,
@@ -394,6 +395,11 @@ class TestSetupBluetoothCoordinator:
 
         assert SSE_EVENT_BLUETOOTH_UPDATED in stream._registered
         assert stream._registered[SSE_EVENT_BLUETOOTH_UPDATED][0] == coordinator.handle_sse_event
+        assert SSE_EVENT_BLUETOOTH_DISCOVERED in stream._registered
+        assert (
+            stream._registered[SSE_EVENT_BLUETOOTH_DISCOVERED][0]
+            == coordinator.handle_sse_discovered_event
+        )
 
     @pytest.mark.asyncio
     @patch(
@@ -407,8 +413,8 @@ class TestSetupBluetoothCoordinator:
 
         await _setup_bluetooth_coordinator(_make_hass(), entry, MagicMock(), stream)
 
-        # 1 (coordinator shutdown) + 1 SSE listener = 2 unload callbacks
-        assert len(entry._unload_callbacks) == 2
+        # 1 (coordinator shutdown) + 2 SSE listeners (updated + discovered) = 3
+        assert len(entry._unload_callbacks) == 3
 
 
 class TestSetupUpgradeCoordinator:
