@@ -80,6 +80,13 @@ Control your Bluetooth adapter directly from Home Assistant:
 ### Power (power backend)
 - Shutdown and reboot buttons
 
+### Upgrade (upgrade backend)
+Exposes a server-configured upgrade as a native HA `update` entity, presented as **Firmware**. What gets detected and upgraded (version source, detection schedule, upgrade command) is **entirely configured on the go-odio-api server** — HA just reflects it.
+- Installed/latest version tracking, "update available" when the server-side detector reports one
+- **Install** button to start the upgrade (`POST /upgrade/start`), shown only when the server allows it
+- Live progress percentage while a run is in flight
+- Detection is fully server-driven (systemd timer + fsnotify push over SSE) — HA never polls or re-checks
+
 ### Mapping to existing media players
 You can map Odio entities (services or remote clients) to any existing HA media_player entity via the configuration or reconfiguration flow.
 
@@ -181,6 +188,11 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 |--------|-------------|
 | `button.odio_remote_[hostname]_power_off` | Shut down the machine |
 | `button.odio_remote_[hostname]_reboot` | Reboot the machine |
+
+### Upgrade backend
+| Entity | Description |
+|--------|-------------|
+| `update.odio_remote_[hostname]_firmware` | Firmware update — installed/latest version, install button (when allowed), live progress |
 
 ## Roadmap
 
