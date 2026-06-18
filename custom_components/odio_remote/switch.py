@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -15,7 +15,11 @@ from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .coordinator import OdioBluetoothCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
-from .helpers import api_command, is_persistent_bt_device
+from .helpers import (
+    api_command,
+    is_persistent_bt_device,
+    register_dynamic_entities,
+)
 from .mixins import OdioBluetoothEntity
 
 PARALLEL_UPDATES = 0
@@ -106,44 +110,33 @@ def _register_dynamic_bluetooth_devices(
 ) -> None:
     """Add a switch when a newly paired/bonded BT device appears via SSE."""
     rd = entry.runtime_data
-    known_addresses = {
-        e.address
-        for e in initial_entities
-        if isinstance(e, OdioBluetoothDeviceSwitch)
-    }
 
-    @callback
-    def _async_check_new_devices() -> None:
-        if not coordinator.data:
-            return
-        new_entities = []
-        for device in coordinator.data.get("known_devices", []):
-            address = device.get("address")
-            if (
-                address
-                and address not in known_addresses
-                and is_persistent_bt_device(device)
-            ):
-                new_entities.append(
-                    OdioBluetoothDeviceSwitch(
-                        coordinator,
-                        rd.api,
-                        entry.entry_id,
-                        rd.device_info,
-                        rd.event_stream,
-                        address,
-                        device.get("name") or address,
-                    )
-                )
-                known_addresses.add(address)
-        if new_entities:
-            _LOGGER.info(
-                "Dynamically adding %d Bluetooth device switch(es)",
-                len(new_entities),
-            )
-            async_add_entities(new_entities)
+    def _select_key(device: dict[str, Any]) -> str | None:
+        address = device.get("address")
+        return address if address and is_persistent_bt_device(device) else None
 
-    entry.async_on_unload(coordinator.async_add_listener(_async_check_new_devices))
+    register_dynamic_entities(
+        entry,
+        coordinator,
+        list_key="known_devices",
+        select_key=_select_key,
+        factory=lambda device: OdioBluetoothDeviceSwitch(
+            coordinator,
+            rd.api,
+            entry.entry_id,
+            rd.device_info,
+            rd.event_stream,
+            device["address"],
+            device.get("name") or device["address"],
+        ),
+        initial_keys={
+            e.address
+            for e in initial_entities
+            if isinstance(e, OdioBluetoothDeviceSwitch)
+        },
+        label="Bluetooth device switch(es)",
+        async_add_entities=async_add_entities,
+    )
 
 
 async def async_setup_entry(
@@ -192,39 +185,26 @@ async def async_setup_entry(
     if service_coordinator is None:
         return
 
-    # -------------------------------------------------------------------------
-    # Dynamic switch creation
-    # Fires when service_coordinator first gets data after an API-down startup.
-    # -------------------------------------------------------------------------
-    known_switch_keys = {
-        f"{e._service_info['scope']}/{e._service_info['name']}"
-        for e in entities
-        if isinstance(e, OdioServiceSwitch)
-    }
+    # Dynamic switch creation: fires when service_coordinator first gets data
+    # after an API-down startup.
+    def _select_switch_key(svc: dict[str, Any]) -> str | None:
+        if not (svc.get("exists") and svc.get("scope") == "user"):
+            return None
+        return f"{svc.get('scope', 'user')}/{svc['name']}"
 
-    @callback
-    def _async_check_new_switches() -> None:
-        if not service_coordinator.data:
-            return
-        new_entities = []
-        for svc in service_coordinator.data.get("services", []):
-            key = f"{svc.get('scope', 'user')}/{svc['name']}"
-            if (
-                svc.get("exists")
-                and svc.get("scope") == "user"
-                and key not in known_switch_keys
-            ):
-                new_entities.append(OdioServiceSwitch(ctx, svc))
-                known_switch_keys.add(key)
-        if new_entities:
-            _LOGGER.info(
-                "Dynamically adding %d switch entities after late API connection",
-                len(new_entities),
-            )
-            async_add_entities(new_entities)
-
-    entry.async_on_unload(
-        service_coordinator.async_add_listener(_async_check_new_switches)
+    register_dynamic_entities(
+        entry,
+        service_coordinator,
+        list_key="services",
+        select_key=_select_switch_key,
+        factory=lambda svc: OdioServiceSwitch(ctx, svc),
+        initial_keys={
+            f"{e._service_info['scope']}/{e._service_info['name']}"
+            for e in entities
+            if isinstance(e, OdioServiceSwitch)
+        },
+        label="service switch(es)",
+        async_add_entities=async_add_entities,
     )
 
 
