@@ -10,8 +10,14 @@ from homeassistant.components.media_player import (
     RepeatMode,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .api_client import OdioApiClient
+from .coordinator import OdioBluetoothCoordinator
+from .event_stream import OdioEventStreamManager
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -374,3 +380,49 @@ class MappedEntityMixin(Entity):
             api_client.set_client_mute,
             mute,
         )
+
+
+class OdioBluetoothEntity(CoordinatorEntity[OdioBluetoothCoordinator]):
+    """Base for Bluetooth entities: shared wiring + SSE-aware availability.
+
+    Subclasses set ``_unique_suffix`` (a class attr, or an instance attr before
+    calling ``super().__init__``) and may override ``_has_data`` for their own
+    availability gate.
+    """
+
+    _attr_has_entity_name = True
+    _unique_suffix: str = ""
+
+    def __init__(
+        self,
+        coordinator: OdioBluetoothCoordinator,
+        api: OdioApiClient,
+        entry_id: str,
+        device_info: DeviceInfo,
+        event_stream: OdioEventStreamManager,
+    ) -> None:
+        super().__init__(coordinator)
+        self._api = api
+        self._event_stream = event_stream
+        self._attr_unique_id = f"{entry_id}_{self._unique_suffix}"
+        self._attr_device_info = device_info
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh on SSE connectivity changes too, not just coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self._event_stream.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def available(self) -> bool:
+        """SSE up, coordinator healthy, and entity-specific data present."""
+        return (
+            self._event_stream.sse_connected
+            and self.coordinator.last_update_success
+            and self._has_data()
+        )
+
+    def _has_data(self) -> bool:
+        """Entity-specific availability gate; defaults to 'coordinator has data'."""
+        return bool(self.coordinator.data)

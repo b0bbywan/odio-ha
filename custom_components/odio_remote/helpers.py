@@ -63,6 +63,11 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
     return None
 
 
+def is_persistent_bt_device(device: dict[str, Any]) -> bool:
+    """Return True for paired/bonded devices, which get their own switch."""
+    return bool(device.get("paired") or device.get("bonded"))
+
+
 def api_command(
     func: Callable[_P, Coroutine[Any, Any, _R]],
 ) -> Callable[_P, Coroutine[Any, Any, _R]]:
