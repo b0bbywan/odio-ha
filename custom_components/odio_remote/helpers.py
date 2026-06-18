@@ -6,8 +6,12 @@ import socket
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import _MPRIS_BUS_PREFIX
 from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
@@ -66,6 +70,43 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
 def is_persistent_bt_device(device: dict[str, Any]) -> bool:
     """Return True for paired/bonded devices, which get their own switch."""
     return bool(device.get("paired") or device.get("bonded"))
+
+
+def register_dynamic_entities(
+    config_entry: ConfigEntry,
+    coordinator: DataUpdateCoordinator[Any],
+    *,
+    list_key: str,
+    select_key: Callable[[dict[str, Any]], str | None],
+    factory: Callable[[dict[str, Any]], Entity],
+    initial_keys: set[str],
+    label: str,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Add entities as items appear in coordinator data, deduped by key.
+
+    Covers the shared "seed keys -> listen -> diff -> add" pattern. select_key
+    returns an item's dedup key when it warrants an entity, or None to skip it.
+    Callers needing extra side effects (e.g. MPRIS rebind) roll their own.
+    """
+    known = set(initial_keys)
+
+    @callback
+    def _check_new_items() -> None:
+        if not coordinator.data:
+            return
+        new: list[Entity] = []
+        for item in coordinator.data.get(list_key, []):
+            key = select_key(item)
+            if not key or key in known:
+                continue
+            new.append(factory(item))
+            known.add(key)
+        if new:
+            _LOGGER.info("Dynamically adding %d %s", len(new), label)
+            async_add_entities(new)
+
+    config_entry.async_on_unload(coordinator.async_add_listener(_check_new_items))
 
 
 def api_command(
