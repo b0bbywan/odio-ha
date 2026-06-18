@@ -35,7 +35,11 @@ from .const import (
 )
 from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager
-from .helpers import api_command, extract_mpris_app_name
+from .helpers import (
+    api_command,
+    extract_mpris_app_name,
+    register_dynamic_entities,
+)
 from .mixins import MappedEntityMixin
 
 PARALLEL_UPDATES = 0
@@ -138,36 +142,26 @@ def _register_dynamic_services(
     """Register listener for late-discovered service entities."""
     if ctx.service_coordinator is None:
         return
-    service_coordinator = ctx.service_coordinator
-    known_service_keys = {
-        f"{e._service_info['scope']}/{e._service_info['name']}"
-        for e in initial_entities
-        if isinstance(e, OdioServiceMediaPlayer)
-    }
 
-    @callback
-    def _async_check_new_services() -> None:
-        if not service_coordinator.data:
-            return
-        new_entities: list[MediaPlayerEntity] = []
-        for service in service_coordinator.data.get("services", []):
-            mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
-            if (
-                service.get("exists")
-                and mapping_key in ctx.service_mappings
-                and mapping_key not in known_service_keys
-            ):
-                new_entities.append(OdioServiceMediaPlayer(ctx, service))
-                known_service_keys.add(mapping_key)
-        if new_entities:
-            _LOGGER.info(
-                "Dynamically adding %d service entities after late API connection",
-                len(new_entities),
-            )
-            async_add_entities(new_entities)
+    def _select_key(service: dict[str, Any]) -> str | None:
+        mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
+        if service.get("exists") and mapping_key in ctx.service_mappings:
+            return mapping_key
+        return None
 
-    config_entry.async_on_unload(
-        service_coordinator.async_add_listener(_async_check_new_services)
+    register_dynamic_entities(
+        config_entry,
+        ctx.service_coordinator,
+        list_key="services",
+        select_key=_select_key,
+        factory=lambda service: OdioServiceMediaPlayer(ctx, service),
+        initial_keys={
+            f"{e._service_info['scope']}/{e._service_info['name']}"
+            for e in initial_entities
+            if isinstance(e, OdioServiceMediaPlayer)
+        },
+        label="service media_player(s)",
+        async_add_entities=async_add_entities,
     )
 
 
@@ -180,41 +174,28 @@ def _register_dynamic_clients(
     """Register listener for newly discovered remote audio clients."""
     if ctx.audio_coordinator is None:
         return
-    audio_coordinator = ctx.audio_coordinator
-    known_remote_clients = {
-        entity._client_name: entity
-        for entity in initial_entities
-        if isinstance(entity, OdioPulseClientMediaPlayer)
-    }
 
-    @callback
-    def _async_check_new_clients() -> None:
+    def _select_key(client: dict[str, Any]) -> str | None:
+        name = client.get("name", "")
+        host = client.get("host", "")
         hostname = ctx.server_hostname
-        if not audio_coordinator.data or not hostname:
-            return
+        if hostname and host and host != hostname and name:
+            return name
+        return None
 
-        new_entities: list[MediaPlayerEntity] = []
-        for client in audio_coordinator.data.get("audio", []):
-            client_name = client.get("name", "")
-            client_host = client.get("host", "")
-
-            if not (client_host and client_host != hostname and client_name):
-                continue
-            if client_name in known_remote_clients:
-                continue
-
-            entity = OdioPulseClientMediaPlayer(ctx, client)
-            new_entities.append(entity)
-            known_remote_clients[client_name] = entity
-
-        if new_entities:
-            _LOGGER.info(
-                "Adding %d new remote client entities", len(new_entities)
-            )
-            async_add_entities(new_entities)
-
-    config_entry.async_on_unload(
-        audio_coordinator.async_add_listener(_async_check_new_clients)
+    register_dynamic_entities(
+        config_entry,
+        ctx.audio_coordinator,
+        list_key="audio",
+        select_key=_select_key,
+        factory=lambda client: OdioPulseClientMediaPlayer(ctx, client),
+        initial_keys={
+            entity._client_name
+            for entity in initial_entities
+            if isinstance(entity, OdioPulseClientMediaPlayer)
+        },
+        label="remote client media_player(s)",
+        async_add_entities=async_add_entities,
     )
 
 
