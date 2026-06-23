@@ -34,6 +34,8 @@ mypy custom_components/odio_remote/
 
 `GET /server` is called **once at setup** (not polled) and stored in `OdioRemoteRuntimeData.server_info`. The `backends` dict it returns controls which coordinators are created:
 
+> **Backend re-detection on reconnect.** Because the backend set is read only at setup, a software upgrade that *adds* a backend (e.g. `upgrade` appearing after the API gains the feature) would otherwise go unnoticed until a manual reload — the SSE stream is subscribed to the old backend list and the new coordinator is never created. To handle this, `_on_sse_reconnect` (in `__init__.py`) re-fetches `/server` on every SSE reconnect (the server restart during an upgrade drops/reconnects the stream) and, if `server_info.backends` changed, calls `hass.config_entries.async_schedule_reload(entry.entry_id)` so coordinators, the SSE subscription, and device info are rebuilt. If the backends are unchanged it just calls `coordinators.refresh_all()` as before; if the re-fetch fails it falls back to `refresh_all()`.
+
 - `OdioAudioCoordinator` — SSE-driven, fetches audio clients. Created only if `backends["pulseaudio"]` is `True`.
 - `OdioServiceCoordinator` — SSE-driven, fetches systemd services. Created only if `backends["systemd"]` is `True`.
 - `OdioMPRISCoordinator` — SSE-driven, fetches MPRIS media players. Created only if `backends["mpris"]` is `True`.

@@ -352,11 +352,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         configuration_url=f"{api_url}/ui",
     )
 
-    # Re-fetch coordinator data on SSE reconnect to avoid stale state.
+    # On SSE reconnect, re-detect backends: an upgrade can add/remove a backend,
+    # which needs a full reload to (re)create coordinators and the SSE subscription.
+    async def _async_resync_on_reconnect() -> None:
+        try:
+            fresh = await StartupData.fetch(api)
+        except OdioError:
+            _LOGGER.debug("Could not re-fetch /server on reconnect — refreshing only")
+            coordinators.refresh_all(hass)
+            return
+        if fresh.server_info.backends != server_info.backends:
+            _LOGGER.info(
+                "Backends changed on SSE reconnect (%s -> %s) — reloading entry",
+                server_info.backends,
+                fresh.server_info.backends,
+            )
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+            return
+        coordinators.refresh_all(hass)
+
+    @callback
     def _on_sse_reconnect() -> None:
         if not event_stream.sse_connected:
             return
-        coordinators.refresh_all(hass)
+        hass.async_create_task(_async_resync_on_reconnect())
 
     entry.async_on_unload(event_stream.async_add_listener(_on_sse_reconnect))
 
