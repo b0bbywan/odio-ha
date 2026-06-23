@@ -695,6 +695,7 @@ class TestOnSseReconnect:
 
         api = MagicMock()
         api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
+        api.get_power_capabilities = AsyncMock(return_value={})
 
         reconnect_cb = None
 
@@ -714,8 +715,75 @@ class TestOnSseReconnect:
             await async_setup_entry(hass, entry)
 
         assert reconnect_cb is not None
+        # The reconnect callback spawns one task: the backend resync handler.
+        captured = []
+        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: captured.append(coro))
         reconnect_cb()
-        assert hass.async_create_task.call_count == 4
+        assert len(captured) == 1
+        # Backends unchanged -> handler refreshes existing coordinators via
+        # refresh_all (one async_create_task per active coordinator), no reload.
+        await captured[0]
+        hass.config_entries.async_schedule_reload.assert_not_called()
+        refresh_coros = captured[1:]
+        assert len(refresh_coros) == 4
+        for coro in refresh_coros:
+            coro.close()
+
+    @pytest.mark.asyncio
+    @patch("custom_components.odio_remote.async_get_clientsession")
+    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
+    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
+    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
+    async def test_reconnect_reloads_when_backends_change(
+        self, mock_bt, mock_mpris, mock_svc, mock_audio,
+        mock_mac, mock_session,
+    ):
+        from custom_components.odio_remote import async_setup_entry
+        from .conftest import MOCK_SERVER_INFO
+
+        hass = _make_hass()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
+        entry = _make_entry()
+        entry.data = {"api_url": "http://localhost:8018", "server_info": MOCK_SERVER_INFO}
+        entry.options = {}
+
+        for m in (mock_audio, mock_svc, mock_mpris, mock_bt):
+            coord = MagicMock()
+            coord.async_refresh = AsyncMock()
+            m.return_value = coord
+
+        # On reconnect the server now reports an extra `upgrade` backend.
+        new_info = {**MOCK_SERVER_INFO, "backends": {**MOCK_SERVER_INFO["backends"], "upgrade": True}}
+
+        api = MagicMock()
+        api.get_server_info = AsyncMock(side_effect=[MOCK_SERVER_INFO, new_info])
+        api.get_power_capabilities = AsyncMock(return_value={})
+
+        reconnect_cb = None
+
+        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
+             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
+            mock_esm_instance = MagicMock()
+            mock_esm_instance.sse_connected = True
+
+            def capture_listener(cb):
+                nonlocal reconnect_cb
+                reconnect_cb = cb
+                return lambda: None
+
+            mock_esm_instance.async_add_listener = capture_listener
+            mock_esm.return_value = mock_esm_instance
+
+            await async_setup_entry(hass, entry)
+
+        captured = []
+        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: captured.append(coro))
+        reconnect_cb()
+        await captured[0]
+        hass.config_entries.async_schedule_reload.assert_called_once_with(entry.entry_id)
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.async_get_clientsession")
