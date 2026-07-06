@@ -31,9 +31,12 @@ def _make_event_stream(connected=True):
     return es
 
 
-def _make_audio_coordinator(clients=None, success=True):
+def _make_audio_coordinator(clients=None, outputs=None, success=True):
     coord = MagicMock()
-    coord.data = {"audio": clients} if clients is not None else None
+    if clients is None and outputs is None:
+        coord.data = None
+    else:
+        coord.data = {"audio": clients or [], "outputs": outputs or []}
     coord.last_update_success = success
     coord.async_add_listener = MagicMock(return_value=lambda: None)
     return coord
@@ -156,30 +159,42 @@ class TestReceiverEntity:
 
     # -- volume --
 
-    def test_volume_level_average(self):
-        clients = [{"volume": 0.8}, {"volume": 0.4}]
-        coord = _make_audio_coordinator(clients=clients)
+    def test_volume_level_from_default_output(self):
+        outputs = [
+            {"default": False, "volume": 0.9},
+            {"default": True, "volume": 0.42},
+        ]
+        coord = _make_audio_coordinator(outputs=outputs)
         entity = self._make_receiver(audio_coordinator=coord)
-        assert entity.volume_level == pytest.approx(0.6)
+        assert entity.volume_level == pytest.approx(0.42)
+
+    def test_volume_level_ignores_client_volumes(self):
+        # Client streams are pinned at 1.0 under PipeWire; the receiver must
+        # report the default sink volume, not the client average.
+        clients = [{"volume": 1.0}, {"volume": 1.0}]
+        outputs = [{"default": True, "volume": 0.42}]
+        coord = _make_audio_coordinator(clients=clients, outputs=outputs)
+        entity = self._make_receiver(audio_coordinator=coord)
+        assert entity.volume_level == pytest.approx(0.42)
 
     def test_volume_level_none_when_no_coordinator(self):
         entity = self._make_receiver(audio_coordinator=None)
         assert entity.volume_level is None
 
-    def test_volume_level_none_when_no_clients(self):
-        coord = _make_audio_coordinator(clients=[])
+    def test_volume_level_none_when_no_default_output(self):
+        coord = _make_audio_coordinator(outputs=[{"default": False, "volume": 0.9}])
         entity = self._make_receiver(audio_coordinator=coord)
         assert entity.volume_level is None
 
     def test_is_volume_muted_true(self):
-        clients = [{"muted": True}]
-        coord = _make_audio_coordinator(clients=clients)
+        outputs = [{"default": True, "volume": 0.42, "muted": True}]
+        coord = _make_audio_coordinator(outputs=outputs)
         entity = self._make_receiver(audio_coordinator=coord)
         assert entity.is_volume_muted is True
 
     def test_is_volume_muted_false(self):
-        clients = [{"muted": False}]
-        coord = _make_audio_coordinator(clients=clients)
+        outputs = [{"default": True, "volume": 0.42, "muted": False}]
+        coord = _make_audio_coordinator(outputs=outputs)
         entity = self._make_receiver(audio_coordinator=coord)
         assert entity.is_volume_muted is False
 
