@@ -404,10 +404,9 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         """Volume level of the media player (0..1)."""
         if self._audio_coordinator is None or not self._audio_coordinator.data:
             return None
-        clients = self._audio_coordinator.data.get("audio", [])
-        volumes = [client.get("volume", 0) for client in clients]
-        if volumes:
-            return sum(volumes) / len(volumes)
+        for output in self._audio_coordinator.data.get("outputs", []):
+            if output.get("default"):
+                return output.get("volume")
         return None
 
     @property
@@ -415,8 +414,10 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
         """Boolean if volume is currently muted."""
         if self._audio_coordinator is None or not self._audio_coordinator.data:
             return False
-        clients = self._audio_coordinator.data.get("audio", [])
-        return any(client.get("muted", False) for client in clients)
+        for output in self._audio_coordinator.data.get("outputs", []):
+            if output.get("default"):
+                return output.get("muted", False)
+        return False
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
