@@ -1,9 +1,9 @@
 [dependency-groups]
 dev = [
-    "homeassistant==2026.6.0",
-    "mypy==2.2.0",
+    "homeassistant==2026.7.2",
+    "mypy==2.3.0",
     "mypy_extensions==1.1.0",
-    "ruff==0.15.20",
+    "ruff==0.15.21",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
