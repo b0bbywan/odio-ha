@@ -10,13 +10,10 @@ from homeassistant.components.update import (
     UpdateEntityFeature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
-from .api_client import OdioApiClient
-from .coordinator import OdioUpgradeCoordinator
+from .entity import OdioEntity
 from .helpers import api_command
 
 PARALLEL_UPDATES = 0
@@ -31,13 +28,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Remote update entity."""
     rd = entry.runtime_data
-    if rd.coordinators.upgrade is None:
+    if not rd.server_info.backends.upgrade:
         return
     async_add_entities(
         [
             OdioUpdateEntity(
-                rd.coordinators.upgrade,
-                rd.api,
+                rd.hub,
                 entry.entry_id,
                 rd.device_info,
                 rd.server_info.api_version,
@@ -46,26 +42,19 @@ async def async_setup_entry(
     )
 
 
-class OdioUpdateEntity(CoordinatorEntity[OdioUpgradeCoordinator], UpdateEntity):
+class OdioUpdateEntity(OdioEntity, UpdateEntity):
     """Update entity backed by the Odio upgrade detector."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "firmware"
     _attr_device_class = UpdateDeviceClass.FIRMWARE
+    _unique_suffix = "firmware_update"
 
-    def __init__(
-        self,
-        coordinator: OdioUpgradeCoordinator,
-        api: OdioApiClient,
-        entry_id: str,
-        device_info: DeviceInfo,
-        fallback_version: str | None,
-    ) -> None:
-        super().__init__(coordinator)
-        self._api = api
+    def __init__(self, hub: Any, entry_id: str, device_info: Any, fallback_version: str | None) -> None:
+        super().__init__(hub, entry_id, device_info)
         self._fallback_version = fallback_version
-        self._attr_unique_id = f"{entry_id}_firmware_update"
-        self._attr_device_info = device_info
+
+    def _change_sources(self) -> tuple:
+        return (self._hub.upgrade.on_change,)
 
     @property
     def supported_features(self) -> UpdateEntityFeature:
@@ -76,15 +65,15 @@ class OdioUpdateEntity(CoordinatorEntity[OdioUpgradeCoordinator], UpdateEntity):
         already in progress or when the deployment forbids it).
         """
         features = UpdateEntityFeature.PROGRESS
-        if (self.coordinator.data or {}).get("can_upgrade"):
+        status = self._hub.upgrade.status
+        if status is not None and status.can_upgrade:
             features |= UpdateEntityFeature.INSTALL
         return features
 
     @property
     def installed_version(self) -> str | None:
         """Return the currently installed version."""
-        data = self.coordinator.data or {}
-        return data.get("current") or self._fallback_version
+        return self._hub.upgrade.current_version or self._fallback_version
 
     @property
     def latest_version(self) -> str | None:
@@ -97,26 +86,25 @@ class OdioUpdateEntity(CoordinatorEntity[OdioUpgradeCoordinator], UpdateEntity):
         without naming a target, return ``None`` (HA shows "unknown") rather than
         a false match.
         """
-        data = self.coordinator.data or {}
-        if data.get("upgrade_available"):
-            return data.get("latest")
+        if self._hub.upgrade.available:
+            return self._hub.upgrade.latest_version or None
         return self.installed_version
 
     @property
     def in_progress(self) -> bool:
         """Return True while an upgrade run is active."""
-        return bool((self.coordinator.data or {}).get("in_progress"))
+        return self._hub.upgrade.in_progress
 
     @property
     def update_percentage(self) -> int | None:
         """Return the upgrade progress percentage, if known."""
         if not self.in_progress:
             return None
-        return (self.coordinator.data or {}).get("percent")
+        return self._hub.upgrade.progress_percent
 
     @api_command
     async def async_install(
         self, version: str | None, backup: bool, **kwargs: Any
     ) -> None:
         """Start the upgrade process."""
-        await self._api.upgrade_start()
+        await self._hub.upgrade.start()
