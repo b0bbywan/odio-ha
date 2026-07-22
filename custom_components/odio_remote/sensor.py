@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import OdioConfigEntry
-from .coordinator import OdioAudioCoordinator, OdioBluetoothCoordinator
+from .entity import OdioBluetoothEntity, OdioEntity
 
 PARALLEL_UPDATES = 0
 
@@ -25,103 +24,63 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Remote sensor entities."""
     rd = entry.runtime_data
+    backends = rd.server_info.backends
     entities: list[SensorEntity] = []
 
-    if rd.coordinators.audio is not None:
+    if backends.pulseaudio:
         entities.append(
-            OdioDefaultOutputSensor(
-                rd.coordinators.audio,
-                entry.entry_id,
-                rd.device_info,
-            )
+            OdioDefaultOutputSensor(rd.hub, entry.entry_id, rd.device_info)
         )
-
-    if rd.coordinators.bluetooth is not None:
+    if backends.bluetooth:
         entities.append(
-            OdioBluetoothConnectedDeviceSensor(
-                rd.coordinators.bluetooth,
-                entry.entry_id,
-                rd.device_info,
-            )
+            OdioBluetoothConnectedDeviceSensor(rd.hub, entry.entry_id, rd.device_info)
         )
 
     if entities:
         async_add_entities(entities)
 
 
-class OdioDefaultOutputSensor(
-    CoordinatorEntity[OdioAudioCoordinator], SensorEntity
-):
+class OdioDefaultOutputSensor(OdioEntity, SensorEntity):
     """Sensor reporting the description of the default audio output."""
 
     _attr_translation_key = "default_output"
     _attr_icon = "mdi:speaker"
-    _attr_has_entity_name = True
+    _unique_suffix = "default_output"
 
-    def __init__(
-        self,
-        coordinator: OdioAudioCoordinator,
-        entry_id: str,
-        device_info: DeviceInfo,
-    ) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry_id}_default_output"
-        self._attr_device_info = device_info
-
-    def _get_default_output(self) -> dict[str, Any] | None:
-        """Return the default output dict, or None."""
-        if not self.coordinator.data:
-            return None
-        for output in self.coordinator.data.get("outputs", []):
-            if output.get("default"):
-                return output
-        return None
+    def _change_sources(self) -> tuple:
+        return (self._hub.audio.on_change,)
 
     @property
     def native_value(self) -> str | None:
         """Return the description of the default audio output, or None."""
-        output = self._get_default_output()
+        output = self._hub.audio.default_output
         if output is None:
             return None
-        return output.get("description") or output.get("name")
+        return output.description or output.name
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return attributes of the default audio output."""
-        output = self._get_default_output()
+        output = self._hub.audio.default_output
         if output is None:
             return None
         return {
-            k: v for k, v in output.items()
+            k: v for k, v in asdict(output.state).items()
             if k not in ("default", "props")
         }
 
 
-class OdioBluetoothConnectedDeviceSensor(
-    CoordinatorEntity[OdioBluetoothCoordinator], SensorEntity
-):
+class OdioBluetoothConnectedDeviceSensor(OdioBluetoothEntity, SensorEntity):
     """Sensor reporting the name of the connected Bluetooth device."""
 
     _attr_translation_key = "bluetooth_connected_device"
     _attr_icon = "mdi:bluetooth-audio"
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: OdioBluetoothCoordinator,
-        entry_id: str,
-        device_info: DeviceInfo,
-    ) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{entry_id}_bluetooth_connected_device"
-        self._attr_device_info = device_info
+    _unique_suffix = "bluetooth_connected_device"
 
     @property
     def native_value(self) -> str:
         """Return the name of the first connected Bluetooth device, or 'none'."""
-        if not self.coordinator.data:
-            return "none"
-        for device in self.coordinator.data.get("known_devices", []):
-            if device.get("connected"):
-                return device.get("name")
+        connected = self._hub.bluetooth.connected_devices
+        if connected:
+            return connected[0].name
         return "none"
