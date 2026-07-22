@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from pyodio import BluetoothDevice
 
 from . import OdioConfigEntry
+from .entity import OdioBluetoothEntity
 from .helpers import api_command, is_persistent_bt_device
-from .mixins import OdioBluetoothEntity
 
 PARALLEL_UPDATES = 0
 
@@ -24,18 +24,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up Odio Remote select entities."""
     rd = entry.runtime_data
-    if rd.coordinators.bluetooth is None:
+    if not rd.server_info.backends.bluetooth:
         return
     async_add_entities(
-        [
-            OdioBluetoothPairSelect(
-                rd.coordinators.bluetooth,
-                rd.api,
-                entry.entry_id,
-                rd.device_info,
-                rd.event_stream,
-            )
-        ]
+        [OdioBluetoothPairSelect(rd.hub, entry.entry_id, rd.device_info)]
     )
 
 
@@ -53,22 +45,20 @@ class OdioBluetoothPairSelect(OdioBluetoothEntity, SelectEntity):
     _attr_icon = "mdi:bluetooth-connect"
     _unique_suffix = "bluetooth_pair"
 
-    def _discovered_devices(self) -> list[dict[str, Any]]:
+    def _discovered_devices(self) -> list[BluetoothDevice]:
         """Return discovered devices that are not yet paired/bonded."""
-        if not self.coordinator.data:
-            return []
         return [
             device
-            for device in self.coordinator.data.get("known_devices", [])
-            if device.get("address") and not is_persistent_bt_device(device)
+            for device in self._hub.bluetooth.devices.values()
+            if device.address and not is_persistent_bt_device(device.state)
         ]
 
     @staticmethod
-    def _label(device: dict[str, Any]) -> str:
+    def _label(device: BluetoothDevice) -> str:
         """Build an unambiguous option label for a discovered device."""
-        address = device["address"]
-        name = device.get("name")
-        return f"{name} ({address})" if name else address
+        if device.name:
+            return f"{device.name} ({device.address})"
+        return device.address
 
     @staticmethod
     def _address_from_option(option: str) -> str:
@@ -98,8 +88,7 @@ class OdioBluetoothPairSelect(OdioBluetoothEntity, SelectEntity):
         # between render and selection doesn't drop the pick.
         address = self._address_from_option(option)
         for device in self._discovered_devices():
-            if device["address"] == address:
-                await self._api.bluetooth_connect(address)
-                await self.coordinator.async_refresh()
+            if device.address == address:
+                await device.connect()
                 return
         _LOGGER.warning("Bluetooth pair option no longer available: %s", option)

@@ -1,10 +1,10 @@
 """Media player platform for Odio Remote."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.media_player import (
@@ -18,10 +18,18 @@ from homeassistant.components.media_player import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from pyodio import (
+    ADDED,
+    AudioClient,
+    AudioClientState,
+    Backends,
+    OdioHub,
+    Player,
+    Service,
+    ServiceState,
+)
 
 from . import OdioConfigEntry
-from .api_client import OdioApiClient
 from .const import (
     ATTR_CLIENT_ID,
     ATTR_APP,
@@ -33,8 +41,7 @@ from .const import (
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_ACTIVE,
 )
-from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
-from .event_stream import OdioEventStreamManager
+from .entity import OdioEntity
 from .helpers import (
     api_command,
     extract_mpris_app_name,
@@ -54,24 +61,20 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class _MediaPlayerContext:
-    """Shared setup state for media player platform helpers.
-
-    Bundles all objects that entity constructors and setup callbacks need,
-    avoiding long parameter lists and keeping the live coordinator accessible
-    for closures that must derive values (e.g. hostname) at call time rather
-    than at setup time.
-    """
+    """Shared setup state for media player platform helpers."""
 
     entry_id: str
-    event_stream: OdioEventStreamManager
-    audio_coordinator: OdioAudioCoordinator | None
-    service_coordinator: OdioServiceCoordinator | None
-    mpris_coordinator: OdioMPRISCoordinator | None
-    api: OdioApiClient
+    hub: OdioHub
     device_info: DeviceInfo
     service_mappings: dict[str, str]
-    backends: dict[str, bool]
+    backends: Backends
     server_hostname: str | None
+
+
+def _is_remote_client(ctx: _MediaPlayerContext, state: AudioClientState) -> bool:
+    """Whether an audio client comes from another host than the odio server."""
+    hostname = ctx.server_hostname
+    return bool(hostname and state.host and state.host != hostname and state.name)
 
 
 # =============================================================================
@@ -79,53 +82,36 @@ class _MediaPlayerContext:
 # =============================================================================
 
 
-def _build_service_entities(
-    ctx: _MediaPlayerContext,
-) -> list[MediaPlayerEntity]:
-    """Build service media player entities from coordinator data."""
-    entities: list[MediaPlayerEntity] = []
-    if ctx.service_coordinator is None or not ctx.service_coordinator.data:
-        return entities
-    for service in ctx.service_coordinator.data.get("services", []):
-        mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
-        if service.get("exists") and mapping_key in ctx.service_mappings:
-            entities.append(OdioServiceMediaPlayer(ctx, service))
-    return entities
+def _build_service_entities(ctx: _MediaPlayerContext) -> list[MediaPlayerEntity]:
+    """Build service media player entities for mapped services."""
+    return [
+        OdioServiceMediaPlayer(ctx, service.state)
+        for service in ctx.hub.services.values()
+        if service.state.exists and service.state.key in ctx.service_mappings
+    ]
 
 
-def _build_remote_client_entities(
-    ctx: _MediaPlayerContext,
-) -> list[MediaPlayerEntity]:
-    """Build standalone remote client entities from audio coordinator data."""
-    entities: list[MediaPlayerEntity] = []
-    if ctx.audio_coordinator is None or not ctx.audio_coordinator.data:
-        return entities
-    hostname = ctx.server_hostname
-    for client in ctx.audio_coordinator.data.get("audio", []):
-        client_name = client.get("name", "")
-        client_host = client.get("host", "")
-        if hostname and client_host and client_host != hostname and client_name:
-            entities.append(OdioPulseClientMediaPlayer(ctx, client))
-    return entities
+def _build_remote_client_entities(ctx: _MediaPlayerContext) -> list[MediaPlayerEntity]:
+    """Build standalone remote client entities from the hub's audio clients."""
+    return [
+        OdioPulseClientMediaPlayer(ctx, client.state)
+        for client in ctx.hub.audio.clients.values()
+        if _is_remote_client(ctx, client.state)
+    ]
 
 
-def _build_mpris_entities(
-    ctx: _MediaPlayerContext,
-) -> list[MediaPlayerEntity]:
-    """Build MPRIS media player entities from coordinator data.
+def _build_mpris_entities(ctx: _MediaPlayerContext) -> list[MediaPlayerEntity]:
+    """Build MPRIS media player entities from the hub's players.
 
     Deduplicates by app name so multi-instance players (e.g. Chrome) produce
     only one entity.
     """
     entities: list[MediaPlayerEntity] = []
-    if ctx.mpris_coordinator is None or not ctx.mpris_coordinator.data:
-        return entities
     seen_app_names: set[str] = set()
-    for player in ctx.mpris_coordinator.data.get("mpris", []):
-        bus_name = player.get("bus_name")
-        if not bus_name or not player.get("available", True):
+    for player in ctx.hub.players.values():
+        if not player.bus_name or not player.available:
             continue
-        app_name = extract_mpris_app_name(bus_name)
+        app_name = extract_mpris_app_name(player.bus_name)
         if app_name in seen_app_names:
             continue
         seen_app_names.add(app_name)
@@ -140,23 +126,22 @@ def _register_dynamic_services(
     initial_entities: list[MediaPlayerEntity],
 ) -> None:
     """Register listener for late-discovered service entities."""
-    if ctx.service_coordinator is None:
-        return
 
-    def _select_key(service: dict[str, Any]) -> str | None:
-        mapping_key = f"{service.get('scope', 'user')}/{service['name']}"
-        if service.get("exists") and mapping_key in ctx.service_mappings:
-            return mapping_key
+    def _select_key(obj: Any) -> str | None:
+        if not isinstance(obj, Service):
+            return None
+        key = obj.state.key
+        if obj.state.exists and key in ctx.service_mappings:
+            return key
         return None
 
     register_dynamic_entities(
         config_entry,
-        ctx.service_coordinator,
-        list_key="services",
+        ctx.hub.services.on_change,
         select_key=_select_key,
-        factory=lambda service: OdioServiceMediaPlayer(ctx, service),
+        factory=lambda service: OdioServiceMediaPlayer(ctx, service.state),
         initial_keys={
-            f"{e._service_info['scope']}/{e._service_info['name']}"
+            e.service_key
             for e in initial_entities
             if isinstance(e, OdioServiceMediaPlayer)
         },
@@ -172,23 +157,17 @@ def _register_dynamic_clients(
     initial_entities: list[MediaPlayerEntity],
 ) -> None:
     """Register listener for newly discovered remote audio clients."""
-    if ctx.audio_coordinator is None:
-        return
 
-    def _select_key(client: dict[str, Any]) -> str | None:
-        name = client.get("name", "")
-        host = client.get("host", "")
-        hostname = ctx.server_hostname
-        if hostname and host and host != hostname and name:
-            return name
-        return None
+    def _select_key(obj: Any) -> str | None:
+        if not isinstance(obj, AudioClient):
+            return None
+        return obj.name if _is_remote_client(ctx, obj.state) else None
 
     register_dynamic_entities(
         config_entry,
-        ctx.audio_coordinator,
-        list_key="audio",
+        ctx.hub.audio.on_change,
         select_key=_select_key,
-        factory=lambda client: OdioPulseClientMediaPlayer(ctx, client),
+        factory=lambda client: OdioPulseClientMediaPlayer(ctx, client.state),
         initial_keys={
             entity._client_name
             for entity in initial_entities
@@ -206,9 +185,6 @@ def _register_dynamic_mpris(
     initial_entities: list[MediaPlayerEntity],
 ) -> None:
     """Register listener for newly discovered MPRIS players."""
-    if ctx.mpris_coordinator is None:
-        return
-    mpris_coordinator = ctx.mpris_coordinator
     known_mpris_players: dict[str, OdioMPRISMediaPlayer] = {
         entity._player_name: entity
         for entity in initial_entities
@@ -217,45 +193,36 @@ def _register_dynamic_mpris(
     known_app_names: set[str] = {e._app_name for e in known_mpris_players.values()}
 
     @callback
-    def _async_check_new_mpris_players() -> None:
-        if not mpris_coordinator.data:
+    def _handle_player_change(change: str, player: Any) -> None:
+        if change != ADDED or not isinstance(player, Player):
             return
-        new_entities: list[MediaPlayerEntity] = []
-        for player in mpris_coordinator.data.get("mpris", []):
-            bus_name = player.get("bus_name")
-            if not bus_name or bus_name in known_mpris_players:
-                continue
-            if not player.get("available", True):
-                continue
-            app_name = extract_mpris_app_name(bus_name)
-            if app_name in known_app_names:
-                # The app already has an entity — rebind it if it is currently
-                # unavailable (e.g. Chrome restarted with a new bus_name / PID).
-                existing = next(
-                    (
-                        e for e in known_mpris_players.values()
-                        if e._app_name == app_name and not e.available
-                    ),
-                    None,
-                )
-                if existing is not None:
-                    old_bus_name = existing._player_name
-                    existing._player_name = bus_name
-                    known_mpris_players.pop(old_bus_name, None)
-                    known_mpris_players[bus_name] = existing
-                    existing.async_write_ha_state()
-                continue
-            entity = OdioMPRISMediaPlayer(ctx, player)
-            new_entities.append(entity)
-            known_mpris_players[bus_name] = entity
-            known_app_names.add(app_name)
-        if new_entities:
-            _LOGGER.info("Adding %d new MPRIS player entities", len(new_entities))
-            async_add_entities(new_entities)
+        bus_name = player.bus_name
+        if not bus_name or bus_name in known_mpris_players:
+            return
+        app_name = extract_mpris_app_name(bus_name)
+        if app_name in known_app_names:
+            # The app already has an entity — rebind it if it is currently
+            # unavailable (e.g. Chrome restarted with a new bus_name / PID).
+            existing = next(
+                (
+                    e for e in known_mpris_players.values()
+                    if e._app_name == app_name and not e.available
+                ),
+                None,
+            )
+            if existing is not None:
+                known_mpris_players.pop(existing._player_name, None)
+                existing._player_name = bus_name
+                known_mpris_players[bus_name] = existing
+                existing.async_write_ha_state()
+            return
+        entity = OdioMPRISMediaPlayer(ctx, player)
+        known_mpris_players[bus_name] = entity
+        known_app_names.add(app_name)
+        _LOGGER.info("Adding new MPRIS player entity for %s", bus_name)
+        async_add_entities([entity])
 
-    config_entry.async_on_unload(
-        mpris_coordinator.async_add_listener(_async_check_new_mpris_players)
-    )
+    config_entry.async_on_unload(ctx.hub.players.on_change(_handle_player_change))
 
 
 async def async_setup_entry(
@@ -268,11 +235,7 @@ async def async_setup_entry(
     server_info = rd.server_info
     ctx = _MediaPlayerContext(
         entry_id=config_entry.entry_id,
-        event_stream=rd.event_stream,
-        audio_coordinator=rd.coordinators.audio,
-        service_coordinator=rd.coordinators.service,
-        mpris_coordinator=rd.coordinators.mpris,
-        api=rd.api,
+        hub=rd.hub,
         device_info=rd.device_info,
         service_mappings=rd.service_mappings,
         backends=server_info.backends,
@@ -280,9 +243,12 @@ async def async_setup_entry(
     )
 
     entities: list[MediaPlayerEntity] = [OdioReceiverMediaPlayer(ctx)]
-    entities += _build_service_entities(ctx)
-    entities += _build_remote_client_entities(ctx)
-    entities += _build_mpris_entities(ctx)
+    if server_info.backends.systemd:
+        entities += _build_service_entities(ctx)
+    if server_info.backends.pulseaudio:
+        entities += _build_remote_client_entities(ctx)
+    if server_info.backends.mpris:
+        entities += _build_mpris_entities(ctx)
 
     _LOGGER.info(
         "Creating %d media_player entities (1 receiver + %d services + %d standalone clients + %d mpris)",
@@ -293,9 +259,12 @@ async def async_setup_entry(
     )
     async_add_entities(entities)
 
-    _register_dynamic_services(config_entry, ctx, async_add_entities, entities)
-    _register_dynamic_clients(config_entry, ctx, async_add_entities, entities)
-    _register_dynamic_mpris(config_entry, ctx, async_add_entities, entities)
+    if server_info.backends.systemd:
+        _register_dynamic_services(config_entry, ctx, async_add_entities, entities)
+    if server_info.backends.pulseaudio:
+        _register_dynamic_clients(config_entry, ctx, async_add_entities, entities)
+    if server_info.backends.mpris:
+        _register_dynamic_mpris(config_entry, ctx, async_add_entities, entities)
 
 
 # =============================================================================
@@ -303,87 +272,43 @@ async def async_setup_entry(
 # =============================================================================
 
 
-class OdioReceiverMediaPlayer(MediaPlayerEntity):
+class OdioReceiverMediaPlayer(OdioEntity, MediaPlayerEntity):
     """Representation of the main Odio Remote receiver (the Odio instance)."""
 
-    _attr_has_entity_name = True
     _attr_name = None
     _attr_device_class = MediaPlayerDeviceClass.RECEIVER
+    _unique_suffix = "receiver"
 
     def __init__(self, ctx: _MediaPlayerContext) -> None:
         """Initialize the receiver."""
-        self._event_stream = ctx.event_stream
+        super().__init__(ctx.hub, ctx.entry_id, ctx.device_info)
         self._backends = ctx.backends
-        self._audio_coordinator = ctx.audio_coordinator
-        self._service_coordinator = ctx.service_coordinator
-        self._mpris_coordinator = ctx.mpris_coordinator
-        self._api_client = ctx.api
-        self._attr_unique_id = f"{ctx.entry_id}_receiver"
-        self._attr_device_info = ctx.device_info
 
-    async def async_added_to_hass(self) -> None:
-        """Register listeners on available coordinators."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self._handle_coordinator_update)
-        )
-        if self._audio_coordinator is not None:
-            self.async_on_remove(
-                self._audio_coordinator.async_add_listener(
-                    self._handle_coordinator_update
-                )
-            )
-        if self._service_coordinator is not None:
-            self.async_on_remove(
-                self._service_coordinator.async_add_listener(
-                    self._handle_coordinator_update
-                )
-            )
-        if self._mpris_coordinator is not None:
-            self.async_on_remove(
-                self._mpris_coordinator.async_add_listener(
-                    self._handle_coordinator_update
-                )
-            )
+    def _change_sources(self) -> tuple:
+        sources = []
+        if self._backends.pulseaudio:
+            sources.append(self._hub.audio.on_change)
+        if self._backends.mpris:
+            sources.append(self._hub.players.on_change)
+        return tuple(sources)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from coordinators."""
-        self.async_write_ha_state()
-
-    def _get_backends(self) -> dict[str, bool]:
-        """Return backends dict (static, from server_info fetched at setup)."""
-        return self._backends
+    @property
+    def available(self) -> bool:
+        """The receiver is always shown; connectivity is reflected in its state."""
+        return True
 
     @property
     def state(self) -> MediaPlayerState | None:
         """Return the state of the device."""
-        if not self._event_stream.sse_connected:
+        if not self._hub.connected or not self._backends.pulseaudio:
             return MediaPlayerState.OFF
 
-        if self._audio_coordinator is None:
-            return MediaPlayerState.OFF
-
-        if not self._audio_coordinator.last_update_success:
-            return MediaPlayerState.OFF
-
-        backends = self._get_backends()
-        if "pulseaudio" not in backends or self._audio_coordinator is None:
-            return MediaPlayerState.OFF
-
-        audio_data = self._audio_coordinator.data
-        if audio_data is None:
-            return MediaPlayerState.OFF
-
-        clients = audio_data.get("audio", [])
-        has_active_client = any(not c.get("corked", True) for c in clients)
-        if has_active_client:
+        clients = self._hub.audio.clients.values()
+        if any(not client.corked for client in clients):
             return MediaPlayerState.PLAYING
 
-        if self._mpris_coordinator is not None and self._mpris_coordinator.data:
-            mpris_players = self._mpris_coordinator.data.get("mpris", [])
-            if any(p.get("playback_status") == "Playing" for p in mpris_players):
-                return MediaPlayerState.PLAYING
+        if self._backends.mpris and self._hub.players.playing:
+            return MediaPlayerState.PLAYING
 
         return MediaPlayerState.IDLE
 
@@ -391,7 +316,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
         features = MediaPlayerEntityFeature(0)
-        if self._get_backends().get("pulseaudio"):
+        if self._backends.pulseaudio:
             features |= (
                 MediaPlayerEntityFeature.VOLUME_SET
                 | MediaPlayerEntityFeature.VOLUME_MUTE
@@ -402,10 +327,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        if self._audio_coordinator is None or not self._audio_coordinator.data:
-            return None
-        clients = self._audio_coordinator.data.get("audio", [])
-        volumes = [client.get("volume", 0) for client in clients]
+        volumes = [client.volume for client in self._hub.audio.clients.values()]
         if volumes:
             return sum(volumes) / len(volumes)
         return None
@@ -413,67 +335,55 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def is_volume_muted(self) -> bool:
         """Boolean if volume is currently muted."""
-        if self._audio_coordinator is None or not self._audio_coordinator.data:
-            return False
-        clients = self._audio_coordinator.data.get("audio", [])
-        return any(client.get("muted", False) for client in clients)
+        return any(client.muted for client in self._hub.audio.clients.values())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         attrs: dict[str, Any] = {
-            "backends": self._get_backends(),
+            "backends": asdict(self._backends),
         }
-        if self._audio_coordinator is not None and self._audio_coordinator.data:
-            clients = self._audio_coordinator.data.get("audio", [])
+        if self._backends.pulseaudio:
+            clients = list(self._hub.audio.clients.values())
             attrs["active_clients"] = len(clients)
-            attrs["playing_clients"] = len([
-                c for c in clients if not c.get("corked", True)
-            ])
+            attrs["playing_clients"] = len([c for c in clients if not c.corked])
         return attrs
-
-    def _get_outputs(self) -> list[dict[str, Any]]:
-        """Return the outputs list from the audio coordinator."""
-        if self._audio_coordinator is None or not self._audio_coordinator.data:
-            return []
-        return self._audio_coordinator.data.get("outputs", [])
 
     @property
     def source_list(self) -> list[str] | None:
         """Return the list of available audio outputs."""
-        outputs = self._get_outputs()
+        outputs = list(self._hub.audio.outputs.values())
         if not outputs:
             return None
-        return [o.get("description") or o.get("name", "") for o in outputs]
+        return [o.description or o.name for o in outputs]
 
     @property
     def source(self) -> str | None:
         """Return the current default audio output."""
-        for o in self._get_outputs():
-            if o.get("default"):
-                return o.get("description") or o.get("name")
-        return None
+        default = self._hub.audio.default_output
+        if default is None:
+            return None
+        return default.description or default.name
 
     async def async_select_source(self, source: str) -> None:
         """Set the default audio output."""
-        for o in self._get_outputs():
-            label = o.get("description") or o.get("name", "")
-            if label == source:
-                await self._api_client.set_output_default(o["name"])
+        for output in self._hub.audio.outputs.values():
+            if (output.description or output.name) == source:
+                await output.make_default()
                 return
 
     @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        await self._api_client.set_server_volume(volume)
+        await self._hub.audio.set_volume(volume)
 
     @api_command
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
-        await self._api_client.set_server_mute(mute)
+        await self._hub.audio.set_muted(mute)
 
 
-class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioServiceMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
     """Representation of an Odio Remote service using MappedEntityMixin.
 
     A service entity is a simple ON/OFF wrapper around a systemd service.
@@ -481,39 +391,40 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
     metadata are all delegated to the mapped entity via MappedEntityMixin.
     """
 
-    _attr_has_entity_name = True
-
-    def __init__(self, ctx: _MediaPlayerContext, service_info: dict[str, Any]) -> None:
+    def __init__(self, ctx: _MediaPlayerContext, state: ServiceState) -> None:
         """Initialize the service."""
-        assert ctx.service_coordinator is not None
-        super().__init__(ctx.service_coordinator)
-        self._event_stream = ctx.event_stream
-        self._api_client = ctx.api
-        self._service_info = service_info
+        self._key = state.key
+        self._scope = state.scope
+        self._service_name = state.name
+        self._initial_enabled = state.enabled
+        self._unique_suffix = f"service_{state.scope}_{state.name}"
+        super().__init__(ctx.hub, ctx.entry_id, ctx.device_info)
+        self._service_mappings = ctx.service_mappings
+        self._attr_name = f"{state.name} ({state.scope})"
 
-        service_name = service_info["name"]
-        scope = service_info["scope"]
-
-        self._attr_unique_id = f"{ctx.entry_id}_service_{scope}_{service_name}"
-        self._attr_name = f"{service_name} ({scope})"
-        self._attr_device_info = ctx.device_info
+    @property
+    def service_key(self) -> str:
+        """Return the ``scope/name`` key of the backing service."""
+        return self._key
 
     @property
     def _mapping_key(self) -> str:
         """Return the key used in service_mappings."""
-        return f"{self._service_info['scope']}/{self._service_info['name']}"
+        return self._key
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self.async_write_ha_state)
-        )
+    def _change_sources(self) -> tuple:
+        return (self._hub.services.on_change,)
 
-    @property
-    def available(self) -> bool:
-        """Return False when the SSE stream is disconnected."""
-        return self._event_stream.sse_connected and super().available
+    def _relevant_change(self, change: str, obj: Any) -> bool:
+        return isinstance(obj, Service) and obj.state.key == self._key
+
+    def _service(self) -> Service | None:
+        return self._hub.services.get(self._key)
+
+    def _is_service_running(self) -> bool:
+        """Check if the service is running."""
+        service = self._service()
+        return bool(service and service.running)
 
     @property
     def state(self) -> MediaPlayerState:
@@ -526,17 +437,6 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
             return MediaPlayerState.OFF
 
         return MediaPlayerState.IDLE
-
-    def _is_service_running(self) -> bool:
-        """Check if the service is running."""
-        if self.coordinator.data:
-            for svc in self.coordinator.data.get("services", []):
-                if (
-                    svc["name"] == self._service_info["name"]
-                    and svc["scope"] == self._service_info["scope"]
-                ):
-                    return svc.get("running", False)
-        return False
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
@@ -561,19 +461,14 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
+        service = self._service()
         attrs = {
-            ATTR_SERVICE_SCOPE: self._service_info["scope"],
-            ATTR_SERVICE_ENABLED: self._service_info.get("enabled", False),
+            ATTR_SERVICE_SCOPE: self._scope,
+            ATTR_SERVICE_ENABLED: service.enabled if service else self._initial_enabled,
         }
-        if self.coordinator.data:
-            for svc in self.coordinator.data.get("services", []):
-                if (
-                    svc["name"] == self._service_info["name"]
-                    and svc["scope"] == self._service_info["scope"]
-                ):
-                    attrs[ATTR_SERVICE_ACTIVE] = svc.get("active_state")
-                    attrs["running"] = svc.get("running", False)
-                    break
+        if service is not None:
+            attrs[ATTR_SERVICE_ACTIVE] = service.state.active_state
+            attrs["running"] = service.running
         if self._mapped_entity:
             attrs["mapped_entity"] = self._mapped_entity
         return attrs
@@ -581,22 +476,14 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
     @api_command
     async def async_turn_on(self) -> None:
         """Turn the media player on."""
-        scope = self._service_info["scope"]
-        unit = self._service_info["name"]
-        _LOGGER.debug("Turning on service %s/%s", scope, unit)
-        await self._api_client.control_service("enable", scope, unit)
-        await asyncio.sleep(1)
-        await self.coordinator.async_request_refresh()
+        _LOGGER.debug("Turning on service %s", self._key)
+        await self._hub.client.service_enable(self._scope, self._service_name)
 
     @api_command
     async def async_turn_off(self) -> None:
         """Turn the media player off."""
-        scope = self._service_info["scope"]
-        unit = self._service_info["name"]
-        _LOGGER.debug("Turning off service %s/%s", scope, unit)
-        await self._api_client.control_service("disable", scope, unit)
-        await asyncio.sleep(1)
-        await self.coordinator.async_request_refresh()
+        _LOGGER.debug("Turning off service %s", self._key)
+        await self._hub.client.service_disable(self._scope, self._service_name)
 
     @api_command
     async def async_set_volume_level(self, volume: float) -> None:
@@ -609,26 +496,20 @@ class OdioServiceMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEn
         await self._delegate_to_hass("volume_mute", {"is_volume_muted": mute})
 
 
-class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioPulseClientMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
     """Representation of a standalone audio client using MappedEntityMixin."""
 
-    _attr_has_entity_name = True
-
-    def __init__(self, ctx: _MediaPlayerContext, initial_client: dict[str, Any]) -> None:
+    def __init__(self, ctx: _MediaPlayerContext, state: AudioClientState) -> None:
         """Initialize the standalone client."""
-        assert ctx.audio_coordinator is not None
-        super().__init__(ctx.audio_coordinator)
-        self._api_client = ctx.api
-        self._event_stream = ctx.event_stream
-        self._server_hostname_value = ctx.server_hostname
-
-        self._client_name = initial_client.get("name", "")
-        self._client_host = initial_client.get("host", "")
+        self._client_name = state.name
+        self._client_host = state.host
 
         safe_name = re.sub(r"[^a-z0-9_]+", "_", self._client_name.lower()).strip("_")
-        self._attr_unique_id = f"{ctx.entry_id}_remote_{safe_name}"
+        self._unique_suffix = f"remote_{safe_name}"
+        super().__init__(ctx.hub, ctx.entry_id, ctx.device_info)
+        self._service_mappings = ctx.service_mappings
+        self._server_hostname = ctx.server_hostname
         self._attr_name = self._client_name
-        self._attr_device_info = ctx.device_info
 
         _LOGGER.debug(
             "Created standalone client entity for '%s' from host '%s' with unique_id '%s'",
@@ -638,25 +519,30 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
         )
 
     @property
-    def _server_hostname(self) -> str | None:
-        """Return the server hostname (static, from server_info fetched at setup)."""
-        return self._server_hostname_value
-
-    @property
     def _mapping_key(self) -> str:
         """Return the key used in service_mappings."""
         return f"client:{self._client_name}"
 
+    def _change_sources(self) -> tuple:
+        return (self._hub.audio.on_change,)
+
+    def _relevant_change(self, change: str, obj: Any) -> bool:
+        return isinstance(obj, AudioClient) and obj.name == self._client_name
+
+    def _client(self) -> AudioClient | None:
+        """Return the live audio client, or None when disconnected."""
+        return self._hub.audio.clients.get(self._client_name)
+
     @property
     def state(self) -> MediaPlayerState:
         """Return the state of the device."""
-        mapped_state = self._map_state_from_entity(self._get_current_client)
+        mapped_state = self._map_state_from_entity(self._client)
         if mapped_state is not None:
             return mapped_state
-        client = self._get_current_client()
-        if not client:
+        client = self._client()
+        if client is None:
             return MediaPlayerState.OFF
-        if not client.get("corked", True):
+        if not client.corked:
             return MediaPlayerState.PLAYING
         return MediaPlayerState.IDLE
 
@@ -673,9 +559,9 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
         volume = self._get_mapped_attribute("volume_level")
         if volume is not None:
             return volume
-        client = self._get_current_client()
-        if client:
-            return client.get("volume")
+        client = self._client()
+        if client is not None:
+            return client.volume
         return None
 
     @property
@@ -684,15 +570,15 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
         muted = self._get_mapped_attribute("is_volume_muted")
         if muted is not None:
             return muted
-        client = self._get_current_client()
-        if client:
-            return client.get("muted", False)
+        client = self._client()
+        if client is not None:
+            return client.muted
         return False
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        client = self._get_current_client()
+        client = self._client()
         attrs = {
             "client_name": self._client_name,
             "remote_host": self._client_host,
@@ -700,17 +586,18 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
         }
         if self._mapped_entity:
             attrs["mapped_entity"] = self._mapped_entity
-        if not client:
+        if client is None:
             attrs["status"] = "disconnected"
             return attrs
+        state = client.state
         attrs["status"] = "connected"
-        attrs[ATTR_CLIENT_ID] = client.get("id")
-        attrs[ATTR_APP] = client.get("app")
-        attrs[ATTR_BACKEND] = client.get("backend")
-        attrs[ATTR_USER] = client.get("user")
-        attrs[ATTR_HOST] = client.get("host")
-        attrs[ATTR_CORKED] = client.get("corked")
-        props = client.get("props", {})
+        attrs[ATTR_CLIENT_ID] = state.id
+        attrs[ATTR_APP] = state.app
+        attrs[ATTR_BACKEND] = state.backend
+        attrs[ATTR_USER] = state.user
+        attrs[ATTR_HOST] = state.host
+        attrs[ATTR_CORKED] = state.corked
+        props = state.props
         if "native-protocol.peer" in props:
             attrs["connection"] = props["native-protocol.peer"]
         if "application.process.host" in props:
@@ -719,68 +606,32 @@ class OdioPulseClientMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlay
             attrs["app_version"] = props["application.version"]
         return attrs
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self.async_write_ha_state)
-        )
-
-    @property
-    def available(self) -> bool:
-        """Return False when the SSE stream is disconnected."""
-        return self._event_stream.sse_connected
-
-    def _get_current_client(self) -> dict[str, Any] | None:
-        """Get the current client data from coordinator by NAME."""
-        if not self.coordinator.data:
-            return None
-        for client in self.coordinator.data.get("audio", []):
-            if client.get("name") == self._client_name:
-                return client
-        return None
-
     @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        def get_client_name():
-            client = self._get_current_client()
-            return client.get("name") if client else None
-
-        await self._set_volume_with_fallback(volume, get_client_name, self._api_client)
+        await self._set_volume_with_fallback(volume, self._client)
 
     @api_command
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute the volume."""
-        def get_client_name():
-            client = self._get_current_client()
-            return client.get("name") if client else None
-
-        await self._mute_with_fallback(mute, get_client_name, self._api_client)
+        await self._mute_with_fallback(mute, self._client)
 
 
-class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEntity):
+class OdioMPRISMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
     """MPRIS media player entity with full native MPRIS support."""
 
-    _attr_has_entity_name = True
-
-    def __init__(self, ctx: _MediaPlayerContext, player: dict[str, Any]) -> None:
+    def __init__(self, ctx: _MediaPlayerContext, player: Player) -> None:
         """Initialize the MPRIS media player."""
-        assert ctx.mpris_coordinator is not None
-        super().__init__(ctx.mpris_coordinator)
-        self._api_client = ctx.api
-        self._event_stream = ctx.event_stream
-
-        self._player_name = player.get("bus_name", "")
+        self._player_name = player.bus_name
         self._app_name = extract_mpris_app_name(self._player_name)
 
         safe_name = re.sub(r"[^a-z0-9_]+", "_", self._app_name.lower()).strip("_")
-        self._attr_unique_id = f"{ctx.entry_id}_mpris_{safe_name}"
-        self._attr_device_info = ctx.device_info
+        self._unique_suffix = f"mpris_{safe_name}"
+        super().__init__(ctx.hub, ctx.entry_id, ctx.device_info)
+        self._service_mappings = ctx.service_mappings
 
-        identity = player.get("identity", "")
-        if identity:
-            self._attr_name = identity
+        if player.identity:
+            self._attr_name = player.identity
         else:
             self._attr_name = self._app_name.replace("_", " ").title()
 
@@ -800,28 +651,21 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
         """
         return f"mpris:{self._app_name}"
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to SSE connectivity changes in addition to coordinator updates."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self.async_write_ha_state)
-        )
+    def _change_sources(self) -> tuple:
+        return (self._hub.players.on_change,)
+
+    def _relevant_change(self, change: str, obj: Any) -> bool:
+        return isinstance(obj, Player) and obj.bus_name == self._player_name
+
+    def _player(self) -> Player | None:
+        """Return the live player, or None when gone."""
+        return self._hub.players.get(self._player_name)
 
     @property
     def available(self) -> bool:
-        """Return True if the player is reported by the coordinator and not removed."""
-        player = self._player_data
-        return self._event_stream.sse_connected and self.coordinator.last_update_success and player is not None and player.get("available", True)
-
-    @property
-    def _player_data(self) -> dict[str, Any] | None:
-        """Get current player data from coordinator."""
-        if not self.coordinator.data:
-            return None
-        for player in self.coordinator.data.get("mpris", []):
-            if player.get("bus_name") == self._player_name:
-                return player
-        return None
+        """Return True if the player is reported by the hub and not removed."""
+        player = self._player()
+        return self._hub.connected and player is not None and player.available
 
     @property
     def state(self) -> MediaPlayerState:
@@ -829,45 +673,43 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
         if not self.available:
             return MediaPlayerState.OFF
 
-        player = self._player_data
-        if not player:
+        player = self._player()
+        if player is None:
             return MediaPlayerState.OFF
 
-        playback_status = player.get("playback_status", "")
-        if playback_status == "Playing":
+        if player.playback_status == "Playing":
             return MediaPlayerState.PLAYING
-        elif playback_status == "Paused":
+        if player.playback_status == "Paused":
             return MediaPlayerState.PAUSED
-        else:
-            return MediaPlayerState.IDLE
+        return MediaPlayerState.IDLE
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Return supported features based on MPRIS capabilities and mapped entity."""
-        player = self._player_data
+        player = self._player()
         mapped_features = self._get_mapped_attribute("supported_features")
 
         features = MediaPlayerEntityFeature(0)
 
-        if player:
-            caps = player.get("capabilities", {})
-            if caps.get("can_play"):
+        if player is not None:
+            caps = player.capabilities
+            if caps.can_play:
                 features |= MediaPlayerEntityFeature.PLAY
-            if caps.get("can_pause"):
+            if caps.can_pause:
                 features |= MediaPlayerEntityFeature.PAUSE
-            if caps.get("can_control"):
+            if caps.can_control:
                 features |= MediaPlayerEntityFeature.STOP
-            if caps.get("can_go_next"):
+            if caps.can_go_next:
                 features |= MediaPlayerEntityFeature.NEXT_TRACK
-            if caps.get("can_go_previous"):
+            if caps.can_go_previous:
                 features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
-            if caps.get("can_seek"):
+            if caps.can_seek:
                 features |= MediaPlayerEntityFeature.SEEK
-            if caps.get("can_control") and player.get("volume") is not None:
+            if caps.can_control and player.volume is not None:
                 features |= MediaPlayerEntityFeature.VOLUME_SET | MediaPlayerEntityFeature.VOLUME_STEP
-            if player.get("shuffle") is not None:
+            if player.shuffle is not None:
                 features |= MediaPlayerEntityFeature.SHUFFLE_SET
-            if player.get("loop_status") is not None:
+            if player.loop_status is not None:
                 features |= MediaPlayerEntityFeature.REPEAT_SET
 
         return self._get_supported_features(features, mapped_features)
@@ -877,9 +719,9 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        player = self._player_data
-        if player:
-            return player.get("volume")
+        player = self._player()
+        if player is not None:
+            return player.volume
         return None
 
     @property
@@ -890,58 +732,51 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
     @property
     def media_duration(self) -> int | None:
         """Duration of current playing media in seconds."""
-        player = self._player_data
-        if player and player.get("metadata"):
-            length_us = player["metadata"].get("mpris:length")
-            if length_us is not None:
-                return int(length_us) // 1_000_000
+        player = self._player()
+        if player is not None and player.duration is not None:
+            return player.duration // 1_000_000
         return None
 
     @property
     def media_position(self) -> int | None:
-        """Position of current playing media in seconds."""
-        player = self._player_data
-        if player:
-            position_us = player.get("position")
-            if position_us is not None:
-                return int(position_us / 1_000_000)
+        """Position of current playing media in seconds.
+
+        The raw beacon position is returned together with
+        ``media_position_updated_at`` — HA extrapolates while playing.
+        """
+        player = self._player()
+        if player is not None and player.state.position is not None:
+            return player.state.position // 1_000_000
         return None
 
     @property
-    def media_position_updated_at(self):
+    def media_position_updated_at(self) -> datetime | None:
         """When was the position of the current playing media valid."""
-        player = self._player_data
-        if player:
-            return player.get("position_updated_at")
-        return None
+        player = self._player()
+        if player is None:
+            return None
+        updated_at = player.state.position_updated_at
+        if updated_at is not None and updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=UTC)
+        return updated_at
 
     @property
     def media_title(self) -> str | None:
         """Title of current playing media."""
-        player = self._player_data
-        if player and player.get("metadata"):
-            return player["metadata"].get("xesam:title")
-        return None
+        player = self._player()
+        return player.title if player is not None else None
 
     @property
     def media_artist(self) -> str | None:
         """Artist of current playing media."""
-        player = self._player_data
-        if player and player.get("metadata"):
-            artists = player["metadata"].get("xesam:artist")
-            if isinstance(artists, list) and artists:
-                return ", ".join(artists)
-            elif isinstance(artists, str):
-                return artists
-        return None
+        player = self._player()
+        return player.artist if player is not None else None
 
     @property
     def media_album_name(self) -> str | None:
         """Album name of current playing media."""
-        player = self._player_data
-        if player and player.get("metadata"):
-            return player["metadata"].get("xesam:album")
-        return None
+        player = self._player()
+        return player.album if player is not None else None
 
     @property
     def media_image_url(self) -> str | None:
@@ -952,58 +787,48 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
         http(s) URLs are redirected by the proxy. Cache-busts on trackid and
         artUrl, matching the go-odio-api UI.
         """
-        player = self._player_data
-        if player and player.get("metadata"):
-            art_url = player["metadata"].get("mpris:artUrl", "")
-            if art_url:
-                return self._api_client.player_cover_url(
-                    self._player_name,
-                    art_url,
-                    player["metadata"].get("mpris:trackid"),
-                )
+        player = self._player()
+        if player is not None and player.art_url:
+            return player.cover_url
         return None
 
     @property
     def shuffle(self) -> bool | None:
         """Boolean if shuffle is enabled."""
-        player = self._player_data
-        if player:
-            return player.get("shuffle")
-        return None
+        player = self._player()
+        return player.shuffle if player is not None else None
 
     @property
     def repeat(self) -> RepeatMode | None:
         """Return current repeat mode."""
-        player = self._player_data
-        if player:
-            loop_status = player.get("loop_status")
-            if loop_status == "None":
+        player = self._player()
+        if player is not None:
+            if player.loop_status == "None":
                 return RepeatMode.OFF
-            elif loop_status == "Track":
+            if player.loop_status == "Track":
                 return RepeatMode.ONE
-            elif loop_status == "Playlist":
+            if player.loop_status == "Playlist":
                 return RepeatMode.ALL
         return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
-        player = self._player_data
-        if not player:
+        player = self._player()
+        if player is None:
             return {}
 
-        caps = player.get("capabilities", {})
+        caps = player.capabilities
         attrs = {
             "player_name": self._player_name,
-            "identity": player.get("identity"),
-            "desktop_entry": player.get("desktop_entry"),
-            "playback_status": player.get("playback_status"),
-            "can_control": caps.get("can_control"),
-            "can_play": caps.get("can_play"),
-            "can_pause": caps.get("can_pause"),
-            "can_seek": caps.get("can_seek"),
-            "can_go_next": caps.get("can_go_next"),
-            "can_go_previous": caps.get("can_go_previous"),
+            "identity": player.identity,
+            "playback_status": player.playback_status,
+            "can_control": caps.can_control,
+            "can_play": caps.can_play,
+            "can_pause": caps.can_pause,
+            "can_seek": caps.can_seek,
+            "can_go_next": caps.can_go_next,
+            "can_go_previous": caps.can_go_previous,
         }
         if self._mapped_entity:
             attrs["mapped_entity"] = self._mapped_entity
@@ -1014,72 +839,70 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
     @api_command
     async def async_media_play(self) -> None:
         """Send play command."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_play"):
+        player = self._player()
+        if player is not None and player.capabilities.can_play:
             _LOGGER.debug("MPRIS play: %s", self._player_name)
-            await self._api_client.player_play(self._player_name)
+            await player.play()
             return
         await self._delegate_to_hass("media_play")
 
     @api_command
     async def async_media_pause(self) -> None:
         """Send pause command."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_pause"):
+        player = self._player()
+        if player is not None and player.capabilities.can_pause:
             _LOGGER.debug("MPRIS pause: %s", self._player_name)
-            await self._api_client.player_pause(self._player_name)
+            await player.pause()
             return
         await self._delegate_to_hass("media_pause")
 
     @api_command
     async def async_media_stop(self) -> None:
         """Send stop command."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_control"):
+        player = self._player()
+        if player is not None and player.capabilities.can_control:
             _LOGGER.debug("MPRIS stop: %s", self._player_name)
-            await self._api_client.player_stop(self._player_name)
+            await player.stop()
             return
         await self._delegate_to_hass("media_stop")
 
     @api_command
     async def async_media_next_track(self) -> None:
         """Send next track command."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_go_next"):
+        player = self._player()
+        if player is not None and player.capabilities.can_go_next:
             _LOGGER.debug("MPRIS next: %s", self._player_name)
-            await self._api_client.player_next(self._player_name)
+            await player.next()
             return
         await self._delegate_to_hass("media_next_track")
 
     @api_command
     async def async_media_previous_track(self) -> None:
         """Send previous track command."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_go_previous"):
+        player = self._player()
+        if player is not None and player.capabilities.can_go_previous:
             _LOGGER.debug("MPRIS previous: %s", self._player_name)
-            await self._api_client.player_previous(self._player_name)
+            await player.previous()
             return
         await self._delegate_to_hass("media_previous_track")
 
     @api_command
     async def async_media_seek(self, position: float) -> None:
         """Seek to position (in seconds)."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_seek"):
+        player = self._player()
+        if player is not None and player.capabilities.can_seek:
             _LOGGER.debug("MPRIS seek to %s: %s", position, self._player_name)
-            position_us = int(position * 1_000_000)
-            track_id = (player.get("metadata") or {}).get("mpris:trackid", "/")
-            await self._api_client.player_set_position(self._player_name, track_id, position_us)
+            await player.set_position(int(position * 1_000_000))
             return
         await self._delegate_to_hass("media_seek", {"seek_position": position})
 
     @api_command
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level (0..1)."""
-        player = self._player_data
-        if player and player.get("capabilities", {}).get("can_control") and player.get("volume") is not None:
+        player = self._player()
+        if player is not None and player.capabilities.can_control and player.volume is not None:
             _LOGGER.debug("MPRIS set volume %s: %s", volume, self._player_name)
-            await self._api_client.player_set_volume(self._player_name, volume)
+            await player.set_volume(volume)
             return
         await self._delegate_to_hass("volume_set", {"volume_level": volume})
 
@@ -1100,27 +923,25 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, CoordinatorEntity, MediaPlayerEnti
     @api_command
     async def async_set_shuffle(self, shuffle: bool) -> None:
         """Enable/disable shuffle mode."""
-        player = self._player_data
-        if player and player.get("shuffle") is not None:
+        player = self._player()
+        if player is not None and player.shuffle is not None:
             _LOGGER.debug("MPRIS set shuffle %s: %s", shuffle, self._player_name)
-            await self._api_client.player_set_shuffle(self._player_name, shuffle)
+            await player.set_shuffle(shuffle)
             return
         await self._delegate_to_hass("shuffle_set", {"shuffle": shuffle})
 
     @api_command
     async def async_set_repeat(self, repeat: RepeatMode) -> None:
         """Set repeat mode."""
-        player = self._player_data
-        if player and player.get("loop_status") is not None:
+        player = self._player()
+        if player is not None and player.loop_status is not None:
             _LOGGER.debug("MPRIS set repeat %s: %s", repeat, self._player_name)
-            if repeat == RepeatMode.OFF:
-                loop_status = "None"
-            elif repeat == RepeatMode.ONE:
+            if repeat == RepeatMode.ONE:
                 loop_status = "Track"
             elif repeat == RepeatMode.ALL:
                 loop_status = "Playlist"
             else:
                 loop_status = "None"
-            await self._api_client.player_set_loop(self._player_name, loop_status)
+            await player.set_loop(loop_status)
             return
         await self._delegate_to_hass("repeat_set", {"repeat": repeat})

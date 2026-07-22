@@ -1,65 +1,86 @@
-"""Tests for setup helper functions in __init__.py."""
-import asyncio
+"""Tests for Odio Remote setup/teardown in __init__.py."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.odio_remote.exceptions import OdioConnectionError
+from pyodio import OdioConnectionError, PowerCapabilities, ServerInfo
+
 from custom_components.odio_remote import (
+    OdioRemoteRuntimeData,
+    PLATFORMS,
     _resolve_mac,
-    _setup_audio_coordinator,
-    _setup_service_coordinator,
-    _setup_mpris_coordinator,
-    _setup_bluetooth_coordinator,
-    _setup_upgrade_coordinator,
+    async_remove_config_entry_device,
+    async_setup_entry,
+    async_unload_entry,
 )
 from custom_components.odio_remote.const import (
-    SSE_EVENT_AUDIO_UPDATED,
-    SSE_EVENT_AUDIO_REMOVED,
-    SSE_EVENT_BLUETOOTH_UPDATED,
-    SSE_EVENT_BLUETOOTH_DISCOVERED,
-    SSE_EVENT_PLAYER_UPDATED,
-    SSE_EVENT_PLAYER_ADDED,
-    SSE_EVENT_PLAYER_REMOVED,
-    SSE_EVENT_PLAYER_POSITION,
-    SSE_EVENT_SERVICE_UPDATED,
-    SSE_EVENT_UPGRADE_INFO,
-    SSE_EVENT_UPGRADE_PROGRESS,
+    CONF_API_URL,
+    CONF_SERVICE_MAPPINGS,
+    DEFAULT_KEEPALIVE_INTERVAL,
 )
+
+from .conftest import (
+    MOCK_SERVER_INFO,
+    MOCK_SERVICES,
+    TEST_API_URL,
+    make_hub,
+    push_event,
+    set_connected,
+)
+
+ENTRY_ID = "test_entry_id"
+
+UPGRADE_SERVER_INFO = {
+    **MOCK_SERVER_INFO,
+    "backends": {**MOCK_SERVER_INFO["backends"], "upgrade": True},
+}
 
 
 def _make_hass():
-    """Create a mock hass with event loop."""
     hass = MagicMock()
-    try:
-        hass.loop = asyncio.get_running_loop()
-    except RuntimeError:
-        hass.loop = MagicMock()
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    def _apply_update(entry, **kwargs):
+        if "data" in kwargs:
+            entry.data = kwargs["data"]
+
+    hass.config_entries.async_update_entry = MagicMock(side_effect=_apply_update)
     return hass
 
 
-def _make_entry():
-    """Create a mock config entry."""
+def _make_entry(data=None, options=None):
     entry = MagicMock()
-    entry.data = {}
-    entry.entry_id = "test_entry_id"
-    unload_callbacks = []
-    entry.async_on_unload = lambda cb: unload_callbacks.append(cb)
-    entry._unload_callbacks = unload_callbacks
+    entry.entry_id = ENTRY_ID
+    entry.data = {CONF_API_URL: TEST_API_URL, **(data or {})}
+    entry.options = options or {}
     return entry
 
 
-def _make_event_stream():
-    """Create a mock event stream that tracks registered listeners."""
-    stream = MagicMock()
-    registered = {}
+def _prepare_hub(hub, connect_error=None):
+    hub.connect = (
+        AsyncMock(side_effect=connect_error)
+        if connect_error
+        else AsyncMock(return_value=hub)
+    )
+    hub.start = AsyncMock()
+    hub.close = AsyncMock()
+    return hub
 
-    def add_event_listener(event_type, callback):
-        registered.setdefault(event_type, []).append(callback)
-        return lambda: registered[event_type].remove(callback)
 
-    stream.async_add_event_listener = add_event_listener
-    stream._registered = registered
-    return stream
+async def _setup(hass, entry, hub):
+    """Run async_setup_entry with the hub class and MAC resolution patched."""
+    session = MagicMock()
+    with patch(
+        "custom_components.odio_remote.OdioHub", return_value=hub
+    ) as hub_cls, patch(
+        "custom_components.odio_remote.async_get_clientsession", return_value=session
+    ), patch(
+        "custom_components.odio_remote.async_get_mac_from_ip",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        result = await async_setup_entry(hass, entry)
+    return result, hub_cls, session
 
 
 # =============================================================================
@@ -73,7 +94,6 @@ class TestResolveMac:
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
     async def test_resolves_and_caches_mac(self, mock_get_mac):
-        """Test MAC is resolved and cached in entry data."""
         mock_get_mac.return_value = "aa:bb:cc:dd:ee:ff"
         hass = MagicMock()
         entry = _make_entry()
@@ -88,7 +108,6 @@ class TestResolveMac:
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
     async def test_skips_update_when_mac_unchanged(self, mock_get_mac):
-        """Test no update when MAC matches cached value."""
         mock_get_mac.return_value = "aa:bb:cc:dd:ee:ff"
         hass = MagicMock()
         entry = _make_entry()
@@ -102,729 +121,249 @@ class TestResolveMac:
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
     async def test_falls_back_to_cached_mac(self, mock_get_mac):
-        """Test fallback to cached MAC when resolution fails."""
         mock_get_mac.return_value = None
-        hass = MagicMock()
         entry = _make_entry()
         entry.data = {"mac": "11:22:33:44:55:66"}
 
-        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+        result = await _resolve_mac(MagicMock(), entry, "http://192.168.1.10:8018")
 
         assert result == "11:22:33:44:55:66"
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.async_get_mac_from_ip", new_callable=AsyncMock)
     async def test_returns_none_when_no_mac(self, mock_get_mac):
-        """Test returns None when no MAC resolved and no cache."""
         mock_get_mac.return_value = None
-        hass = MagicMock()
         entry = _make_entry()
         entry.data = {}
 
-        result = await _resolve_mac(hass, entry, "http://192.168.1.10:8018")
+        result = await _resolve_mac(MagicMock(), entry, "http://192.168.1.10:8018")
 
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_for_no_host(self):
-        """Test returns None when URL has no hostname."""
-        hass = MagicMock()
         entry = _make_entry()
         entry.data = {}
 
-        result = await _resolve_mac(hass, entry, "")
+        result = await _resolve_mac(MagicMock(), entry, "")
 
         assert result is None
 
 
 # =============================================================================
-# Audio coordinator setup
-# =============================================================================
-
-
-class TestSetupAudioCoordinator:
-    """Tests for _setup_audio_coordinator."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioAudioCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_creates_coordinator(self, mock_refresh):
-        """Test that audio coordinator is created and refreshed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        api = MagicMock()
-        stream = _make_event_stream()
-
-        result = await _setup_audio_coordinator(hass, entry, api, stream)
-
-        assert result is not None
-        assert result.api is api
-        mock_refresh.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioAudioCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_wires_sse_listeners(self, mock_refresh):
-        """Test that audio SSE events are wired."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        coordinator = await _setup_audio_coordinator(hass, entry, MagicMock(), stream)
-
-        assert SSE_EVENT_AUDIO_UPDATED in stream._registered
-        assert SSE_EVENT_AUDIO_REMOVED in stream._registered
-        assert stream._registered[SSE_EVENT_AUDIO_UPDATED][0] == coordinator.handle_sse_event
-        assert stream._registered[SSE_EVENT_AUDIO_REMOVED][0] == coordinator.handle_sse_remove_event
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioAudioCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_registers_unload(self, mock_refresh):
-        """Test that unload callbacks are registered."""
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        await _setup_audio_coordinator(_make_hass(), entry, MagicMock(), stream)
-
-        # 1 (coordinator shutdown) + 4 SSE listeners = 5 unload callbacks
-        assert len(entry._unload_callbacks) == 5
-
-
-# =============================================================================
-# Service coordinator setup
-# =============================================================================
-
-
-class TestSetupServiceCoordinator:
-    """Tests for _setup_service_coordinator."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioServiceCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_creates_coordinator(self, mock_refresh):
-        """Test that service coordinator is created and refreshed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        api = MagicMock()
-        stream = _make_event_stream()
-
-        result = await _setup_service_coordinator(hass, entry, api, stream)
-
-        assert result is not None
-        assert result.api is api
-        mock_refresh.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioServiceCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_wires_sse_listener(self, mock_refresh):
-        """Test that service SSE event is wired."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        coordinator = await _setup_service_coordinator(hass, entry, MagicMock(), stream)
-
-        assert SSE_EVENT_SERVICE_UPDATED in stream._registered
-        assert stream._registered[SSE_EVENT_SERVICE_UPDATED][0] == coordinator.handle_sse_event
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioServiceCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_caches_services_in_entry_data(self, mock_refresh):
-        """Test that services are cached in entry.data when changed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        # Simulate coordinator having data after refresh
-        mock_services = [{"name": "mpd.service", "scope": "user"}]
-
-        async def fake_refresh():
-            # Coordinator.data is set by the real refresh; we simulate it
-            pass
-
-        mock_refresh.side_effect = fake_refresh
-
-        coordinator = await _setup_service_coordinator(hass, entry, MagicMock(), stream)
-        # Manually set data as if refresh populated it
-        coordinator.data = {"services": mock_services}
-
-        # Re-run to test caching (call it again with data present)
-        entry2 = _make_entry()
-        stream2 = _make_event_stream()
-        coordinator2 = await _setup_service_coordinator(hass, entry2, MagicMock(), stream2)
-        coordinator2.data = {"services": mock_services}
-
-        # The first call had no data (async_refresh is mocked), so no cache update
-        # Verify the coordinator was returned correctly
-        assert coordinator is not None
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioServiceCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_registers_unload(self, mock_refresh):
-        """Test that unload callback is registered."""
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        await _setup_service_coordinator(_make_hass(), entry, MagicMock(), stream)
-
-        # 1 (coordinator shutdown) + 1 SSE listener = 2 unload callbacks
-        assert len(entry._unload_callbacks) == 2
-
-
-# =============================================================================
-# MPRIS coordinator setup
-# =============================================================================
-
-
-class TestSetupMprisCoordinator:
-    """Tests for _setup_mpris_coordinator."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioMPRISCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_creates_coordinator(self, mock_refresh):
-        """Test that MPRIS coordinator is created and refreshed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        api = MagicMock()
-        stream = _make_event_stream()
-
-        result = await _setup_mpris_coordinator(hass, entry, api, stream)
-
-        assert result is not None
-        assert result.api is api
-        mock_refresh.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioMPRISCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_wires_all_sse_listeners(self, mock_refresh):
-        """Test that all MPRIS SSE events are wired."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        coordinator = await _setup_mpris_coordinator(hass, entry, MagicMock(), stream)
-
-        assert SSE_EVENT_PLAYER_UPDATED in stream._registered
-        assert SSE_EVENT_PLAYER_ADDED in stream._registered
-        assert SSE_EVENT_PLAYER_REMOVED in stream._registered
-        assert SSE_EVENT_PLAYER_POSITION in stream._registered
-
-        assert stream._registered[SSE_EVENT_PLAYER_UPDATED][0] == coordinator.handle_sse_update_event
-        assert stream._registered[SSE_EVENT_PLAYER_ADDED][0] == coordinator.handle_sse_update_event
-        assert stream._registered[SSE_EVENT_PLAYER_REMOVED][0] == coordinator.handle_sse_removed_event
-        assert stream._registered[SSE_EVENT_PLAYER_POSITION][0] == coordinator.handle_sse_position_event
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioMPRISCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_registers_unload(self, mock_refresh):
-        """Test that unload callbacks are registered."""
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        await _setup_mpris_coordinator(_make_hass(), entry, MagicMock(), stream)
-
-        # 1 (coordinator shutdown) + 4 SSE listeners = 5 unload callbacks
-        assert len(entry._unload_callbacks) == 5
-
-
-# =============================================================================
-# Bluetooth coordinator setup
-# =============================================================================
-
-
-class TestSetupBluetoothCoordinator:
-    """Tests for _setup_bluetooth_coordinator."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioBluetoothCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_creates_coordinator(self, mock_refresh):
-        """Test that bluetooth coordinator is created and refreshed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        api = MagicMock()
-        stream = _make_event_stream()
-
-        result = await _setup_bluetooth_coordinator(hass, entry, api, stream)
-
-        assert result is not None
-        assert result.api is api
-        mock_refresh.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioBluetoothCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_wires_sse_listener(self, mock_refresh):
-        """Test that bluetooth SSE event is wired."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        coordinator = await _setup_bluetooth_coordinator(hass, entry, MagicMock(), stream)
-
-        assert SSE_EVENT_BLUETOOTH_UPDATED in stream._registered
-        assert stream._registered[SSE_EVENT_BLUETOOTH_UPDATED][0] == coordinator.handle_sse_event
-        assert SSE_EVENT_BLUETOOTH_DISCOVERED in stream._registered
-        assert (
-            stream._registered[SSE_EVENT_BLUETOOTH_DISCOVERED][0]
-            == coordinator.handle_sse_discovered_event
-        )
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioBluetoothCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_registers_unload(self, mock_refresh):
-        """Test that unload callback is registered."""
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        await _setup_bluetooth_coordinator(_make_hass(), entry, MagicMock(), stream)
-
-        # 1 (coordinator shutdown) + 2 SSE listeners (updated + discovered) = 3
-        assert len(entry._unload_callbacks) == 3
-
-
-class TestSetupUpgradeCoordinator:
-    """Tests for _setup_upgrade_coordinator."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_creates_coordinator(self, mock_refresh):
-        """Test that upgrade coordinator is created and refreshed."""
-        hass = _make_hass()
-        entry = _make_entry()
-        api = MagicMock()
-        stream = _make_event_stream()
-
-        result = await _setup_upgrade_coordinator(hass, entry, api, stream)
-
-        assert result is not None
-        assert result.api is api
-        mock_refresh.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_wires_both_sse_listeners(self, mock_refresh):
-        """Test that both upgrade.info and upgrade.progress events are wired."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
-
-        assert SSE_EVENT_UPGRADE_INFO in stream._registered
-        assert SSE_EVENT_UPGRADE_PROGRESS in stream._registered
-        assert stream._registered[SSE_EVENT_UPGRADE_INFO][0] == coordinator.handle_sse_event
-        assert (
-            stream._registered[SSE_EVENT_UPGRADE_PROGRESS][0]
-            == coordinator.handle_sse_event
-        )
-
-    @pytest.mark.asyncio
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_registers_unload(self, mock_refresh):
-        """Test that unload callbacks are registered for both SSE listeners."""
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        await _setup_upgrade_coordinator(_make_hass(), entry, MagicMock(), stream)
-
-        # 1 (coordinator shutdown) + 2 SSE listeners + 1 sw_version sync listener
-        assert len(entry._unload_callbacks) == 4
-
-    @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.dr.async_get")
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_syncs_device_sw_version_on_update(self, mock_refresh, mock_dr):
-        """Test that the device registry sw_version follows the detector current."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        device = MagicMock(id="dev1", sw_version="old")
-        registry = MagicMock()
-        registry.async_get_device.return_value = device
-        mock_dr.return_value = registry
-
-        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
-        coordinator.async_set_updated_data({"current": "2026.6.0b1"})
-
-        registry.async_update_device.assert_called_once_with(
-            "dev1", sw_version="2026.6.0b1"
-        )
-
-    @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.dr.async_get")
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_skips_sw_version_update_when_unchanged(self, mock_refresh, mock_dr):
-        """Test that no registry write happens when the version is unchanged."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        device = MagicMock(id="dev1", sw_version="2026.6.0b1")
-        registry = MagicMock()
-        registry.async_get_device.return_value = device
-        mock_dr.return_value = registry
-
-        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
-        coordinator.async_set_updated_data({"current": "2026.6.0b1"})
-
-        registry.async_update_device.assert_not_called()
-
-    @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.dr.async_get")
-    @patch(
-        "custom_components.odio_remote.coordinator.OdioUpgradeCoordinator.async_refresh",
-        new_callable=AsyncMock,
-    )
-    async def test_skips_registry_lookup_when_version_repeats(self, mock_refresh, mock_dr):
-        """Repeated updates with the same current (e.g. progress ticks) skip the registry."""
-        hass = _make_hass()
-        entry = _make_entry()
-        stream = _make_event_stream()
-
-        device = MagicMock(id="dev1", sw_version="old")
-        registry = MagicMock()
-        registry.async_get_device.return_value = device
-        mock_dr.return_value = registry
-
-        coordinator = await _setup_upgrade_coordinator(hass, entry, MagicMock(), stream)
-        coordinator.async_set_updated_data({"current": "2.0.0"})
-        coordinator.async_set_updated_data({"current": "2.0.0", "percent": 50})
-        coordinator.async_set_updated_data({"current": "2.0.0", "percent": 80})
-
-        registry.async_update_device.assert_called_once_with("dev1", sw_version="2.0.0")
-        assert registry.async_get_device.call_count == 1
-
-
-# =============================================================================
-# async_setup_entry
+# async_setup_entry — nominal path
 # =============================================================================
 
 
 class TestAsyncSetupEntry:
-    """Tests for async_setup_entry."""
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value="aa:bb:cc:dd:ee:ff")
-    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
-    async def test_full_setup_all_backends(
-        self, mock_bt, mock_mpris, mock_svc, mock_audio,
-        mock_mac, mock_session,
-    ):
-        from custom_components.odio_remote import async_setup_entry
-        from .conftest import MOCK_SERVER_INFO
-
+    async def test_nominal_setup(self):
         hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
-        entry = _make_entry()
-        entry.data = {
-            "api_url": "http://192.168.1.10:8018",
-            "server_info": MOCK_SERVER_INFO,
-        }
-        entry.options = {}
+        entry = _make_entry(options={CONF_SERVICE_MAPPINGS: {"svc": "media_player.x"}})
+        hub = _prepare_hub(make_hub(services=MOCK_SERVICES))
 
-        api = MagicMock()
-        api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
-        api.get_power_capabilities = AsyncMock(return_value={"power_off": True, "reboot": True})
-        mock_session.return_value = MagicMock()
-
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
-            mock_esm.return_value = mock_esm_instance
-
-            result = await async_setup_entry(hass, entry)
+        result, hub_cls, session = await _setup(hass, entry, hub)
 
         assert result is True
-        mock_audio.assert_awaited_once()
-        mock_svc.assert_awaited_once()
-        mock_mpris.assert_awaited_once()
-        mock_bt.assert_awaited_once()
+        hub_cls.assert_called_once_with(
+            TEST_API_URL, session, keepalive=DEFAULT_KEEPALIVE_INTERVAL
+        )
+        hub.connect.assert_awaited_once()
+        hub.start.assert_not_awaited()
+        rd = entry.runtime_data
+        assert isinstance(rd, OdioRemoteRuntimeData)
+        assert rd.hub is hub
+        assert rd.server_info.hostname == "htpc"
+        assert rd.service_mappings == {"svc": "media_player.x"}
+        assert isinstance(rd.power_capabilities, PowerCapabilities)
+        assert rd.device_info["name"] == "Odio Remote (htpc)"
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+            entry, PLATFORMS
+        )
+
+    @pytest.mark.asyncio
+    async def test_startup_data_cached_in_entry(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = _prepare_hub(make_hub())
+
+        await _setup(hass, entry, hub)
+
+        assert entry.data["server_info"]["hostname"] == "htpc"
+        assert "power_capabilities" in entry.data
+
+    @pytest.mark.asyncio
+    async def test_services_cached_when_systemd_enabled(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = _prepare_hub(make_hub(services=MOCK_SERVICES))
+
+        await _setup(hass, entry, hub)
+
+        cached = entry.data["cached_services"]
+        assert {s["name"] for s in cached} == {s["name"] for s in MOCK_SERVICES}
+
+
+# =============================================================================
+# async_setup_entry — degraded path (API down at startup)
+# =============================================================================
+
+
+class TestDegradedStartup:
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_cache_and_starts_stream(self):
+        hass = _make_hass()
+        entry = _make_entry(data={"server_info": MOCK_SERVER_INFO})
+        hub = _prepare_hub(make_hub(connected=False), connect_error=OdioConnectionError("down"))
+
+        result, _, _ = await _setup(hass, entry, hub)
+
+        assert result is True
+        hub.start.assert_awaited_once()
+        assert entry.runtime_data.server_info.hostname == "htpc"
+        assert entry.runtime_data.server_info.backends.systemd is True
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
-        mock_esm_instance.start.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
-    async def test_setup_no_backends(self, mock_mac, mock_session):
-        from custom_components.odio_remote import async_setup_entry
-
+    async def test_degraded_without_cache_uses_empty_defaults(self):
         hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
         entry = _make_entry()
-        no_backends = {"backends": {}}
-        entry.data = {"api_url": "http://localhost:8018", "server_info": no_backends}
-        entry.options = {}
+        hub = _prepare_hub(make_hub(connected=False), connect_error=OdioConnectionError("down"))
 
-        api = MagicMock()
-        api.get_server_info = AsyncMock(return_value=no_backends)
-
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
-            mock_esm.return_value = mock_esm_instance
-
-            result = await async_setup_entry(hass, entry)
+        result, _, _ = await _setup(hass, entry, hub)
 
         assert result is True
-        assert entry.runtime_data.coordinators.audio is None
-        assert entry.runtime_data.coordinators.service is None
-        assert entry.runtime_data.coordinators.mpris is None
-        assert entry.runtime_data.coordinators.bluetooth is None
-
-    @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
-    async def test_setup_falls_back_to_cached_server_info(self, mock_mac, mock_session):
-        from custom_components.odio_remote import async_setup_entry
-
-        hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
-        entry = _make_entry()
-        cached = {"hostname": "htpc", "backends": {}}
-        entry.data = {"api_url": "http://localhost:8018", "server_info": cached}
-        entry.options = {}
-
-        api = MagicMock()
-        api.get_server_info = AsyncMock(side_effect=OdioConnectionError("offline"))
-
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.async_add_listener = MagicMock(return_value=lambda: None)
-            mock_esm.return_value = mock_esm_instance
-
-            result = await async_setup_entry(hass, entry)
-
-        assert result is True
+        assert entry.runtime_data.server_info.backends.systemd is False
 
 
 # =============================================================================
-# _on_sse_reconnect
+# Connection change — backend re-detection on SSE reconnect
 # =============================================================================
 
 
-class TestOnSseReconnect:
-    """Tests for the SSE reconnect callback inside async_setup_entry."""
+class TestConnectionChange:
+
+    async def _setup_connected(self, hass, entry):
+        hub = _prepare_hub(make_hub(services=MOCK_SERVICES))
+        await _setup(hass, entry, hub)
+        return hub
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
-    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
-    async def test_reconnect_refreshes_coordinators(
-        self, mock_bt, mock_mpris, mock_svc, mock_audio,
-        mock_mac, mock_session,
-    ):
-        from custom_components.odio_remote import async_setup_entry
-        from .conftest import MOCK_SERVER_INFO
-
+    async def test_reload_when_backends_change_on_reconnect(self):
         hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
-        # Close any coroutine passed to async_create_task to avoid unawaited warnings
-        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
         entry = _make_entry()
-        entry.data = {"api_url": "http://localhost:8018", "server_info": MOCK_SERVER_INFO}
-        entry.options = {}
+        hub = await self._setup_connected(hass, entry)
 
-        audio_coord = MagicMock()
-        audio_coord.async_refresh = AsyncMock()
-        svc_coord = MagicMock()
-        svc_coord.async_refresh = AsyncMock()
-        mpris_coord = MagicMock()
-        mpris_coord.async_refresh = AsyncMock()
-        bt_coord = MagicMock()
-        bt_coord.async_refresh = AsyncMock()
+        hub._server = ServerInfo.from_dict(UPGRADE_SERVER_INFO)
+        set_connected(hub, False)
+        set_connected(hub, True)
 
-        mock_audio.return_value = audio_coord
-        mock_svc.return_value = svc_coord
-        mock_mpris.return_value = mpris_coord
-        mock_bt.return_value = bt_coord
+        hass.config_entries.async_schedule_reload.assert_called_once_with(ENTRY_ID)
 
-        api = MagicMock()
-        api.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
-        api.get_power_capabilities = AsyncMock(return_value={})
+    @pytest.mark.asyncio
+    async def test_no_reload_when_backends_unchanged(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = await self._setup_connected(hass, entry)
 
-        reconnect_cb = None
+        set_connected(hub, False)
+        set_connected(hub, True)
 
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.sse_connected = True
-
-            def capture_listener(cb):
-                nonlocal reconnect_cb
-                reconnect_cb = cb
-                return lambda: None
-
-            mock_esm_instance.async_add_listener = capture_listener
-            mock_esm.return_value = mock_esm_instance
-
-            await async_setup_entry(hass, entry)
-
-        assert reconnect_cb is not None
-        # The reconnect callback spawns one task: the backend resync handler.
-        captured = []
-        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: captured.append(coro))
-        reconnect_cb()
-        assert len(captured) == 1
-        # Backends unchanged -> handler refreshes existing coordinators via
-        # refresh_all (one async_create_task per active coordinator), no reload.
-        await captured[0]
         hass.config_entries.async_schedule_reload.assert_not_called()
-        refresh_coros = captured[1:]
-        assert len(refresh_coros) == 4
-        for coro in refresh_coros:
-            coro.close()
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
-    @patch("custom_components.odio_remote._setup_audio_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_service_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_mpris_coordinator", new_callable=AsyncMock)
-    @patch("custom_components.odio_remote._setup_bluetooth_coordinator", new_callable=AsyncMock)
-    async def test_reconnect_reloads_when_backends_change(
-        self, mock_bt, mock_mpris, mock_svc, mock_audio,
-        mock_mac, mock_session,
-    ):
-        from custom_components.odio_remote import async_setup_entry
-        from .conftest import MOCK_SERVER_INFO
-
+    async def test_reconnect_recaches_startup_and_services(self):
         hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
-        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: coro.close())
         entry = _make_entry()
-        entry.data = {"api_url": "http://localhost:8018", "server_info": MOCK_SERVER_INFO}
-        entry.options = {}
+        hub = await self._setup_connected(hass, entry)
 
-        for m in (mock_audio, mock_svc, mock_mpris, mock_bt):
-            coord = MagicMock()
-            coord.async_refresh = AsyncMock()
-            m.return_value = coord
+        # Fresh state on reconnect must be re-persisted.
+        hub._server = ServerInfo.from_dict({**MOCK_SERVER_INFO, "hostname": "htpc2"})
+        set_connected(hub, False)
+        set_connected(hub, True)
 
-        # On reconnect the server now reports an extra `upgrade` backend.
-        new_info = {**MOCK_SERVER_INFO, "backends": {**MOCK_SERVER_INFO["backends"], "upgrade": True}}
-
-        api = MagicMock()
-        api.get_server_info = AsyncMock(side_effect=[MOCK_SERVER_INFO, new_info])
-        api.get_power_capabilities = AsyncMock(return_value={})
-
-        reconnect_cb = None
-
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.sse_connected = True
-
-            def capture_listener(cb):
-                nonlocal reconnect_cb
-                reconnect_cb = cb
-                return lambda: None
-
-            mock_esm_instance.async_add_listener = capture_listener
-            mock_esm.return_value = mock_esm_instance
-
-            await async_setup_entry(hass, entry)
-
-        captured = []
-        hass.async_create_task = MagicMock(side_effect=lambda coro, **kw: captured.append(coro))
-        reconnect_cb()
-        await captured[0]
-        hass.config_entries.async_schedule_reload.assert_called_once_with(entry.entry_id)
+        hass.config_entries.async_schedule_reload.assert_not_called()
+        assert entry.data["server_info"]["hostname"] == "htpc2"
 
     @pytest.mark.asyncio
-    @patch("custom_components.odio_remote.async_get_clientsession")
-    @patch("custom_components.odio_remote._resolve_mac", new_callable=AsyncMock, return_value=None)
-    async def test_reconnect_noop_when_disconnected(self, mock_mac, mock_session):
-        from custom_components.odio_remote import async_setup_entry
-
+    async def test_disconnect_does_nothing(self):
         hass = _make_hass()
-        hass.config_entries.async_forward_entry_setups = AsyncMock()
         entry = _make_entry()
-        entry.data = {"api_url": "http://localhost:8018", "server_info": {"backends": {}}}
-        entry.options = {}
+        hub = await self._setup_connected(hass, entry)
+        hass.config_entries.async_update_entry.reset_mock()
 
-        api = MagicMock()
-        api.get_server_info = AsyncMock(return_value={"backends": {}})
+        set_connected(hub, False)
 
-        reconnect_cb = None
+        hass.config_entries.async_schedule_reload.assert_not_called()
+        hass.config_entries.async_update_entry.assert_not_called()
 
-        with patch("custom_components.odio_remote.OdioApiClient", return_value=api), \
-             patch("custom_components.odio_remote.OdioEventStreamManager") as mock_esm:
-            mock_esm_instance = MagicMock()
-            mock_esm_instance.sse_connected = False
 
-            def capture_listener(cb):
-                nonlocal reconnect_cb
-                reconnect_cb = cb
-                return lambda: None
+# =============================================================================
+# Device registry sw_version sync (upgrade backend)
+# =============================================================================
 
-            mock_esm_instance.async_add_listener = capture_listener
-            mock_esm.return_value = mock_esm_instance
 
-            await async_setup_entry(hass, entry)
+class TestSwVersionSync:
 
-        reconnect_cb()
-        hass.async_create_task.assert_not_called()
+    async def _setup_with_upgrade(self, hass, entry, current="1.0.0"):
+        hub = _prepare_hub(
+            make_hub(
+                server_info=UPGRADE_SERVER_INFO,
+                upgrade={"current": current, "upgrade_available": False},
+            )
+        )
+        await _setup(hass, entry, hub)
+        return hub
+
+    def _registry(self, device):
+        registry = MagicMock()
+        registry.async_get_device.return_value = device
+        return registry
+
+    @pytest.mark.asyncio
+    async def test_syncs_device_sw_version_on_new_current(self):
+        hass = _make_hass()
+        hub = await self._setup_with_upgrade(hass, _make_entry())
+        device = MagicMock(id="dev1", sw_version="1.0.0")
+        registry = self._registry(device)
+
+        with patch("custom_components.odio_remote.dr.async_get", return_value=registry):
+            push_event(hub, "upgrade.info", {"current": "2.0.0", "upgrade_available": False})
+
+        registry.async_update_device.assert_called_once_with("dev1", sw_version="2.0.0")
+
+    @pytest.mark.asyncio
+    async def test_no_registry_write_when_current_unchanged(self):
+        hass = _make_hass()
+        hub = await self._setup_with_upgrade(hass, _make_entry())
+        registry = self._registry(MagicMock(id="dev1", sw_version="1.0.0"))
+
+        with patch("custom_components.odio_remote.dr.async_get", return_value=registry):
+            push_event(hub, "upgrade.info", {"current": "1.0.0", "upgrade_available": False})
+
+        registry.async_get_device.assert_not_called()
+        registry.async_update_device.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_repeated_current_hits_registry_once(self):
+        hass = _make_hass()
+        hub = await self._setup_with_upgrade(hass, _make_entry())
+        registry = self._registry(MagicMock(id="dev1", sw_version="1.0.0"))
+
+        with patch("custom_components.odio_remote.dr.async_get", return_value=registry):
+            push_event(hub, "upgrade.info", {"current": "2.0.0", "upgrade_available": False})
+            push_event(hub, "upgrade.info", {"current": "2.0.0", "upgrade_available": False})
+
+        assert registry.async_get_device.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_device_info_uses_detector_current(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        await self._setup_with_upgrade(hass, entry, current="1.2.3")
+        assert entry.runtime_data.device_info["sw_version"] == "1.2.3"
 
 
 # =============================================================================
@@ -835,25 +374,24 @@ class TestOnSseReconnect:
 class TestAsyncUnload:
 
     @pytest.mark.asyncio
-    async def test_unload_stops_event_stream(self):
-        from custom_components.odio_remote import async_unload_entry
-
+    async def test_unload_closes_hub(self):
         hass = _make_hass()
-        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
         entry = MagicMock()
-        entry.runtime_data.event_stream.stop = AsyncMock()
+        entry.runtime_data.hub.close = AsyncMock()
 
         result = await async_unload_entry(hass, entry)
 
         assert result is True
-        entry.runtime_data.event_stream.stop.assert_awaited_once()
-        hass.config_entries.async_unload_platforms.assert_awaited_once()
+        entry.runtime_data.hub.close.assert_awaited_once()
+        hass.config_entries.async_unload_platforms.assert_awaited_once_with(
+            entry, PLATFORMS
+        )
 
     @pytest.mark.asyncio
     async def test_remove_device_returns_true(self):
-        from custom_components.odio_remote import async_remove_config_entry_device
-
-        result = await async_remove_config_entry_device(MagicMock(), MagicMock(), MagicMock())
+        result = await async_remove_config_entry_device(
+            MagicMock(), MagicMock(), MagicMock()
+        )
         assert result is True
 
 

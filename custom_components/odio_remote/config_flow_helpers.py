@@ -4,14 +4,15 @@ from typing import Any, Callable
 
 import voluptuous as vol
 from homeassistant.helpers import selector
+from pyodio import AudioClientState, PlayerState, ServiceState
 
 from .helpers import extract_mpris_app_name
 
 
 def build_mapping_schema(
-    entities: list[dict[str, Any]],
+    entities: list[Any],
     current_mappings: dict[str, str] | None,
-    get_key_func: Callable[[dict[str, Any]], tuple[str, str]],
+    get_key_func: Callable[[Any], tuple[str, str]],
 ) -> vol.Schema:
     """Build a generic mapping schema for services or clients.
 
@@ -57,9 +58,9 @@ def build_mapping_schema(
 
 def parse_mappings_from_input(
     user_input: dict[str, Any],
-    entities: list[dict[str, Any]],
+    entities: list[Any],
     existing_mappings: dict[str, str] | None,
-    get_key_func: Callable[[dict[str, Any]], tuple[str, str]],
+    get_key_func: Callable[[Any], tuple[str, str]],
     preserve_others: bool = True,
 ) -> dict[str, str]:
     """Parse mappings from user input generically.
@@ -106,34 +107,33 @@ def parse_mappings_from_input(
 
 
 # Key functions for services and clients
-def get_service_keys(service: dict[str, Any]) -> tuple[str, str]:
+def get_service_keys(service: ServiceState) -> tuple[str, str]:
     """Get form_key and mapping_key for a service.
 
     Returns:
         (form_key, mapping_key) tuple
     """
-    form_key = f"{service['scope']}_{service['name']}"
-    mapping_key = f"{service['scope']}/{service['name']}"
+    form_key = f"{service.scope}_{service.name}"
+    mapping_key = service.key
     return form_key, mapping_key
 
 
-def get_client_keys(client: dict[str, Any]) -> tuple[str, str]:
+def get_client_keys(client: AudioClientState) -> tuple[str, str]:
     """Get form_key and mapping_key for a client.
 
     Returns:
         (form_key, mapping_key) tuple
     """
-    client_name = client.get("name", "")
-    if not client_name:
+    if not client.name:
         return "", ""
 
-    safe_name = re.sub(r"[^a-z0-9_]+", "_", client_name.lower()).strip("_")
+    safe_name = re.sub(r"[^a-z0-9_]+", "_", client.name.lower()).strip("_")
     form_key = f"client_{safe_name}"
-    mapping_key = f"client:{client_name}"
+    mapping_key = f"client:{client.name}"
     return form_key, mapping_key
 
 
-def get_player_keys(player: dict[str, Any]) -> tuple[str, str]:
+def get_player_keys(player: PlayerState) -> tuple[str, str]:
     """Get form_key and mapping_key for an MPRIS player.
 
     mapping_key is keyed by the extracted app name (stable across browser
@@ -144,11 +144,10 @@ def get_player_keys(player: dict[str, Any]) -> tuple[str, str]:
     Returns:
         (form_key, mapping_key) tuple
     """
-    bus_name = player.get("bus_name", "")
-    if not bus_name:
+    if not player.bus_name:
         return "", ""
 
-    safe_bus = re.sub(r"[^a-z0-9_]+", "_", bus_name.lower()).strip("_")
+    safe_bus = re.sub(r"[^a-z0-9_]+", "_", player.bus_name.lower()).strip("_")
     form_key = f"player_{safe_bus}"
-    mapping_key = f"mpris:{extract_mpris_app_name(bus_name)}"
+    mapping_key = f"mpris:{extract_mpris_app_name(player.bus_name)}"
     return form_key, mapping_key

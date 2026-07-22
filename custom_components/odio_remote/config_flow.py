@@ -17,8 +17,16 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pyodio import (
+    AudioClientState,
+    OdioApiError,
+    OdioClient,
+    OdioError,
+    PlayerState,
+    ServerInfo,
+    ServiceState,
+)
 
-from .api_client import OdioApiClient
 from .const import (
     CONF_API_URL,
     CONF_KEEPALIVE_INTERVAL,
@@ -59,6 +67,11 @@ class InvalidResponse(OdioConfigError):
 # =============================================================================
 
 
+def _client(hass: HomeAssistant, api_url: str) -> OdioClient:
+    """Build a low-level pyodio client on HA's shared session."""
+    return OdioClient(api_url, async_get_clientsession(hass))
+
+
 async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any]:
     """Validate the API connection and return server info and services.
 
@@ -69,27 +82,27 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
         CannotConnect: If connection fails.
         InvalidResponse: If API returns invalid data.
     """
-    session = async_get_clientsession(hass)
-    api = OdioApiClient(api_url, session)
+    client = _client(hass, api_url)
 
     try:
-        server_info = await api.get_server_info()
-    except Exception as err:
+        server_info: ServerInfo = await client.get_server_info()
+    except OdioError as err:
         raise CannotConnect from err
+    except Exception as err:
+        raise InvalidResponse("Invalid API response") from err
 
-    if not isinstance(server_info, dict):
-        raise InvalidResponse("Invalid API response")
-
-    backends = server_info.get("backends", {})
-    services: list[dict[str, Any]] = []
-
-    if backends.get("systemd"):
+    services: list[ServiceState] = []
+    if server_info.backends.systemd:
         try:
-            services = await api.get_services()
-        except Exception as err:
+            services = await client.get_services()
+        except OdioApiError as err:
+            # /services only exists when units are configured
+            if err.status != 404:
+                raise CannotConnect from err
+        except OdioError as err:
             raise CannotConnect from err
-        if not isinstance(services, list):
-            raise InvalidResponse("Invalid services response")
+        except Exception as err:
+            raise InvalidResponse("Invalid services response") from err
 
     return {
         "server_info": server_info,
@@ -99,75 +112,67 @@ async def async_validate_api(hass: HomeAssistant, api_url: str) -> dict[str, Any
 
 async def async_fetch_available_services(
     hass: HomeAssistant, api_url: str
-) -> list[dict[str, Any]]:
+) -> list[ServiceState]:
     """Fetch available services from API.
 
     Returns list of enabled, supported services.
     """
     try:
         info = await async_validate_api(hass, api_url)
-        return [
-            svc
-            for svc in info.get("services", [])
-            if svc.get("exists")
-        ]
+        return [svc for svc in info.get("services", []) if svc.exists]
     except OdioConfigError:
         return []
 
 
 async def async_fetch_remote_clients(
     hass: HomeAssistant, api_url: str
-) -> list[dict[str, Any]]:
+) -> list[AudioClientState]:
     """Fetch remote clients (not on server host).
 
     Only fetches audio clients if the pulseaudio backend is enabled.
     """
-    session = async_get_clientsession(hass)
-    api = OdioApiClient(api_url, session)
+    client = _client(hass, api_url)
 
     try:
-        server_info = await api.get_server_info()
+        server_info = await client.get_server_info()
     except Exception:
         return []
 
-    if not server_info.get("backends", {}).get("pulseaudio"):
+    if not server_info.backends.pulseaudio:
         return []
 
     try:
-        clients = await api.get_clients()
+        clients = await client.get_audio_clients()
     except Exception:
         return []
-
-    server_hostname = server_info.get("hostname")
 
     return [
-        client
-        for client in clients
-        if client.get("host") and client.get("host") != server_hostname
+        audio_client
+        for audio_client in clients
+        if audio_client.host and audio_client.host != server_info.hostname
     ]
 
 
 async def async_fetch_mpris_players(
     hass: HomeAssistant, api_url: str
-) -> list[dict[str, Any]]:
+) -> list[PlayerState]:
     """Fetch MPRIS players if the mpris backend is enabled."""
-    session = async_get_clientsession(hass)
-    api = OdioApiClient(api_url, session)
+    client = _client(hass, api_url)
 
     try:
-        server_info = await api.get_server_info()
+        server_info = await client.get_server_info()
     except Exception:
         return []
 
-    if not server_info.get("backends", {}).get("mpris"):
+    if not server_info.backends.mpris:
         return []
 
     try:
-        players, _ = await api.get_players()
+        players = await client.get_players()
     except Exception:
         return []
 
-    return [p for p in players if p.get("bus_name")]
+    return [p for p in players if p.bus_name]
 
 
 # =============================================================================
@@ -217,7 +222,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
         super().__init__()
         self._data: dict[str, Any] = {}
         self._options: dict[str, Any] = {}
-        self._services: list[dict[str, Any]] = []
+        self._services: list[ServiceState] = []
 
     @staticmethod
     @callback
@@ -237,7 +242,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             self._services = [
                 svc
                 for svc in info.get("services", [])
-                if svc.get("exists")
+                if svc.exists
             ]
             _LOGGER.info("Found %d existing services", len(self._services))
 
@@ -440,9 +445,9 @@ class OdioOptionsFlow(OptionsFlowWithReload):
         super().__init__()
         self._data: dict[str, Any] = {}
         self._options: dict[str, Any] = {}
-        self._services: list[dict[str, Any]] = []
-        self._clients: list[dict[str, Any]] = []
-        self._players: list[dict[str, Any]] = []
+        self._services: list[ServiceState] = []
+        self._clients: list[AudioClientState] = []
+        self._players: list[PlayerState] = []
 
     async def _async_fetch_mappable_entities(self, api_url: str) -> None:
         """Fetch services, clients and players that can be mapped."""

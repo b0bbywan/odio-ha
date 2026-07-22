@@ -3,13 +3,19 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.exceptions import HomeAssistantError
-
-from custom_components.odio_remote.exceptions import (
+from pyodio import (
+    BluetoothDeviceState,
     OdioApiError,
     OdioConnectionError,
     OdioTimeoutError,
 )
-from custom_components.odio_remote.helpers import api_command, async_get_mac_from_ip
+
+from custom_components.odio_remote.helpers import (
+    api_command,
+    async_get_mac_from_ip,
+    is_persistent_bt_device,
+    register_dynamic_entities,
+)
 
 
 def _make_hass(gethostbyname_result, dt_states=None):
@@ -164,7 +170,7 @@ class TestApiCommand:
         """OdioApiError is re-raised as HomeAssistantError."""
         @api_command
         async def action():
-            raise OdioApiError("bad response", status=500)
+            raise OdioApiError(500, "bad response")
 
         with pytest.raises(HomeAssistantError, match="bad response"):
             await action()
@@ -178,3 +184,68 @@ class TestApiCommand:
 
         with pytest.raises(TypeError, match="this is a bug"):
             await action()
+
+
+class TestIsPersistentBtDevice:
+    """Tests for is_persistent_bt_device."""
+
+    def test_paired_device_is_persistent(self):
+        state = BluetoothDeviceState(address="AA", paired=True, bonded=False)
+        assert is_persistent_bt_device(state) is True
+
+    def test_bonded_device_is_persistent(self):
+        state = BluetoothDeviceState(address="AA", paired=False, bonded=True)
+        assert is_persistent_bt_device(state) is True
+
+    def test_discovered_only_device_is_not_persistent(self):
+        state = BluetoothDeviceState(address="AA", paired=False, bonded=False)
+        assert is_persistent_bt_device(state) is False
+
+
+class TestRegisterDynamicEntities:
+    """Tests for register_dynamic_entities."""
+
+    def _register(self, initial_keys=None):
+        entry = MagicMock()
+        added = []
+        captured = {}
+
+        def subscribe(cb):
+            captured["cb"] = cb
+            return lambda: None
+
+        register_dynamic_entities(
+            entry,
+            subscribe,
+            select_key=lambda obj: obj.get("name"),
+            factory=lambda obj: f"entity-{obj['name']}",
+            initial_keys=initial_keys or set(),
+            label="test entity",
+            async_add_entities=lambda entities: added.extend(entities),
+        )
+        return entry, captured["cb"], added
+
+    def test_adds_entity_for_new_key(self):
+        _, cb, added = self._register()
+        cb("added", {"name": "new"})
+        assert added == ["entity-new"]
+
+    def test_skips_known_initial_key(self):
+        _, cb, added = self._register(initial_keys={"known"})
+        cb("added", {"name": "known"})
+        assert added == []
+
+    def test_dedupes_repeated_key(self):
+        _, cb, added = self._register()
+        cb("added", {"name": "new"})
+        cb("updated", {"name": "new"})
+        assert added == ["entity-new"]
+
+    def test_skips_when_select_key_returns_none(self):
+        _, cb, added = self._register()
+        cb("added", {"name": None})
+        assert added == []
+
+    def test_registers_unsubscribe_on_unload(self):
+        entry, _, _ = self._register()
+        entry.async_on_unload.assert_called_once()

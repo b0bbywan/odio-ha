@@ -11,10 +11,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from pyodio import OdioError
 
 from .const import _MPRIS_BUS_PREFIX
-from .exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,46 +66,39 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
     return None
 
 
-def is_persistent_bt_device(device: dict[str, Any]) -> bool:
+def is_persistent_bt_device(state: Any) -> bool:
     """Return True for paired/bonded devices, which get their own switch."""
-    return bool(device.get("paired") or device.get("bonded"))
+    return bool(state.paired or state.bonded)
 
 
 def register_dynamic_entities(
     config_entry: ConfigEntry,
-    coordinator: DataUpdateCoordinator[Any],
+    subscribe: Callable[[Callable[[str, Any], None]], Callable[[], None]],
     *,
-    list_key: str,
-    select_key: Callable[[dict[str, Any]], str | None],
-    factory: Callable[[dict[str, Any]], Entity],
+    select_key: Callable[[Any], str | None],
+    factory: Callable[[Any], Entity],
     initial_keys: set[str],
     label: str,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Add entities as items appear in coordinator data, deduped by key.
+    """Add an entity when a new item appears in a hub namespace, deduped by key.
 
-    Covers the shared "seed keys -> listen -> diff -> add" pattern. select_key
-    returns an item's dedup key when it warrants an entity, or None to skip it.
+    ``subscribe`` is a namespace's ``on_change`` registrar; ``select_key``
+    returns an item's dedup key when it warrants an entity, or None to skip.
     Callers needing extra side effects (e.g. MPRIS rebind) roll their own.
     """
     known = set(initial_keys)
 
     @callback
-    def _check_new_items() -> None:
-        if not coordinator.data:
+    def _handle_change(change: str, obj: Any) -> None:
+        key = select_key(obj)
+        if not key or key in known:
             return
-        new: list[Entity] = []
-        for item in coordinator.data.get(list_key, []):
-            key = select_key(item)
-            if not key or key in known:
-                continue
-            new.append(factory(item))
-            known.add(key)
-        if new:
-            _LOGGER.info("Dynamically adding %d %s", len(new), label)
-            async_add_entities(new)
+        known.add(key)
+        _LOGGER.info("Dynamically adding %s: %s", label, key)
+        async_add_entities([factory(obj)])
 
-    config_entry.async_on_unload(coordinator.async_add_listener(_check_new_items))
+    config_entry.async_on_unload(subscribe(_handle_change))
 
 
 def api_command(
@@ -115,7 +107,7 @@ def api_command(
     """Decorate an async entity action that calls the Odio API.
 
     Acts as the boundary between the Odio domain and Home Assistant:
-    OdioError subtypes (raised by the API client) are translated into
+    OdioError subtypes (raised by pyodio) are translated into
     HomeAssistantError so HA can surface meaningful errors to the user.
 
     Programming errors (TypeError, AttributeError, etc.) are intentionally
@@ -128,11 +120,7 @@ def api_command(
             return await func(*args, **kwargs)
         except HomeAssistantError:
             raise
-        except OdioTimeoutError as err:
-            raise HomeAssistantError(str(err)) from err
-        except OdioConnectionError as err:
-            raise HomeAssistantError(str(err)) from err
-        except OdioApiError as err:
+        except OdioError as err:
             raise HomeAssistantError(str(err)) from err
 
     return wrapper

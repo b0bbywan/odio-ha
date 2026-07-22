@@ -1,53 +1,56 @@
 """Tests for Odio Remote sensor platform."""
-import pytest
 from unittest.mock import MagicMock
 
+from pyodio import PowerCapabilities, ServerInfo
+
+from custom_components.odio_remote import OdioRemoteRuntimeData
 from custom_components.odio_remote.sensor import (
     OdioBluetoothConnectedDeviceSensor,
     OdioDefaultOutputSensor,
     async_setup_entry,
 )
 
-from .conftest import MOCK_BLUETOOTH_STATUS, MOCK_DEVICE_INFO, MOCK_OUTPUTS
+from .conftest import (
+    MOCK_BLUETOOTH_STATUS,
+    MOCK_DEVICE_INFO,
+    MOCK_OUTPUTS,
+    MOCK_SERVER_INFO,
+    make_hub,
+)
 
 ENTRY_ID = "test_entry_id"
 
 
-def _make_coordinator(data=None):
-    coord = MagicMock()
-    coord.data = data
-    coord.async_add_listener = MagicMock(return_value=lambda: None)
-    return coord
+def _make_output_sensor(outputs=None):
+    audio = None if outputs is None else {"kind": "pipewire", "clients": [], "outputs": outputs}
+    hub = make_hub(audio=audio)
+    return OdioDefaultOutputSensor(hub, ENTRY_ID, MOCK_DEVICE_INFO)
 
 
-def _make_bt_coordinator(data=None):
-    return _make_coordinator(data)
+def _make_bt_sensor(status=None):
+    hub = make_hub(bluetooth=status)
+    return OdioBluetoothConnectedDeviceSensor(hub, ENTRY_ID, MOCK_DEVICE_INFO)
 
 
-def _make_sensor(data=None):
-    return OdioBluetoothConnectedDeviceSensor(
-        _make_bt_coordinator(data), ENTRY_ID, MOCK_DEVICE_INFO
-    )
-
-
-def _make_output_sensor(data=None):
-    return OdioDefaultOutputSensor(
-        _make_coordinator(data), ENTRY_ID, MOCK_DEVICE_INFO
-    )
-
-
-def _make_entry(bt_coordinator=None, audio_coordinator=None):
+def _make_entry(hub, *, pulseaudio=True, bluetooth=True):
     entry = MagicMock()
     entry.entry_id = ENTRY_ID
-    entry.runtime_data.device_info = MOCK_DEVICE_INFO
-    from custom_components.odio_remote import OdioCoordinators
-    entry.runtime_data.coordinators = OdioCoordinators(bluetooth=bt_coordinator, audio=audio_coordinator)
-
+    entry.data = {}
+    entry.runtime_data = OdioRemoteRuntimeData(
+        hub=hub,
+        device_info=MOCK_DEVICE_INFO,
+        server_info=ServerInfo.from_dict({
+            **MOCK_SERVER_INFO,
+            "backends": {**MOCK_SERVER_INFO["backends"], "pulseaudio": pulseaudio, "bluetooth": bluetooth},
+        }),
+        service_mappings={},
+        power_capabilities=PowerCapabilities(power_off=True, reboot=True),
+    )
     return entry
 
 
 # ---------------------------------------------------------------------------
-# OdioDefaultOutputSensor — Construction
+# OdioDefaultOutputSensor — construction
 # ---------------------------------------------------------------------------
 
 class TestOdioDefaultOutputSensorConstruction:
@@ -73,33 +76,29 @@ class TestOdioDefaultOutputSensorConstruction:
 class TestOdioDefaultOutputSensorValue:
 
     def test_returns_default_output_description(self):
-        data = {"audio": [], "outputs": MOCK_OUTPUTS}
-        assert _make_output_sensor(data).native_value == "Audio interne Stéréo on pi@rasponkyold"  # id=78, default=True
+        # id=78 is the default output in MOCK_OUTPUTS
+        assert _make_output_sensor(MOCK_OUTPUTS).native_value == "Audio interne Stéréo on pi@rasponkyold"
 
     def test_returns_none_when_no_default(self):
         outputs = [{"id": 1, "name": "sink", "description": "Sink", "default": False}]
-        data = {"audio": [], "outputs": outputs}
-        assert _make_output_sensor(data).native_value is None
+        assert _make_output_sensor(outputs).native_value is None
 
     def test_returns_none_when_outputs_empty(self):
-        data = {"audio": [], "outputs": []}
-        assert _make_output_sensor(data).native_value is None
+        assert _make_output_sensor([]).native_value is None
 
     def test_returns_none_when_no_data(self):
         assert _make_output_sensor(None).native_value is None
 
     def test_falls_back_to_name_when_no_description(self):
         outputs = [{"id": 1, "name": "alsa_output.stereo", "default": True}]
-        data = {"audio": [], "outputs": outputs}
-        assert _make_output_sensor(data).native_value == "alsa_output.stereo"
+        assert _make_output_sensor(outputs).native_value == "alsa_output.stereo"
 
     def test_returns_first_default_when_multiple(self):
         outputs = [
             {"id": 1, "name": "a", "description": "First Default", "default": True},
             {"id": 2, "name": "b", "description": "Second Default", "default": True},
         ]
-        data = {"audio": [], "outputs": outputs}
-        assert _make_output_sensor(data).native_value == "First Default"
+        assert _make_output_sensor(outputs).native_value == "First Default"
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +108,7 @@ class TestOdioDefaultOutputSensorValue:
 class TestOdioDefaultOutputSensorAttributes:
 
     def test_returns_output_attributes(self):
-        data = {"audio": [], "outputs": MOCK_OUTPUTS}
-        attrs = _make_output_sensor(data).extra_state_attributes
+        attrs = _make_output_sensor(MOCK_OUTPUTS).extra_state_attributes
         assert attrs["id"] == 78
         assert attrs["name"] == "tunnel.rasponkyold.local.alsa_output.platform-2000b840.mailbox.stereo-fallback"
         assert attrs["description"] == "Audio interne Stéréo on pi@rasponkyold"
@@ -121,69 +119,67 @@ class TestOdioDefaultOutputSensorAttributes:
         assert attrs["is_network"] is True
 
     def test_excludes_default_and_props(self):
-        data = {"audio": [], "outputs": MOCK_OUTPUTS}
-        attrs = _make_output_sensor(data).extra_state_attributes
+        attrs = _make_output_sensor(MOCK_OUTPUTS).extra_state_attributes
         assert "default" not in attrs
         assert "props" not in attrs
 
     def test_returns_none_when_no_default(self):
         outputs = [{"id": 1, "name": "sink", "default": False}]
-        data = {"audio": [], "outputs": outputs}
-        assert _make_output_sensor(data).extra_state_attributes is None
+        assert _make_output_sensor(outputs).extra_state_attributes is None
 
     def test_returns_none_when_no_data(self):
         assert _make_output_sensor(None).extra_state_attributes is None
 
 
 # ---------------------------------------------------------------------------
-# OdioBluetoothConnectedDeviceSensor — Construction
+# OdioBluetoothConnectedDeviceSensor — construction
 # ---------------------------------------------------------------------------
 
 class TestOdioBluetoothConnectedDeviceSensorConstruction:
 
     def test_unique_id(self):
-        assert _make_sensor().unique_id == f"{ENTRY_ID}_bluetooth_connected_device"
+        assert _make_bt_sensor().unique_id == f"{ENTRY_ID}_bluetooth_connected_device"
 
     def test_translation_key(self):
-        assert _make_sensor().translation_key == "bluetooth_connected_device"
+        assert _make_bt_sensor().translation_key == "bluetooth_connected_device"
 
     def test_has_entity_name(self):
-        assert _make_sensor()._attr_has_entity_name is True
+        assert _make_bt_sensor()._attr_has_entity_name is True
 
     def test_device_info_set(self):
         from custom_components.odio_remote.const import DOMAIN
-        assert (DOMAIN, ENTRY_ID) in _make_sensor().device_info["identifiers"]
+        assert (DOMAIN, ENTRY_ID) in _make_bt_sensor().device_info["identifiers"]
 
 
 # ---------------------------------------------------------------------------
-# native_value
+# OdioBluetoothConnectedDeviceSensor — native_value
 # ---------------------------------------------------------------------------
 
 class TestOdioBluetoothConnectedDeviceSensorValue:
 
     def test_returns_connected_device_name(self):
-        assert _make_sensor(MOCK_BLUETOOTH_STATUS).native_value == "Pixel 6a"
+        assert _make_bt_sensor(MOCK_BLUETOOTH_STATUS).native_value == "Pixel 6a"
 
     def test_returns_none_when_no_connected_device(self):
-        data = {**MOCK_BLUETOOTH_STATUS, "known_devices": [
+        status = {**MOCK_BLUETOOTH_STATUS, "known_devices": [
             {"address": "AA:BB:CC:DD:EE:FF", "name": "Old Device", "trusted": True, "connected": False}
         ]}
-        assert _make_sensor(data).native_value == "none"
+        assert _make_bt_sensor(status).native_value == "none"
 
     def test_returns_none_when_known_devices_empty(self):
-        data = {**MOCK_BLUETOOTH_STATUS, "known_devices": []}
-        assert _make_sensor(data).native_value == "none"
+        status = {**MOCK_BLUETOOTH_STATUS, "known_devices": []}
+        assert _make_bt_sensor(status).native_value == "none"
 
     def test_returns_none_when_no_data(self):
-        assert _make_sensor(None).native_value == "none"
+        assert _make_bt_sensor(None).native_value == "none"
 
     def test_returns_first_connected_when_multiple(self):
-        data = {**MOCK_BLUETOOTH_STATUS, "known_devices": [
+        status = {**MOCK_BLUETOOTH_STATUS, "known_devices": [
             {"address": "AA:BB:CC:DD:EE:FF", "name": "Device A", "trusted": True, "connected": False},
             {"address": "11:22:33:44:55:66", "name": "Device B", "trusted": True, "connected": True},
             {"address": "77:88:99:AA:BB:CC", "name": "Device C", "trusted": True, "connected": True},
         ]}
-        assert _make_sensor(data).native_value == "Device B"
+        assert _make_bt_sensor(status).native_value == "Device B"
 
 
 # ---------------------------------------------------------------------------
@@ -192,36 +188,27 @@ class TestOdioBluetoothConnectedDeviceSensorValue:
 
 class TestSensorSetupEntry:
 
-    @pytest.mark.asyncio
-    async def test_bt_sensor_created_when_bt_coordinator_present(self):
-        entry = _make_entry(bt_coordinator=_make_bt_coordinator(MOCK_BLUETOOTH_STATUS))
+    async def test_bt_sensor_created_when_bt_backend_enabled(self):
+        entry = _make_entry(make_hub(bluetooth=MOCK_BLUETOOTH_STATUS), pulseaudio=False)
         added = []
         await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
         assert any(isinstance(e, OdioBluetoothConnectedDeviceSensor) for e in added)
 
-    @pytest.mark.asyncio
-    async def test_output_sensor_created_when_audio_coordinator_present(self):
-        entry = _make_entry(audio_coordinator=_make_coordinator({"audio": [], "outputs": MOCK_OUTPUTS}))
+    async def test_output_sensor_created_when_pulseaudio_backend_enabled(self):
+        entry = _make_entry(make_hub(), bluetooth=False)
         added = []
         await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
         assert any(isinstance(e, OdioDefaultOutputSensor) for e in added)
 
-    @pytest.mark.asyncio
-    async def test_both_sensors_created_when_both_coordinators_present(self):
-        entry = _make_entry(
-            bt_coordinator=_make_bt_coordinator(MOCK_BLUETOOTH_STATUS),
-            audio_coordinator=_make_coordinator({"audio": [], "outputs": MOCK_OUTPUTS}),
-        )
+    async def test_both_sensors_created_when_both_backends_enabled(self):
+        entry = _make_entry(make_hub(bluetooth=MOCK_BLUETOOTH_STATUS))
         added = []
         await async_setup_entry(MagicMock(), entry, lambda entities: added.extend(entities))
         assert len(added) == 2
-        types = {type(e) for e in added}
-        assert OdioDefaultOutputSensor in types
-        assert OdioBluetoothConnectedDeviceSensor in types
+        assert {type(e) for e in added} == {OdioDefaultOutputSensor, OdioBluetoothConnectedDeviceSensor}
 
-    @pytest.mark.asyncio
-    async def test_no_sensor_when_no_coordinator(self):
-        entry = _make_entry(bt_coordinator=None, audio_coordinator=None)
+    async def test_no_sensor_when_backends_disabled(self):
+        entry = _make_entry(make_hub(), pulseaudio=False, bluetooth=False)
         add_entities = MagicMock()
         await async_setup_entry(MagicMock(), entry, add_entities)
         add_entities.assert_not_called()
