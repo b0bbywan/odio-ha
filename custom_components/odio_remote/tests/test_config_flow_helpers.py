@@ -1,5 +1,7 @@
 """Tests for config_flow_helpers."""
 import pytest
+from pyodio import AudioClientState, PlayerState, ServiceState
+
 from custom_components.odio_remote.config_flow_helpers import (
     build_mapping_schema,
     parse_mappings_from_input,
@@ -7,6 +9,18 @@ from custom_components.odio_remote.config_flow_helpers import (
     get_client_keys,
     get_player_keys,
 )
+
+
+def _svc(scope, name):
+    return ServiceState.from_dict({"scope": scope, "name": name})
+
+
+def _client(name):
+    return AudioClientState.from_dict({"name": name})
+
+
+def _player(bus_name):
+    return PlayerState.from_dict({"bus_name": bus_name})
 
 
 class TestBuildMappingSchema:
@@ -19,9 +33,7 @@ class TestBuildMappingSchema:
 
     def test_single_entity_no_mapping(self):
         """Test single entity without existing mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
 
         schema = build_mapping_schema(services, {}, get_service_keys)
 
@@ -34,9 +46,7 @@ class TestBuildMappingSchema:
 
     def test_single_entity_with_mapping(self):
         """Test single entity with existing mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         mappings = {
             "user/mpd.service": "media_player.mpd_test"
         }
@@ -49,9 +59,9 @@ class TestBuildMappingSchema:
     def test_multiple_entities_mixed(self):
         """Test multiple entities with mixed mappings."""
         services = [
-            {"scope": "user", "name": "mpd.service"},
-            {"scope": "user", "name": "snapclient.service"},
-            {"scope": "system", "name": "upmpdcli.service"},
+            _svc("user", "mpd.service"),
+            _svc("user", "snapclient.service"),
+            _svc("system", "upmpdcli.service"),
         ]
         mappings = {
             "user/mpd.service": "media_player.mpd_test",
@@ -73,9 +83,7 @@ class TestParseMappingsFromInput:
 
     def test_empty_input(self):
         """Test with no user input."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
 
         result = parse_mappings_from_input({}, services, {}, get_service_keys, False)
 
@@ -83,9 +91,7 @@ class TestParseMappingsFromInput:
 
     def test_add_new_mapping(self):
         """Test adding a new mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         user_input = {
             "user_mpd.service": "media_player.mpd_test"
         }
@@ -98,9 +104,7 @@ class TestParseMappingsFromInput:
 
     def test_update_existing_mapping(self):
         """Test updating an existing mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.old_mpd"
         }
@@ -116,9 +120,7 @@ class TestParseMappingsFromInput:
 
     def test_delete_mapping(self):
         """Test deleting a mapping via checkbox."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.mpd_test"
         }
@@ -136,9 +138,7 @@ class TestParseMappingsFromInput:
 
     def test_preserve_others(self):
         """Test preserving mappings not in current entity list."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.mpd_test",
             "client:Remote Client": "media_player.remote_test",  # Different type
@@ -159,9 +159,7 @@ class TestParseMappingsFromInput:
 
     def test_no_preserve_others(self):
         """Test not preserving other mappings."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.mpd_test",
             "client:Remote Client": "media_player.remote_test",
@@ -181,9 +179,7 @@ class TestParseMappingsFromInput:
 
     def test_empty_entity_value_removes_mapping(self):
         """Test that empty entity value removes the mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.mpd_test"
         }
@@ -200,9 +196,7 @@ class TestParseMappingsFromInput:
 
     def test_none_entity_value_removes_mapping(self):
         """Test that None entity value removes the mapping."""
-        services = [
-            {"scope": "user", "name": "mpd.service"}
-        ]
+        services = [_svc("user", "mpd.service")]
         existing = {
             "user/mpd.service": "media_player.mpd_test"
         }
@@ -220,9 +214,9 @@ class TestParseMappingsFromInput:
     def test_multiple_services_complex_scenario(self):
         """Test complex scenario with multiple services."""
         services = [
-            {"scope": "user", "name": "mpd.service"},
-            {"scope": "user", "name": "snapclient.service"},
-            {"scope": "system", "name": "upmpdcli.service"},
+            _svc("user", "mpd.service"),
+            _svc("user", "snapclient.service"),
+            _svc("system", "upmpdcli.service"),
         ]
         existing = {
             "user/mpd.service": "media_player.mpd_old",
@@ -253,7 +247,7 @@ class TestClientKeys:
 
     def test_client_with_spaces(self):
         """Test client name with spaces."""
-        client = {"name": "My Audio Client"}
+        client = _client("My Audio Client")
         form_key, mapping_key = get_client_keys(client)
 
         assert form_key == "client_my_audio_client"
@@ -261,7 +255,7 @@ class TestClientKeys:
 
     def test_client_with_unicode(self):
         """Test client name with unicode characters."""
-        client = {"name": "Client-Été-2024"}
+        client = _client("Client-Été-2024")
         form_key, mapping_key = get_client_keys(client)
 
         assert "client_" in form_key
@@ -269,7 +263,7 @@ class TestClientKeys:
 
     def test_client_with_consecutive_special_chars(self):
         """Test client name with consecutive special characters."""
-        client = {"name": "Test!!!Client"}
+        client = _client("Test!!!Client")
         form_key, mapping_key = get_client_keys(client)
 
         # Consecutive special chars should be replaced with single underscore
@@ -278,12 +272,20 @@ class TestClientKeys:
 
     def test_client_leading_trailing_special(self):
         """Test client name with leading/trailing special characters."""
-        client = {"name": "___Test___"}
+        client = _client("___Test___")
         form_key, mapping_key = get_client_keys(client)
 
         # Leading/trailing underscores should be stripped
         assert form_key == "client_test"
         assert mapping_key == "client:___Test___"
+
+    def test_client_empty_name(self):
+        """Test client without a name yields empty keys."""
+        client = _client("")
+        form_key, mapping_key = get_client_keys(client)
+
+        assert form_key == ""
+        assert mapping_key == ""
 
 
 class TestPlayerKeys:
@@ -291,7 +293,7 @@ class TestPlayerKeys:
 
     def test_standard_bus_name(self):
         """Test standard MPRIS bus name."""
-        player = {"bus_name": "org.mpris.MediaPlayer2.spotify"}
+        player = _player("org.mpris.MediaPlayer2.spotify")
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == "player_org_mpris_mediaplayer2_spotify"
@@ -299,7 +301,7 @@ class TestPlayerKeys:
 
     def test_bus_name_with_instance(self):
         """Test bus name with instance number — mapping_key strips the suffix."""
-        player = {"bus_name": "org.mpris.MediaPlayer2.chromium.instance1"}
+        player = _player("org.mpris.MediaPlayer2.chromium.instance1")
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == "player_org_mpris_mediaplayer2_chromium_instance1"
@@ -307,15 +309,15 @@ class TestPlayerKeys:
 
     def test_empty_bus_name(self):
         """Test player with empty bus_name."""
-        player = {"bus_name": ""}
+        player = _player("")
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == ""
         assert mapping_key == ""
 
     def test_missing_bus_name(self):
-        """Test player without bus_name key."""
-        player = {"identity": "Spotify"}
+        """Test player dict without bus_name key parses to empty keys."""
+        player = PlayerState.from_dict({"identity": "Spotify"})
         form_key, mapping_key = get_player_keys(player)
 
         assert form_key == ""

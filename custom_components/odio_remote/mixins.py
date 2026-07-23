@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
@@ -10,15 +10,9 @@ from homeassistant.components.media_player import (
     RepeatMode,
 )
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from .api_client import OdioApiClient
-from .coordinator import OdioBluetoothCoordinator
-from .event_stream import OdioEventStreamManager
-
+from pyodio import AudioClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,20 +20,17 @@ _LOGGER = logging.getLogger(__name__)
 class MappedEntityMixin(Entity):
     """Mixin for entities that can delegate to mapped entities.
 
-    Expects to be used alongside CoordinatorEntity, which provides
-    self.coordinator.
-
-    Subclasses must implement:
-    - _mapping_key property: returns the key for looking up mappings
+    Subclasses must set ``self._service_mappings`` (the entry's mapping dict)
+    before ``async_added_to_hass`` and implement the ``_mapping_key`` property.
     """
 
-    coordinator: Any
+    _service_mappings: dict[str, str]
 
     async def async_added_to_hass(self) -> None:
         """Track state changes of the mapped entity.
 
         Without this, properties delegated to the mapped entity (media_title,
-        position, etc.) only refresh when our own coordinator pushes an update.
+        position, etc.) only refresh when our own data pushes an update.
         Under SSE that happens rarely, so the wrapper would appear frozen
         whenever the underlying player's state changed independently.
         """
@@ -64,12 +55,8 @@ class MappedEntityMixin(Entity):
 
     @property
     def _mapped_entity(self) -> str | None:
-        """Get current mapped entity from runtime data."""
-        try:
-            runtime_data = self.coordinator.config_entry.runtime_data
-            return runtime_data.service_mappings.get(self._mapping_key)
-        except (AttributeError, TypeError):
-            return None
+        """Get the mapped entity_id, if configured."""
+        return self._service_mappings.get(self._mapping_key)
 
     def _get_mapped_state(self):
         """Get the state object of the mapped entity."""
@@ -314,115 +301,49 @@ class MappedEntityMixin(Entity):
         self,
         service_name: str,
         service_data: dict,
-        get_client_name_func,
-        api_client_method,
-        *api_args,
+        get_client: Callable[[], AudioClient | None],
+        client_action: Callable[[AudioClient], Any],
     ) -> None:
-        """Generic control with delegation to mapped entity first.
+        """Delegate to the mapped entity first, else act on the audio client.
 
         Args:
             service_name: Service to call on mapped entity (e.g., "volume_set")
             service_data: Data for the service call
-            get_client_name_func: Callable that returns client name for fallback
-            api_client_method: API client method to call for fallback
-            *api_args: Additional arguments for api_client_method
+            get_client: Callable returning the pyodio AudioClient for fallback
+            client_action: Awaitable-returning action applied to the client
         """
-        # Try to delegate to mapped entity first
         if await self._delegate_to_hass(service_name, service_data):
             return
 
-        # Fallback to PulseAudio client control
-        client_name = get_client_name_func()
-        if not client_name:
-            _LOGGER.warning("Cannot %s: no client name available", service_name)
+        client = get_client()
+        if client is None:
+            _LOGGER.warning("Cannot %s: audio client not available", service_name)
             return
 
-        await api_client_method(client_name, *api_args)
+        await client_action(client)
 
     async def _set_volume_with_fallback(
         self,
         volume: float,
-        get_client_name_func,
-        api_client,
+        get_client: Callable[[], AudioClient | None],
     ) -> None:
-        """Set volume level with delegation to mapped entity first.
-
-        Args:
-            volume: Volume level 0..1
-            get_client_name_func: Callable that returns client name for fallback
-            api_client: API client for PulseAudio control
-        """
+        """Set volume level with delegation to mapped entity first."""
         await self._control_with_fallback(
             "volume_set",
             {"volume_level": volume},
-            get_client_name_func,
-            api_client.set_client_volume,
-            volume,
+            get_client,
+            lambda client: client.set_volume(volume),
         )
 
     async def _mute_with_fallback(
         self,
         mute: bool,
-        get_client_name_func,
-        api_client,
+        get_client: Callable[[], AudioClient | None],
     ) -> None:
-        """Mute volume with delegation to mapped entity first.
-
-        Args:
-            mute: Mute state
-            get_client_name_func: Callable that returns client name for fallback
-            api_client: API client for PulseAudio control
-        """
+        """Mute volume with delegation to mapped entity first."""
         await self._control_with_fallback(
             "volume_mute",
             {"is_volume_muted": mute},
-            get_client_name_func,
-            api_client.set_client_mute,
-            mute,
+            get_client,
+            lambda client: client.set_muted(mute),
         )
-
-
-class OdioBluetoothEntity(CoordinatorEntity[OdioBluetoothCoordinator]):
-    """Base for Bluetooth entities: shared wiring + SSE-aware availability.
-
-    Subclasses set ``_unique_suffix`` (a class attr, or an instance attr before
-    calling ``super().__init__``) and may override ``_has_data`` for their own
-    availability gate.
-    """
-
-    _attr_has_entity_name = True
-    _unique_suffix: str = ""
-
-    def __init__(
-        self,
-        coordinator: OdioBluetoothCoordinator,
-        api: OdioApiClient,
-        entry_id: str,
-        device_info: DeviceInfo,
-        event_stream: OdioEventStreamManager,
-    ) -> None:
-        super().__init__(coordinator)
-        self._api = api
-        self._event_stream = event_stream
-        self._attr_unique_id = f"{entry_id}_{self._unique_suffix}"
-        self._attr_device_info = device_info
-
-    async def async_added_to_hass(self) -> None:
-        """Refresh on SSE connectivity changes too, not just coordinator updates."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self._event_stream.async_add_listener(self.async_write_ha_state)
-        )
-
-    @property
-    def available(self) -> bool:
-        """SSE up, coordinator healthy, and entity-specific data present."""
-        return (
-            self._event_stream.sse_connected
-            and self.coordinator.last_update_success
-            and self._has_data()
-        )
-
-    def _has_data(self) -> bool:
-        """Entity-specific availability gate; defaults to 'coordinator has data'."""
-        return bool(self.coordinator.data)

@@ -1,9 +1,27 @@
 """Shared test fixtures for Odio Remote tests."""
+from typing import Any
+from unittest.mock import MagicMock, create_autospec
+
 from homeassistant.helpers.entity import DeviceInfo
+from pyodio import (
+    AudioServerState,
+    AudioSnapshot,
+    BluetoothState,
+    OdioClient,
+    OdioEvent,
+    OdioHub,
+    PlayerState,
+    ServerInfo,
+    ServiceState,
+    UpgradeStatus,
+)
+
 from custom_components.odio_remote.const import DOMAIN
 
+TEST_API_URL = "http://localhost:8018"
+
 # Standard mock server info response (from GET /server)
-MOCK_SERVER_INFO = {
+MOCK_SERVER_INFO: dict[str, Any] = {
     "hostname": "htpc",
     "os_platform": "linux/amd64",
     "os_version": "Debian GNU/Linux 13 (trixie)",
@@ -271,6 +289,60 @@ MOCK_REMOTE_CLIENTS = [
         "corked": False,
     },
 ]
+
+# ---------------------------------------------------------------------------
+# Hub factory — a real pyodio OdioHub with a mocked REST client, seeded from
+# the dict fixtures above through the library's own from_dict parsers.
+# ---------------------------------------------------------------------------
+
+
+def make_hub(
+    *,
+    server_info: dict[str, Any] | None = MOCK_SERVER_INFO,
+    services: list[dict[str, Any]] | None = None,
+    audio: dict[str, Any] | None = None,
+    audio_server: dict[str, Any] | None = None,
+    bluetooth: dict[str, Any] | None = None,
+    players: list[dict[str, Any]] | None = None,
+    upgrade: dict[str, Any] | None = None,
+    connected: bool = True,
+) -> OdioHub:
+    """Build a real OdioHub seeded from dict fixtures, with the client mocked."""
+    hub = OdioHub(TEST_API_URL, MagicMock())
+    real_client = hub.client
+    hub.client = create_autospec(OdioClient, instance=True)
+    hub.client.base_url = TEST_API_URL
+    # Keep the real URL builder so cover URLs stay meaningful in tests.
+    hub.client.player_cover_url.side_effect = real_client.player_cover_url
+
+    if server_info is not None:
+        hub._server = ServerInfo.from_dict(server_info)
+    if services is not None:
+        hub.services._set_snapshot([ServiceState.from_dict(s) for s in services])
+    if audio is not None:
+        hub.audio._set_snapshot(
+            AudioSnapshot.from_dict(audio),
+            AudioServerState.from_dict(audio_server) if audio_server else None,
+        )
+    if bluetooth is not None:
+        hub.bluetooth._set_state(BluetoothState.from_dict(bluetooth))
+    if players is not None:
+        hub.players._set_snapshot([PlayerState.from_dict(p) for p in players])
+    if upgrade is not None:
+        hub.upgrade._set_status(UpgradeStatus.from_dict(upgrade))
+    set_connected(hub, connected)
+    return hub
+
+
+def set_connected(hub: OdioHub, connected: bool) -> None:
+    """Flip the hub's SSE connectivity, notifying connection listeners."""
+    hub._stream._set_connected(connected)
+
+
+def push_event(hub: OdioHub, event_type: str, data: Any) -> None:
+    """Feed a raw SSE event through the hub's real dispatch/parsing path."""
+    hub._handle_event(OdioEvent(event_type, data))
+
 
 MOCK_PLAYERS = [
     {

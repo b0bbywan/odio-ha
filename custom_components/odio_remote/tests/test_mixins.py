@@ -1,46 +1,22 @@
 """Tests for MappedEntityMixin."""
-import pytest
-from unittest.mock import Mock, AsyncMock
-from dataclasses import dataclass
+from unittest.mock import AsyncMock, Mock
 
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     RepeatMode,
 )
+from pyodio import AudioClientState, ServiceState
 
 from custom_components.odio_remote.mixins import MappedEntityMixin
-
-
-@dataclass
-class MockRuntimeData:
-    """Mock runtime data."""
-
-    service_mappings: dict
-
-
-class MockConfigEntry:
-    """Mock config entry with runtime_data."""
-
-    def __init__(self, service_mappings=None):
-        self.runtime_data = MockRuntimeData(
-            service_mappings=service_mappings or {},
-        )
-
-
-class MockCoordinator:
-    """Mock coordinator with config_entry."""
-
-    def __init__(self, config_entry=None):
-        self.config_entry = config_entry or MockConfigEntry()
 
 
 class ConcreteMappedEntity(MappedEntityMixin):
     """Concrete implementation of MappedEntityMixin for testing."""
 
-    def __init__(self, hass, coordinator, mapping_key):
+    def __init__(self, hass, mappings, mapping_key):
         self.hass = hass
-        self.coordinator = coordinator
+        self._service_mappings = mappings
         self._mapping_key_value = mapping_key
 
     @property
@@ -51,14 +27,10 @@ class ConcreteMappedEntity(MappedEntityMixin):
 def _make_entity(mapping_key="test", mapped_id=None, hass=None, state_obj=None):
     """Build a ConcreteMappedEntity with sensible defaults."""
     mappings = {mapping_key: mapped_id} if mapped_id else {}
-    coordinator = MockCoordinator(MockConfigEntry(service_mappings=mappings))
     if hass is None:
         hass = Mock()
-        if state_obj is not None:
-            hass.states.get.return_value = state_obj
-        else:
-            hass.states.get.return_value = None
-    return ConcreteMappedEntity(hass, coordinator, mapping_key)
+        hass.states.get.return_value = state_obj
+    return ConcreteMappedEntity(hass, mappings, mapping_key)
 
 
 def _make_state(state_str="playing", **attrs):
@@ -67,6 +39,14 @@ def _make_state(state_str="playing", **attrs):
     s.state = state_str
     s.attributes = attrs
     return s
+
+
+def _make_client():
+    """Build a mock pyodio AudioClient."""
+    client = Mock()
+    client.set_volume = AsyncMock()
+    client.set_muted = AsyncMock()
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -82,10 +62,6 @@ class TestMappedEntity:
 
     def test_returns_none_when_no_mapping(self):
         entity = _make_entity("user/mpd.service")
-        assert entity._mapped_entity is None
-
-    def test_returns_none_when_no_config_entry(self):
-        entity = ConcreteMappedEntity(Mock(), Mock(config_entry=None), "test")
         assert entity._mapped_entity is None
 
 
@@ -187,7 +163,6 @@ class TestGetSupportedFeatures:
 
 class TestDelegateToHass:
 
-    @pytest.mark.asyncio
     async def test_success(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -198,7 +173,6 @@ class TestDelegateToHass:
             {"entity_id": "media_player.x"}, blocking=True,
         )
 
-    @pytest.mark.asyncio
     async def test_with_extra_data(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -209,20 +183,17 @@ class TestDelegateToHass:
             {"entity_id": "media_player.x", "volume_level": 0.7}, blocking=True,
         )
 
-    @pytest.mark.asyncio
     async def test_failure(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock(side_effect=Exception("boom"))
         result = await entity._delegate_to_hass("media_play")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_no_mapping(self):
         entity = _make_entity("k")
         result = await entity._delegate_to_hass("media_play")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_no_hass(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass = None
@@ -377,42 +348,36 @@ class TestDelegatedMediaProperties:
 
 class TestDelegatedMediaActions:
 
-    @pytest.mark.asyncio
     async def test_async_media_play(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
         await entity.async_media_play()
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_async_media_pause(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
         await entity.async_media_pause()
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_async_media_stop(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
         await entity.async_media_stop()
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_async_media_next_track(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
         await entity.async_media_next_track()
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_async_media_previous_track(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
         await entity.async_media_previous_track()
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_async_media_seek(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -422,7 +387,6 @@ class TestDelegatedMediaActions:
             {"entity_id": "media_player.x", "seek_position": 30.0}, blocking=True,
         )
 
-    @pytest.mark.asyncio
     async def test_async_set_shuffle(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -432,7 +396,6 @@ class TestDelegatedMediaActions:
             {"entity_id": "media_player.x", "shuffle": True}, blocking=True,
         )
 
-    @pytest.mark.asyncio
     async def test_async_set_repeat(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -442,7 +405,6 @@ class TestDelegatedMediaActions:
             {"entity_id": "media_player.x", "repeat": RepeatMode.ALL}, blocking=True,
         )
 
-    @pytest.mark.asyncio
     async def test_async_select_source(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
@@ -460,58 +422,45 @@ class TestDelegatedMediaActions:
 
 class TestControlWithFallback:
 
-    @pytest.mark.asyncio
     async def test_delegates_first_when_mapped(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
-        api = Mock()
-        api.set_client_volume = AsyncMock()
-        await entity._set_volume_with_fallback(0.5, lambda: "client1", api)
+        client = _make_client()
+        await entity._set_volume_with_fallback(0.5, lambda: client)
         entity.hass.services.async_call.assert_called_once()
-        api.set_client_volume.assert_not_called()
+        client.set_volume.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_falls_back_to_api_when_delegation_fails(self):
+    async def test_falls_back_to_client_when_delegation_fails(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock(side_effect=Exception("fail"))
-        api = Mock()
-        api.set_client_volume = AsyncMock()
-        await entity._set_volume_with_fallback(0.5, lambda: "client1", api)
-        api.set_client_volume.assert_awaited_once_with("client1", 0.5)
+        client = _make_client()
+        await entity._set_volume_with_fallback(0.5, lambda: client)
+        client.set_volume.assert_awaited_once_with(0.5)
 
-    @pytest.mark.asyncio
-    async def test_falls_back_to_api_when_no_mapping(self):
+    async def test_falls_back_to_client_when_no_mapping(self):
         entity = _make_entity("k")
-        api = Mock()
-        api.set_client_volume = AsyncMock()
-        await entity._set_volume_with_fallback(0.5, lambda: "client1", api)
-        api.set_client_volume.assert_awaited_once_with("client1", 0.5)
+        client = _make_client()
+        await entity._set_volume_with_fallback(0.5, lambda: client)
+        client.set_volume.assert_awaited_once_with(0.5)
 
-    @pytest.mark.asyncio
-    async def test_fallback_no_client_name(self):
+    async def test_fallback_no_client(self):
         entity = _make_entity("k")
-        api = Mock()
-        api.set_client_volume = AsyncMock()
-        await entity._set_volume_with_fallback(0.5, lambda: None, api)
-        api.set_client_volume.assert_not_called()
+        # Fallback with no live client is a no-op (logged warning only).
+        await entity._set_volume_with_fallback(0.5, lambda: None)
 
-    @pytest.mark.asyncio
     async def test_mute_delegates_first(self):
         entity = _make_entity("k", "media_player.x")
         entity.hass.services.async_call = AsyncMock()
-        api = Mock()
-        api.set_client_mute = AsyncMock()
-        await entity._mute_with_fallback(True, lambda: "client1", api)
+        client = _make_client()
+        await entity._mute_with_fallback(True, lambda: client)
         entity.hass.services.async_call.assert_called_once()
-        api.set_client_mute.assert_not_called()
+        client.set_muted.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_mute_falls_back(self):
         entity = _make_entity("k")
-        api = Mock()
-        api.set_client_mute = AsyncMock()
-        await entity._mute_with_fallback(True, lambda: "client1", api)
-        api.set_client_mute.assert_awaited_once_with("client1", True)
+        client = _make_client()
+        await entity._mute_with_fallback(True, lambda: client)
+        client.set_muted.assert_awaited_once_with(True)
 
 
 class TestMappingKeyFunctions:
@@ -519,28 +468,28 @@ class TestMappingKeyFunctions:
 
     def test_get_service_keys(self):
         from custom_components.odio_remote.config_flow_helpers import get_service_keys
-        service = {"scope": "user", "name": "mpd.service"}
+        service = ServiceState.from_dict({"scope": "user", "name": "mpd.service"})
         form_key, mapping_key = get_service_keys(service)
         assert form_key == "user_mpd.service"
         assert mapping_key == "user/mpd.service"
 
     def test_get_client_keys(self):
         from custom_components.odio_remote.config_flow_helpers import get_client_keys
-        client = {"name": "Tunnel for bobby@bobby-desktop"}
+        client = AudioClientState.from_dict({"name": "Tunnel for bobby@bobby-desktop"})
         form_key, mapping_key = get_client_keys(client)
         assert form_key == "client_tunnel_for_bobby_bobby_desktop"
         assert mapping_key == "client:Tunnel for bobby@bobby-desktop"
 
     def test_get_client_keys_special_chars(self):
         from custom_components.odio_remote.config_flow_helpers import get_client_keys
-        client = {"name": "Test!@#$%Client-123"}
+        client = AudioClientState.from_dict({"name": "Test!@#$%Client-123"})
         form_key, mapping_key = get_client_keys(client)
         assert form_key == "client_test_client_123"
         assert mapping_key == "client:Test!@#$%Client-123"
 
     def test_get_client_keys_empty_name(self):
         from custom_components.odio_remote.config_flow_helpers import get_client_keys
-        client = {"name": ""}
+        client = AudioClientState.from_dict({"name": ""})
         form_key, mapping_key = get_client_keys(client)
         assert form_key == ""
         assert mapping_key == ""

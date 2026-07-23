@@ -8,6 +8,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "aioresponses==0.7.9",
+    "pyodio==0.1.0",
 ]
 
 [tool.ruff]
