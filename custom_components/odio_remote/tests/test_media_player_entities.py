@@ -40,8 +40,8 @@ def _make_ctx(hub, service_mappings=None, backends=None, server_hostname="htpc")
     )
 
 
-def _audio(clients):
-    return {"kind": "pipewire", "clients": clients, "outputs": []}
+def _audio(clients, outputs=None):
+    return {"kind": "pipewire", "clients": clients, "outputs": outputs or []}
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +68,18 @@ class TestExtractMprisAppName:
 
 class TestReceiverEntity:
 
-    def _make_receiver(self, clients=None, players=None, backends=None, connected=True):
+    def _make_receiver(
+        self,
+        clients=None,
+        outputs=None,
+        audio_server=None,
+        players=None,
+        backends=None,
+        connected=True,
+    ):
         hub = make_hub(
-            audio=_audio(clients) if clients is not None else None,
+            audio=_audio(clients, outputs) if clients is not None else None,
+            audio_server=audio_server,
             players=players,
             connected=connected,
         )
@@ -118,25 +127,46 @@ class TestReceiverEntity:
 
     # -- volume --
 
-    def test_volume_level_average(self):
-        clients = [{"name": "a", "volume": 0.8}, {"name": "b", "volume": 0.4}]
-        entity, _ = self._make_receiver(clients=clients)
-        assert entity.volume_level == pytest.approx(0.6)
+    def test_volume_level_from_default_output(self):
+        outputs = [
+            {"name": "a", "default": False, "volume": 0.9},
+            {"name": "b", "default": True, "volume": 0.42},
+        ]
+        entity, _ = self._make_receiver(clients=[], outputs=outputs)
+        assert entity.volume_level == pytest.approx(0.42)
 
-    def test_volume_level_none_when_no_clients(self):
-        entity, _ = self._make_receiver(clients=[])
+    def test_volume_level_ignores_client_volumes(self):
+        # Client streams are pinned at 1.0 under PipeWire; report the sink volume.
+        clients = [{"name": "a", "volume": 1.0}, {"name": "b", "volume": 1.0}]
+        outputs = [{"name": "sink", "default": True, "volume": 0.42}]
+        entity, _ = self._make_receiver(clients=clients, outputs=outputs)
+        assert entity.volume_level == pytest.approx(0.42)
+
+    def test_volume_level_falls_back_to_master_state(self):
+        # No output flagged default: the /audio/server snapshot wins.
+        entity, _ = self._make_receiver(
+            clients=[{"name": "a", "volume": 1.0}],
+            outputs=[{"name": "a", "default": False, "volume": 0.9}],
+            audio_server={"kind": "pipewire", "volume": 0.28, "muted": False},
+        )
+        assert entity.volume_level == pytest.approx(0.28)
+
+    def test_volume_level_none_without_audio_state(self):
+        entity, _ = self._make_receiver()
         assert entity.volume_level is None
 
     def test_is_volume_muted_true(self):
-        entity, _ = self._make_receiver(clients=[{"name": "a", "muted": True}])
+        outputs = [{"name": "sink", "default": True, "volume": 0.42, "muted": True}]
+        entity, _ = self._make_receiver(clients=[], outputs=outputs)
         assert entity.is_volume_muted is True
 
     def test_is_volume_muted_false(self):
-        entity, _ = self._make_receiver(clients=[{"name": "a", "muted": False}])
+        outputs = [{"name": "sink", "default": True, "volume": 0.42, "muted": False}]
+        entity, _ = self._make_receiver(clients=[{"name": "a", "muted": True}], outputs=outputs)
         assert entity.is_volume_muted is False
 
-    def test_is_volume_muted_no_clients(self):
-        entity, _ = self._make_receiver(clients=[])
+    def test_is_volume_muted_false_without_audio_state(self):
+        entity, _ = self._make_receiver()
         assert entity.is_volume_muted is False
 
     # -- extra_state_attributes --
