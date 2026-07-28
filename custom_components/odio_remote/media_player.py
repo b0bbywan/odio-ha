@@ -8,7 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.media_player import (
+    ATTR_MEDIA_ENQUEUE,
+    BrowseError,
+    BrowseMedia,
+    MediaClass,
     MediaPlayerDeviceClass,
+    MediaPlayerEnqueue,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
@@ -23,10 +28,12 @@ from pyodio import (
     AudioClient,
     AudioClientState,
     Backends,
+    OdioError,
     OdioHub,
     Player,
     Service,
     ServiceState,
+    Track,
 )
 
 from . import OdioConfigEntry
@@ -52,6 +59,9 @@ from .mixins import MappedEntityMixin
 PARALLEL_UPDATES = 0
 
 _LOGGER = logging.getLogger(__name__)
+
+# Root media_content_id of the MPRIS tracklist in the media browser.
+_TRACKLIST_ROOT = "tracklist"
 
 
 # =============================================================================
@@ -708,6 +718,16 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
                 features |= MediaPlayerEntityFeature.SHUFFLE_SET
             if player.loop_status is not None:
                 features |= MediaPlayerEntityFeature.REPEAT_SET
+            if player.tracklist_supported:
+                # PLAY_MEDIA covers GoTo on a browsed entry; editing needs AddTrack.
+                features |= (
+                    MediaPlayerEntityFeature.BROWSE_MEDIA | MediaPlayerEntityFeature.PLAY_MEDIA
+                )
+                if player.can_edit_tracks:
+                    features |= (
+                        MediaPlayerEntityFeature.MEDIA_ENQUEUE
+                        | MediaPlayerEntityFeature.CLEAR_PLAYLIST
+                    )
 
         return self._get_supported_features(features, mapped_features)
 
@@ -942,3 +962,95 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
             await player.set_loop(loop_status)
             return
         await self._delegate_to_hass("repeat_set", {"repeat": repeat})
+
+    # Tracklist — the MPRIS TrackList mapped onto HA's browse/enqueue surfaces
+
+    async def async_browse_media(
+        self,
+        media_content_type: MediaType | str | None = None,
+        media_content_id: str | None = None,
+    ) -> BrowseMedia:
+        """Browse the player's tracklist."""
+        player = self._player()
+        if player is None or not player.tracklist_supported:
+            raise BrowseError(f"{self._attr_name} has no tracklist")
+
+        if player.tracklist is None:
+            # The eager sync failed, or the player showed up after it.
+            try:
+                await player.refresh_tracklist()
+            except OdioError as err:
+                raise BrowseError(f"Cannot fetch the tracklist of {self._player_name}") from err
+
+        return BrowseMedia(
+            media_class=MediaClass.PLAYLIST,
+            media_content_type=MediaType.PLAYLIST,
+            media_content_id=_TRACKLIST_ROOT,
+            title=self._attr_name or self._app_name,
+            can_play=False,
+            can_expand=True,
+            children=[_browse_track(track) for track in player.tracks],
+            children_media_class=MediaClass.TRACK,
+        )
+
+    @api_command
+    async def async_play_media(
+        self, media_type: MediaType | str, media_id: str, **kwargs: Any
+    ) -> None:
+        """Play a tracklist entry, or add a URI to the tracklist."""
+        player = self._player()
+        if player is None or not player.tracklist_supported:
+            await self._delegate_to_hass(
+                "play_media",
+                {"media_content_type": media_type, "media_content_id": media_id},
+            )
+            return
+
+        # media_id is a track_id when it comes from the media browser.
+        if any(track.track_id == media_id for track in player.tracks):
+            _LOGGER.debug("MPRIS goto %s: %s", media_id, self._player_name)
+            await player.go_to(media_id)
+            return
+
+        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
+        if enqueue == MediaPlayerEnqueue.ADD:
+            await player.add_track(media_id)
+            return
+        if enqueue == MediaPlayerEnqueue.REPLACE:
+            await self.async_clear_playlist()
+            await player.add_track(media_id, set_as_current=True)
+            return
+        # NEXT and PLAY both insert after the current track; PLAY (and no
+        # enqueue at all) also jumps to it.
+        await player.add_track(
+            media_id,
+            after_track=player.current_track,
+            set_as_current=enqueue != MediaPlayerEnqueue.NEXT,
+        )
+
+    @api_command
+    async def async_clear_playlist(self) -> None:
+        """Empty the tracklist — MPRIS only removes one entry at a time."""
+        player = self._player()
+        if player is None:
+            return
+        for track in list(player.tracks):
+            await player.remove_track(track)
+
+
+def _browse_track(track: Track) -> BrowseMedia:
+    """Map a tracklist entry to a browsable, playable media item."""
+    title = track.title or track.track_id
+    if track.artist:
+        title = f"{title} — {track.artist}"
+    art_url = track.art_url
+    return BrowseMedia(
+        media_class=MediaClass.TRACK,
+        media_content_type=MediaType.MUSIC,
+        media_content_id=track.track_id,
+        title=title,
+        can_play=True,
+        can_expand=False,
+        # file:// artwork is only reachable through the per-player /cover proxy.
+        thumbnail=art_url if art_url and art_url.startswith("http") else None,
+    )

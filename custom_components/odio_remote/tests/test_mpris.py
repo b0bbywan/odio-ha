@@ -3,7 +3,15 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState, RepeatMode
+from homeassistant.components.media_player import (
+    BrowseError,
+    MediaPlayerEnqueue,
+    MediaPlayerEntityFeature,
+    MediaPlayerState,
+    MediaType,
+    RepeatMode,
+)
+from pyodio import OdioConnectionError, TracklistState
 
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
 
@@ -347,3 +355,167 @@ class TestMPRISEntityActions:
         entity._delegate_to_hass = AsyncMock(return_value=True)
         await entity.async_set_repeat(RepeatMode.ALL)
         entity._delegate_to_hass.assert_awaited_once_with("repeat_set", {"repeat": RepeatMode.ALL})
+
+
+# ===========================================================================
+# OdioMPRISMediaPlayer — tracklist (MPRIS TrackList ↔ HA browse/enqueue)
+# ===========================================================================
+
+SPOTIFY_TRACK_ID = "/com/spotify/track/abc"  # MOCK_SPOTIFY's mpris:trackid
+
+MOCK_TRACKLIST = {
+    "bus_name": SPOTIFY_BUS,
+    "can_edit_tracks": True,
+    "tracks": [
+        {
+            "track_id": SPOTIFY_TRACK_ID,
+            "metadata": {
+                "xesam:title": "Narcozik",
+                "xesam:artist": "Dooz Kawa",
+                "mpris:artUrl": "https://i.scdn.co/image/abc123",
+            },
+        },
+        {
+            "track_id": "/com/spotify/track/def",
+            "metadata": {"xesam:title": "Next one", "mpris:artUrl": "file:///tmp/cover.png"},
+        },
+    ],
+}
+
+
+def _with_tracklist(tracklist=MOCK_TRACKLIST, player=MOCK_SPOTIFY):
+    """Build an entity whose player has a tracklist, pushed through the SSE path."""
+    entity, hub = _make_entity(player)
+    push_event(hub, "player.tracklist.updated", tracklist)
+    return entity, hub
+
+
+class TestMPRISTracklistFeatures:
+
+    def test_no_tracklist_features_when_unsupported(self):
+        entity, _ = _make_entity(MOCK_SPOTIFY)
+        features = entity.supported_features
+        assert not features & MediaPlayerEntityFeature.BROWSE_MEDIA
+        assert not features & MediaPlayerEntityFeature.PLAY_MEDIA
+
+    def test_browse_and_play_media_when_supported(self):
+        entity, _ = _with_tracklist()
+        features = entity.supported_features
+        assert features & MediaPlayerEntityFeature.BROWSE_MEDIA
+        assert features & MediaPlayerEntityFeature.PLAY_MEDIA
+
+    def test_enqueue_and_clear_require_editable_tracklist(self):
+        entity, _ = _with_tracklist()
+        features = entity.supported_features
+        assert features & MediaPlayerEntityFeature.MEDIA_ENQUEUE
+        assert features & MediaPlayerEntityFeature.CLEAR_PLAYLIST
+
+    def test_read_only_tracklist_has_no_enqueue(self):
+        entity, _ = _with_tracklist({**MOCK_TRACKLIST, "can_edit_tracks": False})
+        features = entity.supported_features
+        assert features & MediaPlayerEntityFeature.BROWSE_MEDIA
+        assert not features & MediaPlayerEntityFeature.MEDIA_ENQUEUE
+        assert not features & MediaPlayerEntityFeature.CLEAR_PLAYLIST
+
+
+class TestMPRISBrowseMedia:
+
+    async def test_browse_lists_tracks(self):
+        entity, _ = _with_tracklist()
+        root = await entity.async_browse_media()
+        assert root.can_expand and not root.can_play
+        assert [child.media_content_id for child in root.children] == [
+            SPOTIFY_TRACK_ID,
+            "/com/spotify/track/def",
+        ]
+        assert root.children[0].title == "Narcozik — Dooz Kawa"
+        assert root.children[0].can_play
+
+    async def test_browse_keeps_only_http_thumbnails(self):
+        # file:// artwork is unreachable from HA; only the /cover proxy handles it.
+        entity, _ = _with_tracklist()
+        root = await entity.async_browse_media()
+        assert root.children[0].thumbnail == "https://i.scdn.co/image/abc123"
+        assert root.children[1].thumbnail is None
+
+    async def test_browse_raises_without_tracklist_support(self):
+        entity, _ = _make_entity(MOCK_SPOTIFY)
+        with pytest.raises(BrowseError):
+            await entity.async_browse_media()
+
+    async def test_browse_fetches_when_never_synced(self):
+        entity, hub = _make_entity({**MOCK_SPOTIFY, "tracklist_supported": True})
+        hub.client.get_player_tracklist.return_value = TracklistState.from_dict(MOCK_TRACKLIST)
+        root = await entity.async_browse_media()
+        hub.client.get_player_tracklist.assert_awaited_once_with(SPOTIFY_BUS)
+        assert len(root.children) == 2
+
+    async def test_browse_raises_when_fetch_fails(self):
+        entity, hub = _make_entity({**MOCK_SPOTIFY, "tracklist_supported": True})
+        hub.client.get_player_tracklist.side_effect = OdioConnectionError("down")
+        with pytest.raises(BrowseError):
+            await entity.async_browse_media()
+
+
+class TestMPRISPlayMedia:
+
+    async def test_known_track_id_goes_to_it(self):
+        entity, hub = _with_tracklist()
+        await entity.async_play_media(MediaType.MUSIC, SPOTIFY_TRACK_ID)
+        hub.client.player_tracklist_goto.assert_awaited_once_with(SPOTIFY_BUS, SPOTIFY_TRACK_ID)
+        hub.client.player_tracklist_add.assert_not_awaited()
+
+    async def test_enqueue_add_appends_at_the_end(self):
+        entity, hub = _with_tracklist()
+        await entity.async_play_media(
+            MediaType.MUSIC, "spotify:track:new", enqueue=MediaPlayerEnqueue.ADD
+        )
+        hub.client.player_tracklist_add.assert_awaited_once_with(
+            SPOTIFY_BUS, "spotify:track:new", after_track=None, set_as_current=False
+        )
+
+    async def test_enqueue_next_inserts_after_current_track(self):
+        entity, hub = _with_tracklist()
+        await entity.async_play_media(
+            MediaType.MUSIC, "spotify:track:new", enqueue=MediaPlayerEnqueue.NEXT
+        )
+        hub.client.player_tracklist_add.assert_awaited_once_with(
+            SPOTIFY_BUS, "spotify:track:new", after_track=SPOTIFY_TRACK_ID, set_as_current=False
+        )
+
+    async def test_no_enqueue_plays_now_and_keeps_the_queue(self):
+        entity, hub = _with_tracklist()
+        await entity.async_play_media(MediaType.MUSIC, "spotify:track:new")
+        hub.client.player_tracklist_add.assert_awaited_once_with(
+            SPOTIFY_BUS, "spotify:track:new", after_track=SPOTIFY_TRACK_ID, set_as_current=True
+        )
+
+    async def test_enqueue_replace_clears_first(self):
+        entity, hub = _with_tracklist()
+        await entity.async_play_media(
+            MediaType.MUSIC, "spotify:track:new", enqueue=MediaPlayerEnqueue.REPLACE
+        )
+        assert hub.client.player_tracklist_remove.await_count == 2
+        hub.client.player_tracklist_add.assert_awaited_once_with(
+            SPOTIFY_BUS, "spotify:track:new", after_track=None, set_as_current=True
+        )
+
+    async def test_delegates_when_player_has_no_tracklist(self):
+        entity, _ = _make_entity(MOCK_SPOTIFY)
+        entity._delegate_to_hass = AsyncMock(return_value=True)
+        await entity.async_play_media(MediaType.MUSIC, "spotify:track:new")
+        entity._delegate_to_hass.assert_awaited_once_with(
+            "play_media",
+            {"media_content_type": MediaType.MUSIC, "media_content_id": "spotify:track:new"},
+        )
+
+
+class TestMPRISClearPlaylist:
+
+    async def test_clear_removes_every_track(self):
+        entity, hub = _with_tracklist()
+        await entity.async_clear_playlist()
+        assert [c.args for c in hub.client.player_tracklist_remove.await_args_list] == [
+            (SPOTIFY_BUS, SPOTIFY_TRACK_ID),
+            (SPOTIFY_BUS, "/com/spotify/track/def"),
+        ]
