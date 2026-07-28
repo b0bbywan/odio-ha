@@ -326,16 +326,13 @@ class OdioReceiverMediaPlayer(OdioEntity, MediaPlayerEntity):
 
     @property
     def volume_level(self) -> float | None:
-        """Volume level of the media player (0..1)."""
-        volumes = [client.volume for client in self._hub.audio.clients.values()]
-        if volumes:
-            return sum(volumes) / len(volumes)
-        return None
+        """Volume level of the media player (0..1) — the default output sink."""
+        return self._hub.audio.volume
 
     @property
     def is_volume_muted(self) -> bool:
         """Boolean if volume is currently muted."""
-        return any(client.muted for client in self._hub.audio.clients.values())
+        return bool(self._hub.audio.muted)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
