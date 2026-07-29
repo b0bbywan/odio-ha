@@ -402,9 +402,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        if self._audio_coordinator is None or not self._audio_coordinator.data:
-            return None
-        for output in self._audio_coordinator.data.get("outputs", []):
+        for output in self._get_outputs():
             if output.get("default"):
                 return output.get("volume")
         return None
@@ -412,9 +410,7 @@ class OdioReceiverMediaPlayer(MediaPlayerEntity):
     @property
     def is_volume_muted(self) -> bool:
         """Boolean if volume is currently muted."""
-        if self._audio_coordinator is None or not self._audio_coordinator.data:
-            return False
-        for output in self._audio_coordinator.data.get("outputs", []):
+        for output in self._get_outputs():
             if output.get("default"):
                 return output.get("muted", False)
         return False
