@@ -10,14 +10,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry, DeviceInfo
 
 from .api_client import OdioApiClient
-from .event_stream import OdioEventStreamManager
-from .exceptions import OdioError
-from .migrate import migrate_mpris_service_mappings, migrate_mpris_unique_ids
-from .models import PowerCapabilities, ServerInfo, StartupData
 from .const import (
     CONF_API_URL,
     CONF_KEEPALIVE_INTERVAL,
@@ -28,12 +23,12 @@ from .const import (
     SSE_EVENT_AUDIO_OUTPUT_UPDATED,
     SSE_EVENT_AUDIO_REMOVED,
     SSE_EVENT_AUDIO_UPDATED,
-    SSE_EVENT_BLUETOOTH_UPDATED,
     SSE_EVENT_BLUETOOTH_DISCOVERED,
-    SSE_EVENT_PLAYER_UPDATED,
+    SSE_EVENT_BLUETOOTH_UPDATED,
     SSE_EVENT_PLAYER_ADDED,
-    SSE_EVENT_PLAYER_REMOVED,
     SSE_EVENT_PLAYER_POSITION,
+    SSE_EVENT_PLAYER_REMOVED,
+    SSE_EVENT_PLAYER_UPDATED,
     SSE_EVENT_SERVICE_UPDATED,
     SSE_EVENT_UPGRADE_INFO,
     SSE_EVENT_UPGRADE_PROGRESS,
@@ -45,7 +40,11 @@ from .coordinator import (
     OdioServiceCoordinator,
     OdioUpgradeCoordinator,
 )
+from .event_stream import OdioEventStreamManager
+from .exceptions import OdioError
 from .helpers import async_get_mac_from_ip
+from .migrate import migrate_mpris_service_mappings, migrate_mpris_unique_ids
+from .models import PowerCapabilities, ServerInfo, StartupData
 
 _LOGGER = logging.getLogger(__name__)
 

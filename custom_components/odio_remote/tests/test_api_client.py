@@ -1,11 +1,11 @@
 """Tests for OdioApiClient using aioresponses."""
 import asyncio
+from unittest.mock import MagicMock
 
 import aiohttp
 import pytest
 from aiohttp import ClientSession
 from aioresponses import aioresponses
-from unittest.mock import MagicMock
 
 from custom_components.odio_remote.api_client import OdioApiClient
 from custom_components.odio_remote.exceptions import (
@@ -15,11 +15,11 @@ from custom_components.odio_remote.exceptions import (
 )
 
 from .conftest import (
-    MOCK_SERVER_INFO,
+    MOCK_ALL_SERVICES,
     MOCK_AUDIO_SERVER_INFO,
     MOCK_AUDIO_UNIFIED,
     MOCK_CLIENTS,
-    MOCK_ALL_SERVICES,
+    MOCK_SERVER_INFO,
 )
 
 
@@ -435,7 +435,7 @@ class TestOdioApiClientVolumeControl:
 
                 await api.set_server_volume(0.75)
 
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"volume": 0.75}
 
     @pytest.mark.asyncio
@@ -449,7 +449,7 @@ class TestOdioApiClientVolumeControl:
 
                 await api.set_server_mute(True)
 
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"muted": True}
 
     @pytest.mark.asyncio
@@ -463,7 +463,7 @@ class TestOdioApiClientVolumeControl:
 
                 await api.set_client_volume("Netflix", 1.0)
 
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"volume": 1.0}
 
     @pytest.mark.asyncio
@@ -493,7 +493,7 @@ class TestOdioApiClientVolumeControl:
 
                 await api.set_client_mute("Netflix", False)
 
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"muted": False}
 
 
@@ -682,7 +682,7 @@ class TestOdioApiClientMPRIS:
 
     @pytest.mark.asyncio
     async def test_get_players(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
@@ -702,7 +702,7 @@ class TestOdioApiClientMPRIS:
 
     @pytest.mark.asyncio
     async def test_get_players_invalid_response(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
@@ -712,9 +712,11 @@ class TestOdioApiClientMPRIS:
             mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
             mock_resp.__aexit__ = AsyncMock(return_value=False)
 
-            with patch.object(session, "get", return_value=mock_resp):
-                with pytest.raises(OdioApiError, match="Expected list"):
-                    await api.get_players()
+            with (
+                patch.object(session, "get", return_value=mock_resp),
+                pytest.raises(OdioApiError, match="Expected list"),
+            ):
+                await api.get_players()
 
     @pytest.mark.asyncio
     async def test_get_players_404_returns_empty(self):
@@ -787,7 +789,7 @@ class TestOdioApiClientMPRIS:
             with aioresponses() as m:
                 m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/seek", status=204)
                 await api.player_seek("org.mpris.MediaPlayer2.spotify", 5000000)
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"offset": 5000000}
 
     @pytest.mark.asyncio
@@ -797,7 +799,7 @@ class TestOdioApiClientMPRIS:
             with aioresponses() as m:
                 m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/position", status=204)
                 await api.player_set_position("org.mpris.MediaPlayer2.spotify", "/track/1", 30000000)
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"track_id": "/track/1", "position": 30000000}
 
     @pytest.mark.asyncio
@@ -807,7 +809,7 @@ class TestOdioApiClientMPRIS:
             with aioresponses() as m:
                 m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/volume", status=204)
                 await api.player_set_volume("org.mpris.MediaPlayer2.spotify", 0.75)
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"volume": 0.75}
 
     @pytest.mark.asyncio
@@ -817,7 +819,7 @@ class TestOdioApiClientMPRIS:
             with aioresponses() as m:
                 m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/loop", status=204)
                 await api.player_set_loop("org.mpris.MediaPlayer2.spotify", "Track")
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"loop": "Track"}
 
     @pytest.mark.asyncio
@@ -827,7 +829,7 @@ class TestOdioApiClientMPRIS:
             with aioresponses() as m:
                 m.post("http://test:8018/players/org.mpris.MediaPlayer2.spotify/shuffle", status=204)
                 await api.player_set_shuffle("org.mpris.MediaPlayer2.spotify", True)
-                request = list(m.requests.values())[0][0]
+                request = next(iter(m.requests.values()))[0]
                 assert request.kwargs["json"] == {"shuffle": True}
 
     def test_player_cover_url(self):

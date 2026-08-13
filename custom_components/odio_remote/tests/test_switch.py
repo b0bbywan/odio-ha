@@ -1,6 +1,7 @@
 """Tests for Odio Remote switch platform."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from custom_components.odio_remote.switch import (
@@ -13,7 +14,6 @@ from custom_components.odio_remote.switch import (
 )
 
 from .conftest import MOCK_ALL_SERVICES, MOCK_BLUETOOTH_STATUS, MOCK_DEVICE_INFO, MOCK_SERVICES
-
 
 # ---------------------------------------------------------------------------
 # Helpers

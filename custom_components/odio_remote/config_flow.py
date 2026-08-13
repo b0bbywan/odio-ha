@@ -7,8 +7,6 @@ from copy import deepcopy
 from typing import Any
 
 import voluptuous as vol
-
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -17,8 +15,16 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api_client import OdioApiClient
+from .config_flow_helpers import (
+    build_mapping_schema,
+    get_client_keys,
+    get_player_keys,
+    get_service_keys,
+    parse_mappings_from_input,
+)
 from .const import (
     CONF_API_URL,
     CONF_KEEPALIVE_INTERVAL,
@@ -27,13 +33,7 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
 )
-from .config_flow_helpers import (
-    build_mapping_schema,
-    parse_mappings_from_input,
-    get_service_keys,
-    get_client_keys,
-    get_player_keys,
-)
+from .exceptions import OdioError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ async def async_fetch_remote_clients(
 
     try:
         server_info = await api.get_server_info()
-    except Exception:
+    except OdioError:
         return []
 
     if not server_info.get("backends", {}).get("pulseaudio"):
@@ -135,7 +135,7 @@ async def async_fetch_remote_clients(
 
     try:
         clients = await api.get_clients()
-    except Exception:
+    except OdioError:
         return []
 
     server_hostname = server_info.get("hostname")
@@ -156,7 +156,7 @@ async def async_fetch_mpris_players(
 
     try:
         server_info = await api.get_server_info()
-    except Exception:
+    except OdioError:
         return []
 
     if not server_info.get("backends", {}).get("mpris"):
@@ -164,7 +164,7 @@ async def async_fetch_mpris_players(
 
     try:
         players, _ = await api.get_players()
-    except Exception:
+    except OdioError:
         return []
 
     return [p for p in players if p.get("bus_name")]
@@ -245,7 +245,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "cannot_connect"
         except InvalidResponse:
             errors["base"] = "invalid_response"
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.exception("Unexpected error during API validation")
             errors["base"] = "unknown"
 

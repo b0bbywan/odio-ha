@@ -1,6 +1,7 @@
 """Helpers for config flow schema building and parsing."""
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import voluptuous as vol
 from homeassistant.helpers import selector

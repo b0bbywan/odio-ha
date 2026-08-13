@@ -1,7 +1,7 @@
 """Tests for Odio Remote binary_sensor platform."""
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.helpers.entity import EntityCategory
 
 from custom_components.odio_remote.binary_sensor import (

@@ -1,8 +1,8 @@
 """Tests for Odio Remote button platform."""
-import pytest
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.components.button import ButtonDeviceClass
 
 from custom_components.odio_remote.button import (

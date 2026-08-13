@@ -1,6 +1,7 @@
 """Tests for Odio Remote sensor platform."""
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from custom_components.odio_remote.sensor import (
     OdioBluetoothConnectedDeviceSensor,

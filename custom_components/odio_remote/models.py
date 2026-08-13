@@ -6,10 +6,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .exceptions import OdioError
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from .api_client import OdioApiClient
+
     from . import OdioConfigEntry
+    from .api_client import OdioApiClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +77,7 @@ class StartupData:
         if server_info.backends.get("power"):
             try:
                 power = PowerCapabilities.from_dict(await api.get_power_capabilities())
-            except Exception:
+            except OdioError:
                 _LOGGER.warning("Power capabilities unavailable — assuming none")
         return cls(server_info=server_info, power=power)
 

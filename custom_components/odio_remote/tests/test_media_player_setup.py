@@ -5,10 +5,10 @@ from custom_components.odio_remote.media_player import (
     OdioMPRISMediaPlayer,
     OdioPulseClientMediaPlayer,
     OdioServiceMediaPlayer,
-    _MediaPlayerContext,
     _build_mpris_entities,
     _build_remote_client_entities,
     _build_service_entities,
+    _MediaPlayerContext,
     _register_dynamic_clients,
     _register_dynamic_mpris,
     _register_dynamic_services,
@@ -21,7 +21,6 @@ from .conftest import (
     MOCK_REMOTE_CLIENTS,
     MOCK_SERVICES,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

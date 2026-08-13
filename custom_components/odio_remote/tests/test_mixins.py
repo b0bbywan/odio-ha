@@ -1,8 +1,8 @@
 """Tests for MappedEntityMixin."""
-import pytest
-from unittest.mock import Mock, AsyncMock
 from dataclasses import dataclass
+from unittest.mock import AsyncMock, Mock
 
+import pytest
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,

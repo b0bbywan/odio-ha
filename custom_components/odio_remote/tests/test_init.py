@@ -1,30 +1,31 @@
 """Tests for setup helper functions in __init__.py."""
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.odio_remote.exceptions import OdioConnectionError
+import pytest
+
 from custom_components.odio_remote import (
     _resolve_mac,
     _setup_audio_coordinator,
-    _setup_service_coordinator,
-    _setup_mpris_coordinator,
     _setup_bluetooth_coordinator,
+    _setup_mpris_coordinator,
+    _setup_service_coordinator,
     _setup_upgrade_coordinator,
 )
 from custom_components.odio_remote.const import (
-    SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_AUDIO_REMOVED,
-    SSE_EVENT_BLUETOOTH_UPDATED,
+    SSE_EVENT_AUDIO_UPDATED,
     SSE_EVENT_BLUETOOTH_DISCOVERED,
-    SSE_EVENT_PLAYER_UPDATED,
+    SSE_EVENT_BLUETOOTH_UPDATED,
     SSE_EVENT_PLAYER_ADDED,
-    SSE_EVENT_PLAYER_REMOVED,
     SSE_EVENT_PLAYER_POSITION,
+    SSE_EVENT_PLAYER_REMOVED,
+    SSE_EVENT_PLAYER_UPDATED,
     SSE_EVENT_SERVICE_UPDATED,
     SSE_EVENT_UPGRADE_INFO,
     SSE_EVENT_UPGRADE_PROGRESS,
 )
+from custom_components.odio_remote.exceptions import OdioConnectionError
 
 
 def _make_hass():
@@ -566,6 +567,7 @@ class TestAsyncSetupEntry:
         mock_mac, mock_session,
     ):
         from custom_components.odio_remote import async_setup_entry
+
         from .conftest import MOCK_SERVER_INFO
 
         hass = _make_hass()
@@ -675,6 +677,7 @@ class TestOnSseReconnect:
         mock_mac, mock_session,
     ):
         from custom_components.odio_remote import async_setup_entry
+
         from .conftest import MOCK_SERVER_INFO
 
         hass = _make_hass()
@@ -747,6 +750,7 @@ class TestOnSseReconnect:
         mock_mac, mock_session,
     ):
         from custom_components.odio_remote import async_setup_entry
+
         from .conftest import MOCK_SERVER_INFO
 
         hass = _make_hass()

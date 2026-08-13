@@ -51,7 +51,7 @@ class _SwitchContext:
 def _build_service_switches(
     entry: OdioConfigEntry,
     service_coordinator: OdioServiceCoordinator,
-) -> tuple[_SwitchContext, list["OdioServiceSwitch"]]:
+) -> tuple[_SwitchContext, list[OdioServiceSwitch]]:
     """Build initial service switch entities from live or cached data."""
     rd = entry.runtime_data
     ctx = _SwitchContext(
@@ -83,7 +83,7 @@ def _build_service_switches(
 def _build_bluetooth_device_switches(
     entry: OdioConfigEntry,
     coordinator: OdioBluetoothCoordinator,
-) -> list["OdioBluetoothDeviceSwitch"]:
+) -> list[OdioBluetoothDeviceSwitch]:
     """Build connect/disconnect switches for known (paired/bonded) BT devices."""
     rd = entry.runtime_data
     devices = (coordinator.data or {}).get("known_devices", [])
