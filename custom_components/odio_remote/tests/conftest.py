@@ -1,5 +1,6 @@
 """Shared test fixtures for Odio Remote tests."""
 from homeassistant.helpers.entity import DeviceInfo
+
 from custom_components.odio_remote.const import DOMAIN
 
 # Standard mock server info response (from GET /server)

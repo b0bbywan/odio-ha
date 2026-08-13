@@ -19,7 +19,6 @@ from .api_client import OdioApiClient
 from .coordinator import OdioBluetoothCoordinator
 from .event_stream import OdioEventStreamManager
 
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -148,7 +147,7 @@ class MappedEntityMixin(Entity):
                 blocking=True,
             )
             return True
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - mapped entity belongs to another integration; any failure must stay contained
             _LOGGER.warning(
                 "Failed to delegate %s to %s: %s", service, self._mapped_entity, err
             )

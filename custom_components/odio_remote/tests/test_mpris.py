@@ -1,10 +1,10 @@
 """Tests for MPRIS coordinator SSE handlers and OdioMPRISMediaPlayer entity."""
 import asyncio
-import pytest
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState, RepeatMode
 from homeassistant.helpers.update_coordinator import UpdateFailed
 

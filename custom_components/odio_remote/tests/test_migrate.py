@@ -1,7 +1,8 @@
 """Tests for async_migrate_entry — MPRIS unique_id and service_mappings v1 → v2."""
 import asyncio
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 def _make_hass():

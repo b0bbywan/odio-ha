@@ -1,10 +1,9 @@
 """Tests for Odio Remote upgrade coordinator and update platform."""
 import asyncio
 from dataclasses import dataclass
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.components.update import UpdateEntityFeature
 from homeassistant.helpers.update_coordinator import UpdateFailed
 

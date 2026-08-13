@@ -1,10 +1,10 @@
 """Tests for OdioEventStreamManager."""
 import asyncio
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 from aiohttp import ClientSession
-from unittest.mock import MagicMock, patch
 
 from custom_components.odio_remote.api_client import OdioApiClient, SseEvent
 from custom_components.odio_remote.event_stream import OdioEventStreamManager
@@ -190,10 +190,12 @@ class TestListenEvents:
         async with ClientSession() as session:
             api = OdioApiClient("http://test:8018", session)
 
-            with patch.object(session, "get", return_value=_StalledResponse()):
-                with pytest.raises(asyncio.TimeoutError):
-                    async for _ in api.listen_events(keepalive_timeout=0.05):
-                        pass
+            with (
+                patch.object(session, "get", return_value=_StalledResponse()),
+                pytest.raises(asyncio.TimeoutError),
+            ):
+                async for _ in api.listen_events(keepalive_timeout=0.05):
+                    pass
 
 
 class TestEventStreamManagerDispatch:

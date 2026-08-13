@@ -1,8 +1,8 @@
 """Tests for Odio Remote coordinators."""
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.odio_remote.api_client import SseEvent
@@ -14,7 +14,6 @@ from custom_components.odio_remote.coordinator import (
 from custom_components.odio_remote.exceptions import OdioApiError, OdioConnectionError, OdioTimeoutError
 
 from .conftest import MOCK_BLUETOOTH_STATUS, MOCK_CLIENTS, MOCK_OUTPUTS, MOCK_SERVICES
-
 
 # ---------------------------------------------------------------------------
 # Helpers

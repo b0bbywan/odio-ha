@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 import socket
+from collections.abc import Callable, Coroutine
 from functools import wraps
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -49,7 +50,7 @@ async def async_get_mac_from_ip(hass: HomeAssistant, ip: str) -> str | None:
     try:
         resolved = await hass.async_add_executor_job(socket.gethostbyname, ip)
         _LOGGER.debug("Resolved %s → %s", ip, resolved)
-    except Exception as err:
+    except OSError as err:
         _LOGGER.debug("DNS resolution failed for %s: %s", ip, err)
         return None
 

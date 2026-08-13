@@ -1,7 +1,7 @@
 """Tests for Odio Remote helpers."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.odio_remote.exceptions import (

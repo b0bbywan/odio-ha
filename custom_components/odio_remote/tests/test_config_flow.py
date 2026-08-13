@@ -1,15 +1,15 @@
 """Tests for Odio Remote config flow."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+import pytest
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from custom_components.odio_remote.config_flow import (
-    OdioConfigFlow,
-    OdioOptionsFlow,
     CannotConnect,
     InvalidResponse,
+    OdioConfigFlow,
+    OdioOptionsFlow,
 )
 from custom_components.odio_remote.const import (
     CONF_API_URL,
@@ -18,8 +18,9 @@ from custom_components.odio_remote.const import (
     DEFAULT_KEEPALIVE_INTERVAL,
     DOMAIN,
 )
+from custom_components.odio_remote.exceptions import OdioConnectionError
 
-from .conftest import MOCK_SERVER_INFO, MOCK_SERVICES, MOCK_CLIENTS, MOCK_REMOTE_CLIENTS, MOCK_PLAYERS
+from .conftest import MOCK_CLIENTS, MOCK_PLAYERS, MOCK_REMOTE_CLIENTS, MOCK_SERVER_INFO, MOCK_SERVICES
 
 # Valid API response for async_validate_api
 MOCK_API_INFO = {
@@ -970,9 +971,8 @@ class TestValidationHelpers:
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
-        ):
-            with pytest.raises(CannotConnect):
-                await async_validate_api(MagicMock(), "http://bad:8018")
+        ), pytest.raises(CannotConnect):
+            await async_validate_api(MagicMock(), "http://bad:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
@@ -988,9 +988,8 @@ class TestValidationHelpers:
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
-        ):
-            with pytest.raises(InvalidResponse):
-                await async_validate_api(MagicMock(), "http://test:8018")
+        ), pytest.raises(InvalidResponse):
+            await async_validate_api(MagicMock(), "http://test:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
@@ -1022,7 +1021,7 @@ class TestValidationHelpers:
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(
-            side_effect=ConnectionError("refused")
+            side_effect=OdioConnectionError("refused")
         )
 
         with patch(
@@ -1078,7 +1077,7 @@ class TestValidationHelpers:
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(
-            side_effect=ConnectionError("refused")
+            side_effect=OdioConnectionError("refused")
         )
 
         with patch(
@@ -1103,9 +1102,8 @@ class TestValidationHelpers:
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
-        ):
-            with pytest.raises(CannotConnect):
-                await async_validate_api(MagicMock(), "http://test:8018")
+        ), pytest.raises(CannotConnect):
+            await async_validate_api(MagicMock(), "http://test:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
@@ -1121,9 +1119,8 @@ class TestValidationHelpers:
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",
             return_value=mock_api_instance,
-        ):
-            with pytest.raises(InvalidResponse):
-                await async_validate_api(MagicMock(), "http://test:8018")
+        ), pytest.raises(InvalidResponse):
+            await async_validate_api(MagicMock(), "http://test:8018")
 
     @pytest.mark.asyncio
     @patch("custom_components.odio_remote.config_flow.async_get_clientsession")
@@ -1188,7 +1185,7 @@ class TestValidationHelpers:
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
-        mock_api_instance.get_clients = AsyncMock(side_effect=ConnectionError("refused"))
+        mock_api_instance.get_clients = AsyncMock(side_effect=OdioConnectionError("refused"))
 
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",
@@ -1206,7 +1203,7 @@ class TestValidationHelpers:
 
         mock_api_instance = MagicMock()
         mock_api_instance.get_server_info = AsyncMock(return_value=MOCK_SERVER_INFO)
-        mock_api_instance.get_players = AsyncMock(side_effect=ConnectionError("refused"))
+        mock_api_instance.get_players = AsyncMock(side_effect=OdioConnectionError("refused"))
 
         with patch(
             "custom_components.odio_remote.config_flow.OdioApiClient",

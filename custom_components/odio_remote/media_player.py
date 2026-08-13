@@ -23,15 +23,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import OdioConfigEntry
 from .api_client import OdioApiClient
 from .const import (
-    ATTR_CLIENT_ID,
     ATTR_APP,
     ATTR_BACKEND,
-    ATTR_USER,
-    ATTR_HOST,
+    ATTR_CLIENT_ID,
     ATTR_CORKED,
-    ATTR_SERVICE_SCOPE,
-    ATTR_SERVICE_ENABLED,
+    ATTR_HOST,
     ATTR_SERVICE_ACTIVE,
+    ATTR_SERVICE_ENABLED,
+    ATTR_SERVICE_SCOPE,
+    ATTR_USER,
 )
 from .coordinator import OdioAudioCoordinator, OdioMPRISCoordinator, OdioServiceCoordinator
 from .event_stream import OdioEventStreamManager

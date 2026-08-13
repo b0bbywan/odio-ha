@@ -1,14 +1,14 @@
 """Tests for media_player entity classes (Receiver, Service, PulseClient)."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState
 
 from custom_components.odio_remote.helpers import extract_mpris_app_name
 from custom_components.odio_remote.media_player import (
+    OdioPulseClientMediaPlayer,
     OdioReceiverMediaPlayer,
     OdioServiceMediaPlayer,
-    OdioPulseClientMediaPlayer,
     _MediaPlayerContext,
     async_setup_entry,
 )
@@ -18,7 +18,6 @@ from .conftest import (
     MOCK_REMOTE_CLIENTS,
     MOCK_SERVICES,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

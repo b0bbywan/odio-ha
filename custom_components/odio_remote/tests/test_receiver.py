@@ -1,7 +1,7 @@
 """Tests for OdioReceiverMediaPlayer source (audio output) features."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature
 
 from custom_components.odio_remote.media_player import OdioReceiverMediaPlayer
