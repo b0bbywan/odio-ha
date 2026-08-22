@@ -1,8 +1,9 @@
 """Tests for media_player entity classes (Receiver, Service, PulseClient)."""
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature, MediaPlayerState
+from pyodio import AudioClientState, Backends, ServiceState
 
 from custom_components.odio_remote.helpers import extract_mpris_app_name
 from custom_components.odio_remote.media_player import (
@@ -15,63 +16,32 @@ from custom_components.odio_remote.media_player import (
 
 from .conftest import (
     MOCK_DEVICE_INFO,
+    MOCK_PLAYERS,
     MOCK_REMOTE_CLIENTS,
     MOCK_SERVICES,
+    make_hub,
 )
+
+ENTRY_ID = "test_entry_id"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_event_stream(connected=True):
-    es = MagicMock()
-    es.sse_connected = connected
-    es.async_add_listener = MagicMock(return_value=lambda: None)
-    return es
-
-
-def _make_audio_coordinator(clients=None, outputs=None, success=True):
-    coord = MagicMock()
-    if clients is None and outputs is None:
-        coord.data = None
-    else:
-        coord.data = {"audio": clients or [], "outputs": outputs or []}
-    coord.last_update_success = success
-    coord.async_add_listener = MagicMock(return_value=lambda: None)
-    return coord
-
-
-def _make_service_coordinator(services=None, success=True):
-    coord = MagicMock()
-    coord.data = {"services": services} if services is not None else None
-    coord.last_update_success = success
-    coord.async_add_listener = MagicMock(return_value=lambda: None)
-    coord.async_request_refresh = AsyncMock()
-    coord.config_entry = MagicMock()
-    coord.config_entry.runtime_data.service_mappings = {}
-    return coord
-
-
-def _make_ctx(
-    audio_coordinator=None,
-    service_coordinator=None,
-    mpris_coordinator=None,
-    service_mappings=None,
-    backends=None,
-    server_hostname="htpc",
-):
+def _make_ctx(hub, service_mappings=None, backends=None, server_hostname="htpc"):
     return _MediaPlayerContext(
-        entry_id="test_entry",
-        event_stream=_make_event_stream(),
-        audio_coordinator=audio_coordinator,
-        service_coordinator=service_coordinator,
-        mpris_coordinator=mpris_coordinator,
-        api=MagicMock(),
+        entry_id=ENTRY_ID,
+        hub=hub,
         device_info=MOCK_DEVICE_INFO,
         service_mappings=service_mappings or {},
-        backends=backends if backends is not None else {"pulseaudio": True, "systemd": True},
+        backends=backends if backends is not None else hub.server.backends,
         server_hostname=server_hostname,
     )
+
+
+def _audio(clients, outputs=None):
+    return {"kind": "pipewire", "clients": clients, "outputs": outputs or []}
 
 
 # ---------------------------------------------------------------------------
@@ -98,158 +68,148 @@ class TestExtractMprisAppName:
 
 class TestReceiverEntity:
 
-    def _make_receiver(self, audio_coordinator=None, service_coordinator=None,
-                       backends=None, connected=True):
-        ctx = _make_ctx(
-            audio_coordinator=audio_coordinator,
-            service_coordinator=service_coordinator,
-            backends=backends if backends is not None else {"pulseaudio": True},
+    def _make_receiver(
+        self,
+        clients=None,
+        outputs=None,
+        audio_server=None,
+        players=None,
+        backends=None,
+        connected=True,
+    ):
+        hub = make_hub(
+            audio=_audio(clients, outputs) if clients is not None else None,
+            audio_server=audio_server,
+            players=players,
+            connected=connected,
         )
-        ctx.event_stream = _make_event_stream(connected)
+        ctx = _make_ctx(hub, backends=backends)
         entity = OdioReceiverMediaPlayer(ctx)
         entity.hass = MagicMock()
         entity.async_on_remove = MagicMock()
-        return entity
+        return entity, hub
 
     # -- state --
 
     def test_state_off_when_disconnected(self):
-        entity = self._make_receiver(connected=False)
+        entity, _ = self._make_receiver(clients=[], connected=False)
         assert entity.state == MediaPlayerState.OFF
 
-    def test_state_off_when_no_audio_coordinator(self):
-        entity = self._make_receiver(audio_coordinator=None)
-        assert entity.state == MediaPlayerState.OFF
-
-    def test_state_off_when_update_failed(self):
-        coord = _make_audio_coordinator(clients=[], success=False)
-        entity = self._make_receiver(audio_coordinator=coord)
-        assert entity.state == MediaPlayerState.OFF
-
-    def test_state_off_when_no_data(self):
-        coord = _make_audio_coordinator()
-        coord.data = None
-        entity = self._make_receiver(audio_coordinator=coord)
+    def test_state_off_when_no_pulseaudio_backend(self):
+        entity, _ = self._make_receiver(backends=Backends())
         assert entity.state == MediaPlayerState.OFF
 
     def test_state_idle_no_active_clients(self):
-        clients = [{"corked": True}]
-        coord = _make_audio_coordinator(clients=clients)
-        entity = self._make_receiver(audio_coordinator=coord)
+        entity, _ = self._make_receiver(clients=[{"name": "c1", "corked": True}])
         assert entity.state == MediaPlayerState.IDLE
 
     def test_state_playing_with_active_client(self):
-        clients = [{"corked": False}]
-        coord = _make_audio_coordinator(clients=clients)
-        entity = self._make_receiver(audio_coordinator=coord)
+        entity, _ = self._make_receiver(clients=[{"name": "c1", "corked": False}])
+        assert entity.state == MediaPlayerState.PLAYING
+
+    def test_state_playing_with_playing_mpris_player(self):
+        entity, _ = self._make_receiver(
+            clients=[{"name": "c1", "corked": True}], players=[MOCK_PLAYERS[0]]
+        )
         assert entity.state == MediaPlayerState.PLAYING
 
     # -- supported_features --
 
     def test_features_with_pulseaudio(self):
-        entity = self._make_receiver(backends={"pulseaudio": True})
+        entity, _ = self._make_receiver(clients=[])
         features = entity.supported_features
         assert features & MediaPlayerEntityFeature.VOLUME_SET
         assert features & MediaPlayerEntityFeature.VOLUME_MUTE
 
     def test_features_without_pulseaudio(self):
-        entity = self._make_receiver(backends={})
+        entity, _ = self._make_receiver(backends=Backends())
         assert entity.supported_features == MediaPlayerEntityFeature(0)
 
     # -- volume --
 
     def test_volume_level_from_default_output(self):
         outputs = [
-            {"default": False, "volume": 0.9},
-            {"default": True, "volume": 0.42},
+            {"name": "a", "default": False, "volume": 0.9},
+            {"name": "b", "default": True, "volume": 0.42},
         ]
-        coord = _make_audio_coordinator(outputs=outputs)
-        entity = self._make_receiver(audio_coordinator=coord)
+        entity, _ = self._make_receiver(clients=[], outputs=outputs)
         assert entity.volume_level == pytest.approx(0.42)
 
     def test_volume_level_ignores_client_volumes(self):
-        # Client streams are pinned at 1.0 under PipeWire; the receiver must
-        # report the default sink volume, not the client average.
-        clients = [{"volume": 1.0}, {"volume": 1.0}]
-        outputs = [{"default": True, "volume": 0.42}]
-        coord = _make_audio_coordinator(clients=clients, outputs=outputs)
-        entity = self._make_receiver(audio_coordinator=coord)
+        # Client streams are pinned at 1.0 under PipeWire; report the sink volume.
+        clients = [{"name": "a", "volume": 1.0}, {"name": "b", "volume": 1.0}]
+        outputs = [{"name": "sink", "default": True, "volume": 0.42}]
+        entity, _ = self._make_receiver(clients=clients, outputs=outputs)
         assert entity.volume_level == pytest.approx(0.42)
 
-    def test_volume_level_none_when_no_coordinator(self):
-        entity = self._make_receiver(audio_coordinator=None)
-        assert entity.volume_level is None
+    def test_volume_level_falls_back_to_master_state(self):
+        # No output flagged default: the /audio/server snapshot wins.
+        entity, _ = self._make_receiver(
+            clients=[{"name": "a", "volume": 1.0}],
+            outputs=[{"name": "a", "default": False, "volume": 0.9}],
+            audio_server={"kind": "pipewire", "volume": 0.28, "muted": False},
+        )
+        assert entity.volume_level == pytest.approx(0.28)
 
-    def test_volume_level_none_when_no_default_output(self):
-        coord = _make_audio_coordinator(outputs=[{"default": False, "volume": 0.9}])
-        entity = self._make_receiver(audio_coordinator=coord)
+    def test_volume_level_none_without_audio_state(self):
+        entity, _ = self._make_receiver()
         assert entity.volume_level is None
 
     def test_is_volume_muted_true(self):
-        outputs = [{"default": True, "volume": 0.42, "muted": True}]
-        coord = _make_audio_coordinator(outputs=outputs)
-        entity = self._make_receiver(audio_coordinator=coord)
+        outputs = [{"name": "sink", "default": True, "volume": 0.42, "muted": True}]
+        entity, _ = self._make_receiver(clients=[], outputs=outputs)
         assert entity.is_volume_muted is True
 
     def test_is_volume_muted_false(self):
-        outputs = [{"default": True, "volume": 0.42, "muted": False}]
-        coord = _make_audio_coordinator(outputs=outputs)
-        entity = self._make_receiver(audio_coordinator=coord)
+        outputs = [{"name": "sink", "default": True, "volume": 0.42, "muted": False}]
+        entity, _ = self._make_receiver(clients=[{"name": "a", "muted": True}], outputs=outputs)
         assert entity.is_volume_muted is False
 
-    def test_is_volume_muted_no_coordinator(self):
-        entity = self._make_receiver(audio_coordinator=None)
+    def test_is_volume_muted_false_without_audio_state(self):
+        entity, _ = self._make_receiver()
         assert entity.is_volume_muted is False
 
     # -- extra_state_attributes --
 
     def test_extra_attrs_with_audio(self):
-        clients = [{"corked": False}, {"corked": True}]
-        coord = _make_audio_coordinator(clients=clients)
-        entity = self._make_receiver(audio_coordinator=coord)
+        clients = [{"name": "a", "corked": False}, {"name": "b", "corked": True}]
+        entity, _ = self._make_receiver(clients=clients)
         attrs = entity.extra_state_attributes
         assert attrs["active_clients"] == 2
         assert attrs["playing_clients"] == 1
         assert "backends" in attrs
 
-    def test_extra_attrs_without_audio(self):
-        entity = self._make_receiver(audio_coordinator=None)
+    def test_extra_attrs_without_pulseaudio(self):
+        entity, _ = self._make_receiver(backends=Backends())
         attrs = entity.extra_state_attributes
         assert "backends" in attrs
         assert "active_clients" not in attrs
 
     # -- actions --
 
-    @pytest.mark.asyncio
     async def test_set_volume_level(self):
-        entity = self._make_receiver()
-        entity._api_client.set_server_volume = AsyncMock()
+        entity, hub = self._make_receiver(clients=[])
         await entity.async_set_volume_level(0.5)
-        entity._api_client.set_server_volume.assert_awaited_once_with(0.5)
+        hub.client.set_master_volume.assert_awaited_once_with(0.5)
 
-    @pytest.mark.asyncio
-    async def test_mute_volume(self):
-        entity = self._make_receiver()
-        entity._api_client.set_server_mute = AsyncMock()
+    async def test_mute_volume_toggles_when_state_differs(self):
+        # Snapshot master state is unmuted, so muting toggles.
+        entity, hub = self._make_receiver(clients=[])
         await entity.async_mute_volume(True)
-        entity._api_client.set_server_mute.assert_awaited_once_with(True)
+        hub.client.toggle_master_mute.assert_awaited_once()
 
     # -- async_added_to_hass --
 
-    @pytest.mark.asyncio
     async def test_added_to_hass_registers_listeners(self):
-        coord = _make_audio_coordinator(clients=[])
-        svc = _make_service_coordinator(services=[])
-        entity = self._make_receiver(audio_coordinator=coord, service_coordinator=svc)
+        entity, _ = self._make_receiver(clients=[], players=[])
         await entity.async_added_to_hass()
-        # event_stream + audio + service = 3 listeners
+        # connection + audio + players = 3 listeners
         assert entity.async_on_remove.call_count == 3
 
-    @pytest.mark.asyncio
-    async def test_added_to_hass_no_coordinators(self):
-        entity = self._make_receiver(audio_coordinator=None, service_coordinator=None)
+    async def test_added_to_hass_no_backends(self):
+        entity, _ = self._make_receiver(backends=Backends())
         await entity.async_added_to_hass()
-        # only event_stream listener
+        # only the connection listener
         assert entity.async_on_remove.call_count == 1
 
 
@@ -260,36 +220,37 @@ class TestReceiverEntity:
 
 class TestServiceEntity:
 
-    def _make_service(self, service_info=None, services_data=None,
-                      mappings=None, connected=True):
+    def _make_service(self, service_info=None, services_data=None, mappings=None, connected=True):
         svc_info = service_info or MOCK_SERVICES[0]
-        coord = _make_service_coordinator(
-            services=services_data if services_data is not None else MOCK_SERVICES
+        hub = make_hub(
+            services=services_data if services_data is not None else MOCK_SERVICES,
+            connected=connected,
         )
-        if mappings:
-            coord.config_entry.runtime_data.service_mappings = mappings
-        ctx = _make_ctx(service_coordinator=coord, service_mappings=mappings or {})
-        ctx.event_stream = _make_event_stream(connected)
-        entity = OdioServiceMediaPlayer(ctx, svc_info)
+        ctx = _make_ctx(hub, service_mappings=mappings)
+        entity = OdioServiceMediaPlayer(ctx, ServiceState.from_dict(svc_info))
         entity.hass = MagicMock()
         entity.async_on_remove = MagicMock()
         entity.async_write_ha_state = MagicMock()
-        return entity
+        return entity, hub
+
+    # -- construction --
+
+    def test_unique_id(self):
+        entity, _ = self._make_service()
+        assert entity.unique_id == f"{ENTRY_ID}_service_user_mpd.service"
 
     # -- state --
 
     def test_state_idle_when_running(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         assert entity.state == MediaPlayerState.IDLE
 
     def test_state_off_when_not_running(self):
-        entity = self._make_service(service_info=MOCK_SERVICES[1])
+        entity, _ = self._make_service(service_info=MOCK_SERVICES[1])
         assert entity.state == MediaPlayerState.OFF
 
     def test_state_playing_via_mapped_entity(self):
-        entity = self._make_service(
-            mappings={"user/mpd.service": "media_player.mpd"}
-        )
+        entity, _ = self._make_service(mappings={"user/mpd.service": "media_player.mpd"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {}
@@ -299,31 +260,29 @@ class TestServiceEntity:
     # -- available --
 
     def test_available_when_connected(self):
-        entity = self._make_service(connected=True)
+        entity, _ = self._make_service(connected=True)
         assert entity.available is True
 
     def test_unavailable_when_disconnected(self):
-        entity = self._make_service(connected=False)
+        entity, _ = self._make_service(connected=False)
         assert entity.available is False
 
     # -- mapping_key --
 
     def test_mapping_key(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         assert entity._mapping_key == "user/mpd.service"
 
     # -- supported_features --
 
     def test_base_features(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         features = entity.supported_features
         assert features & MediaPlayerEntityFeature.TURN_ON
         assert features & MediaPlayerEntityFeature.TURN_OFF
 
     def test_features_with_mapped_entity(self):
-        entity = self._make_service(
-            mappings={"user/mpd.service": "media_player.mpd"}
-        )
+        entity, _ = self._make_service(mappings={"user/mpd.service": "media_player.mpd"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {
@@ -337,26 +296,25 @@ class TestServiceEntity:
     # -- volume --
 
     def test_volume_level_none_without_mapping(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         assert entity.volume_level is None
 
     def test_is_volume_muted_false_without_mapping(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         assert entity.is_volume_muted is False
 
     # -- extra_state_attributes --
 
     def test_extra_attrs(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         attrs = entity.extra_state_attributes
         assert attrs["scope"] == "user"
-        assert "running" in attrs
-        assert "active_state" in attrs
+        assert attrs["enabled"] is True
+        assert attrs["running"] is True
+        assert attrs["active_state"] == "active"
 
     def test_extra_attrs_with_mapped_entity(self):
-        entity = self._make_service(
-            mappings={"user/mpd.service": "media_player.mpd"}
-        )
+        entity, _ = self._make_service(mappings={"user/mpd.service": "media_player.mpd"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {}
@@ -367,37 +325,27 @@ class TestServiceEntity:
     # -- _is_service_running --
 
     def test_is_running_true(self):
-        entity = self._make_service()
+        entity, _ = self._make_service()
         assert entity._is_service_running() is True
 
-    def test_is_running_false_no_data(self):
-        entity = self._make_service()
-        entity.coordinator.data = None
+    def test_is_running_false_when_service_gone(self):
+        entity, _ = self._make_service(services_data=[])
         assert entity._is_service_running() is False
 
     # -- actions --
 
-    @pytest.mark.asyncio
     async def test_turn_on(self):
-        entity = self._make_service()
-        entity._api_client.control_service = AsyncMock()
-        with patch("custom_components.odio_remote.media_player.asyncio.sleep"):
-            await entity.async_turn_on()
-        entity._api_client.control_service.assert_awaited_once_with("enable", "user", "mpd.service")
+        entity, hub = self._make_service()
+        await entity.async_turn_on()
+        hub.client.service_enable.assert_awaited_once_with("user", "mpd.service")
 
-    @pytest.mark.asyncio
     async def test_turn_off(self):
-        entity = self._make_service()
-        entity._api_client.control_service = AsyncMock()
-        with patch("custom_components.odio_remote.media_player.asyncio.sleep"):
-            await entity.async_turn_off()
-        entity._api_client.control_service.assert_awaited_once_with("disable", "user", "mpd.service")
+        entity, hub = self._make_service()
+        await entity.async_turn_off()
+        hub.client.service_disable.assert_awaited_once_with("user", "mpd.service")
 
-    @pytest.mark.asyncio
     async def test_set_volume_delegates(self):
-        entity = self._make_service(
-            mappings={"user/mpd.service": "media_player.mpd"}
-        )
+        entity, _ = self._make_service(mappings={"user/mpd.service": "media_player.mpd"})
         entity.hass.services.async_call = AsyncMock()
         mock_state = MagicMock()
         mock_state.state = "playing"
@@ -406,11 +354,8 @@ class TestServiceEntity:
         await entity.async_set_volume_level(0.5)
         entity.hass.services.async_call.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_mute_delegates(self):
-        entity = self._make_service(
-            mappings={"user/mpd.service": "media_player.mpd"}
-        )
+        entity, _ = self._make_service(mappings={"user/mpd.service": "media_player.mpd"})
         entity.hass.services.async_call = AsyncMock()
         mock_state = MagicMock()
         mock_state.state = "playing"
@@ -421,11 +366,11 @@ class TestServiceEntity:
 
     # -- async_added_to_hass --
 
-    @pytest.mark.asyncio
-    async def test_added_to_hass_registers_sse_listener(self):
-        entity = self._make_service()
+    async def test_added_to_hass_registers_listeners(self):
+        entity, _ = self._make_service()
         await entity.async_added_to_hass()
-        assert entity.async_on_remove.call_count >= 1
+        # connection + services listeners
+        assert entity.async_on_remove.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -437,38 +382,40 @@ class TestPulseClientEntity:
 
     def _make_client(self, client_data=None, clients=None, mappings=None, connected=True):
         client = client_data or MOCK_REMOTE_CLIENTS[0]
-        coord = _make_audio_coordinator(
-            clients=clients if clients is not None else [client]
+        hub = make_hub(
+            audio=_audio(clients if clients is not None else [client]),
+            connected=connected,
         )
-        coord.config_entry = MagicMock()
-        coord.config_entry.runtime_data.service_mappings = mappings or {}
-        ctx = _make_ctx(audio_coordinator=coord, service_mappings=mappings or {})
-        ctx.event_stream = _make_event_stream(connected)
-        entity = OdioPulseClientMediaPlayer(ctx, client)
+        ctx = _make_ctx(hub, service_mappings=mappings)
+        entity = OdioPulseClientMediaPlayer(ctx, AudioClientState.from_dict(client))
         entity.hass = MagicMock()
         entity.async_on_remove = MagicMock()
         entity.async_write_ha_state = MagicMock()
-        return entity
+        return entity, hub
+
+    # -- construction --
+
+    def test_unique_id(self):
+        entity, _ = self._make_client()
+        assert entity.unique_id == f"{ENTRY_ID}_remote_remoteclient"
 
     # -- state --
 
     def test_state_playing_not_corked(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         assert entity.state == MediaPlayerState.PLAYING
 
     def test_state_idle_when_corked(self):
         client = {**MOCK_REMOTE_CLIENTS[0], "corked": True}
-        entity = self._make_client(client_data=client, clients=[client])
+        entity, _ = self._make_client(client_data=client, clients=[client])
         assert entity.state == MediaPlayerState.IDLE
 
     def test_state_off_when_client_gone(self):
-        entity = self._make_client(clients=[])
+        entity, _ = self._make_client(clients=[])
         assert entity.state == MediaPlayerState.OFF
 
     def test_state_playing_via_mapped_entity(self):
-        entity = self._make_client(
-            mappings={"client:RemoteClient": "media_player.kodi"}
-        )
+        entity, _ = self._make_client(mappings={"client:RemoteClient": "media_player.kodi"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {}
@@ -478,23 +425,23 @@ class TestPulseClientEntity:
     # -- available --
 
     def test_available_when_connected(self):
-        entity = self._make_client(connected=True)
+        entity, _ = self._make_client(connected=True)
         assert entity.available is True
 
     def test_unavailable_when_disconnected(self):
-        entity = self._make_client(connected=False)
+        entity, _ = self._make_client(connected=False)
         assert entity.available is False
 
     # -- mapping_key --
 
     def test_mapping_key(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         assert entity._mapping_key == "client:RemoteClient"
 
     # -- supported_features --
 
     def test_base_features(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         features = entity.supported_features
         assert features & MediaPlayerEntityFeature.VOLUME_SET
         assert features & MediaPlayerEntityFeature.VOLUME_MUTE
@@ -502,13 +449,11 @@ class TestPulseClientEntity:
     # -- volume --
 
     def test_volume_from_client(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         assert entity.volume_level == 0.8
 
     def test_volume_from_mapped_takes_priority(self):
-        entity = self._make_client(
-            mappings={"client:RemoteClient": "media_player.kodi"}
-        )
+        entity, _ = self._make_client(mappings={"client:RemoteClient": "media_player.kodi"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {"volume_level": 0.3}
@@ -516,17 +461,15 @@ class TestPulseClientEntity:
         assert entity.volume_level == 0.3
 
     def test_volume_none_when_client_gone(self):
-        entity = self._make_client(clients=[])
+        entity, _ = self._make_client(clients=[])
         assert entity.volume_level is None
 
     def test_muted_from_client(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         assert entity.is_volume_muted is False
 
     def test_muted_from_mapped(self):
-        entity = self._make_client(
-            mappings={"client:RemoteClient": "media_player.kodi"}
-        )
+        entity, _ = self._make_client(mappings={"client:RemoteClient": "media_player.kodi"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {"is_volume_muted": True}
@@ -534,13 +477,13 @@ class TestPulseClientEntity:
         assert entity.is_volume_muted is True
 
     def test_muted_false_when_client_gone(self):
-        entity = self._make_client(clients=[])
+        entity, _ = self._make_client(clients=[])
         assert entity.is_volume_muted is False
 
     # -- extra_state_attributes --
 
     def test_extra_attrs_connected(self):
-        entity = self._make_client()
+        entity, _ = self._make_client()
         attrs = entity.extra_state_attributes
         assert attrs["status"] == "connected"
         assert attrs["client_name"] == "RemoteClient"
@@ -548,7 +491,7 @@ class TestPulseClientEntity:
         assert "client_id" in attrs
 
     def test_extra_attrs_disconnected(self):
-        entity = self._make_client(clients=[])
+        entity, _ = self._make_client(clients=[])
         attrs = entity.extra_state_attributes
         assert attrs["status"] == "disconnected"
 
@@ -558,16 +501,14 @@ class TestPulseClientEntity:
             "application.process.host": "remote-box",
             "application.version": "1.2.3",
         }}
-        entity = self._make_client(client_data=client, clients=[client])
+        entity, _ = self._make_client(client_data=client, clients=[client])
         attrs = entity.extra_state_attributes
         assert attrs["connection"] == "192.168.1.50"
         assert attrs["remote_host"] == "remote-box"
         assert attrs["app_version"] == "1.2.3"
 
     def test_extra_attrs_with_mapped_entity(self):
-        entity = self._make_client(
-            mappings={"client:RemoteClient": "media_player.kodi"}
-        )
+        entity, _ = self._make_client(mappings={"client:RemoteClient": "media_player.kodi"})
         mock_state = MagicMock()
         mock_state.state = "playing"
         mock_state.attributes = {}
@@ -575,38 +516,34 @@ class TestPulseClientEntity:
         attrs = entity.extra_state_attributes
         assert attrs["mapped_entity"] == "media_player.kodi"
 
-    # -- _get_current_client --
+    # -- _client --
 
-    def test_get_current_client_found(self):
-        entity = self._make_client()
-        client = entity._get_current_client()
+    def test_client_found(self):
+        entity, _ = self._make_client()
+        client = entity._client()
         assert client is not None
-        assert client["name"] == "RemoteClient"
+        assert client.name == "RemoteClient"
 
-    def test_get_current_client_not_found(self):
-        entity = self._make_client(clients=[])
-        assert entity._get_current_client() is None
-
-    def test_get_current_client_no_data(self):
-        entity = self._make_client()
-        entity.coordinator.data = None
-        assert entity._get_current_client() is None
+    def test_client_not_found(self):
+        entity, _ = self._make_client(clients=[])
+        assert entity._client() is None
 
     # -- actions --
 
-    @pytest.mark.asyncio
     async def test_set_volume_with_fallback(self):
-        entity = self._make_client()
-        entity._api_client.set_client_volume = AsyncMock()
+        entity, hub = self._make_client()
         await entity.async_set_volume_level(0.5)
-        entity._api_client.set_client_volume.assert_awaited_once_with("RemoteClient", 0.5)
+        hub.client.set_client_volume.assert_awaited_once_with("RemoteClient", 0.5)
 
-    @pytest.mark.asyncio
-    async def test_mute_with_fallback(self):
-        entity = self._make_client()
-        entity._api_client.set_client_mute = AsyncMock()
+    async def test_mute_with_fallback_toggles(self):
+        entity, hub = self._make_client()
         await entity.async_mute_volume(True)
-        entity._api_client.set_client_mute.assert_awaited_once_with("RemoteClient", True)
+        hub.client.toggle_client_mute.assert_awaited_once_with("RemoteClient")
+
+    async def test_mute_with_fallback_noop_when_already_unmuted(self):
+        entity, hub = self._make_client()
+        await entity.async_mute_volume(False)
+        hub.client.toggle_client_mute.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -616,27 +553,40 @@ class TestPulseClientEntity:
 
 class TestMediaPlayerAsyncSetupEntry:
 
-    @pytest.mark.asyncio
-    async def test_creates_receiver_entity(self):
-        hass = MagicMock()
+    def _make_entry(self, hub, mappings=None):
         entry = MagicMock()
-        from custom_components.odio_remote.models import ServerInfo
-        entry.entry_id = "test_entry"
-        from custom_components.odio_remote import OdioCoordinators
-        entry.runtime_data.server_info = ServerInfo(hostname="htpc", backends={})
-        entry.runtime_data.coordinators = OdioCoordinators()
-        entry.runtime_data.event_stream = _make_event_stream()
-        entry.runtime_data.api = MagicMock()
+        entry.entry_id = ENTRY_ID
+        entry.runtime_data.hub = hub
+        entry.runtime_data.server_info = hub.server
         entry.runtime_data.device_info = MOCK_DEVICE_INFO
-        entry.runtime_data.service_mappings = {}
+        entry.runtime_data.service_mappings = mappings or {}
         entry.async_on_unload = MagicMock()
+        return entry
+
+    async def test_creates_receiver_entity_only_without_backends(self):
+        hub = make_hub(server_info={"hostname": "htpc", "backends": {}})
+        entry = self._make_entry(hub)
 
         added = []
-
-        def async_add(entities):
-            added.extend(entities)
-
-        await async_setup_entry(hass, entry, async_add)
+        await async_setup_entry(MagicMock(), entry, added.extend)
 
         assert len(added) == 1
         assert isinstance(added[0], OdioReceiverMediaPlayer)
+
+    async def test_creates_all_entity_types(self):
+        hub = make_hub(
+            services=MOCK_SERVICES,
+            audio=_audio(MOCK_REMOTE_CLIENTS),
+            players=MOCK_PLAYERS,
+        )
+        entry = self._make_entry(hub, mappings={"user/mpd.service": "media_player.mpd"})
+
+        added = []
+        await async_setup_entry(MagicMock(), entry, added.extend)
+
+        # 1 receiver + 1 mapped service + 1 remote client + 2 mpris
+        assert len(added) == 5
+        assert sum(isinstance(e, OdioServiceMediaPlayer) for e in added) == 1
+        assert sum(isinstance(e, OdioPulseClientMediaPlayer) for e in added) == 1
+        # dynamic listeners registered for services, clients and mpris
+        assert entry.async_on_unload.call_count == 3
