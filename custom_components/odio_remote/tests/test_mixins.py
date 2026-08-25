@@ -190,6 +190,14 @@ class TestDelegateToHass:
         result = await entity._delegate_to_hass("media_play")
         assert result is False
 
+    async def test_third_party_error_is_contained(self):
+        # Handlers of other integrations can raise anything; the fallback
+        # path depends on getting False back, not an escaping exception.
+        entity = _make_entity("k", "media_player.x")
+        entity.hass.services.async_call = AsyncMock(side_effect=ValueError("boom"))
+        result = await entity._delegate_to_hass("media_play")
+        assert result is False
+
     async def test_no_mapping(self):
         entity = _make_entity("k")
         result = await entity._delegate_to_hass("media_play")

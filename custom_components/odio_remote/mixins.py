@@ -5,14 +5,12 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     RepeatMode,
 )
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change_event
 from pyodio import AudioClient
@@ -138,7 +136,7 @@ class MappedEntityMixin(Entity):
                 blocking=True,
             )
             return True
-        except (HomeAssistantError, vol.Invalid) as err:
+        except Exception as err:  # noqa: BLE001 - mapped entity belongs to another integration; any failure must stay contained
             _LOGGER.warning(
                 "Failed to delegate %s to %s: %s", service, self._mapped_entity, err
             )
