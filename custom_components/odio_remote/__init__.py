@@ -137,6 +137,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             startup.server_info.backends,
         )
         await hub.start()
+    # HA runs on_unload callbacks on failed setups too — a raise below must
+    # not leak the SSE reconnect task.
+    entry.async_on_unload(hub.close)
     startup.cache(hass, entry)
     server_info = startup.server_info
     backends = server_info.backends
@@ -207,8 +210,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 async def async_unload_entry(
     hass: HomeAssistant, entry: OdioConfigEntry
 ) -> bool:
-    """Unload a config entry."""
-    await entry.runtime_data.hub.close()
+    """Unload a config entry — the hub is closed via entry.async_on_unload."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
