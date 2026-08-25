@@ -373,6 +373,7 @@ class OdioReceiverMediaPlayer(OdioEntity, MediaPlayerEntity):
             return None
         return default.description or default.name
 
+    @api_command
     async def async_select_source(self, source: str) -> None:
         """Set the default audio output."""
         for output in self._hub.audio.outputs.values():
