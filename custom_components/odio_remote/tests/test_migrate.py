@@ -264,9 +264,10 @@ class TestMigrateMprisUniqueIds:
     async def test_app_name_ending_in_instance_is_not_over_stripped(self):
         """An app literally named `foo_instance` must NOT have `_instance` stripped.
 
-        The live `extract_mpris_app_name` splits on `.` and returns `foo_instance`
-        for bus_name `org.mpris.MediaPlayer2.foo_instance.instance10`, so the
-        migration must produce the same key to avoid re-leaking an orphan.
+        The live `extract_mpris_app_name` strips only a trailing `.instanceNNN`
+        and returns `foo_instance` for `org.mpris.MediaPlayer2.foo_instance.
+        instance10`, so the migration must produce the same key to avoid
+        re-leaking an orphan.
         """
         prefix = "abc123_mpris_"
         entries = [

@@ -60,6 +60,32 @@ class TestExtractMprisAppName:
     def test_non_mpris_bus_name(self):
         assert extract_mpris_app_name("com.example.player") == "com.example.player"
 
+    def test_reverse_dns_app_name(self):
+        assert (
+            extract_mpris_app_name("org.mpris.MediaPlayer2.io.bassi.Amberol")
+            == "io.bassi.Amberol"
+        )
+
+    def test_reverse_dns_app_name_with_instance(self):
+        assert (
+            extract_mpris_app_name(
+                "org.mpris.MediaPlayer2.org.gnome.Music.instance123"
+            )
+            == "org.gnome.Music"
+        )
+
+    def test_firefox_underscore_instance_suffix(self):
+        assert (
+            extract_mpris_app_name("org.mpris.MediaPlayer2.firefox.instance_1_52")
+            == "firefox"
+        )
+
+    def test_app_name_ending_in_instance_not_stripped(self):
+        assert (
+            extract_mpris_app_name("org.mpris.MediaPlayer2.foo.instance")
+            == "foo.instance"
+        )
+
 
 # ---------------------------------------------------------------------------
 # OdioReceiverMediaPlayer
