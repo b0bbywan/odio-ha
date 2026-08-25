@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import socket
 from collections.abc import Callable, Coroutine
 from functools import wraps
@@ -28,10 +29,12 @@ def extract_mpris_app_name(bus_name: str) -> str:
     Examples:
         "org.mpris.MediaPlayer2.mpd"                → "mpd"
         "org.mpris.MediaPlayer2.firefox.instance123" → "firefox"
+        "org.mpris.MediaPlayer2.io.bassi.Amberol"    → "io.bassi.Amberol"
     """
     if bus_name.startswith(_MPRIS_BUS_PREFIX):
         suffix = bus_name[len(_MPRIS_BUS_PREFIX):]
-        return suffix.split(".")[0]
+        # Reverse-DNS app names contain dots; only strip a trailing .instanceNNN
+        return re.sub(r"\.instance[\d_]+$", "", suffix)
     return bus_name
 
 
