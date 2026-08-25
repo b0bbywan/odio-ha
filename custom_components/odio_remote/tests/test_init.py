@@ -227,6 +227,24 @@ class TestDegradedStartup:
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_connection_listener_armed_before_stream_start(self):
+        # The stream can connect right after start(); a listener registered
+        # later would miss the first backend re-detection.
+        hass = _make_hass()
+        entry = _make_entry(data={"server_info": MOCK_SERVER_INFO})
+        hub = _prepare_hub(make_hub(connected=False), connect_error=OdioConnectionError("down"))
+        listeners_at_start = []
+        hub.start = AsyncMock(
+            side_effect=lambda: listeners_at_start.append(
+                len(hub._stream._connection_listeners)
+            )
+        )
+
+        await _setup(hass, entry, hub)
+
+        assert listeners_at_start == [1]
+
+    @pytest.mark.asyncio
     async def test_degraded_startup_keeps_cached_services(self):
         hass = _make_hass()
         entry = _make_entry(

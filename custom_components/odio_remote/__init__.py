@@ -142,7 +142,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             "API unreachable at startup — using cached data (backends: %s)",
             startup.server_info.backends,
         )
-        await hub.start()
     # HA runs on_unload callbacks on failed setups too — a raise below must
     # not leak the SSE reconnect task.
     entry.async_on_unload(hub.close)
@@ -155,27 +154,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
         _cache_services(hass, entry, hub)
     if backends.upgrade:
         _register_sw_version_sync(hass, entry, hub)
-
-    mac = await _resolve_mac(hass, entry, api_url)
-    device_connections: set[tuple[str, str]] = (
-        {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
-    )
-
-    # Build DeviceInfo once — shared by all platforms so every entity stays
-    # consistent regardless of which platform registers first. The displayed
-    # software version comes from the upgrade detector's current version when
-    # the upgrade backend is enabled, falling back to the API's own version.
-    hostname = server_info.hostname or entry.entry_id
-    sw_version = hub.upgrade.current_version if backends.upgrade else None
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        connections=device_connections,
-        name=f"Odio Remote ({hostname})",
-        manufacturer="Odio",
-        sw_version=sw_version or server_info.api_version,
-        hw_version=server_info.os_version,
-        configuration_url=f"{api_url}/ui",
-    )
 
     # On SSE (re)connect, re-detect backends: an upgrade can add/remove a
     # backend, which needs a full reload to rebuild entities. The hub resyncs
@@ -197,6 +175,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
             _cache_services(hass, entry, hub)
 
     entry.async_on_unload(hub.on_connection_change(_on_connection_change))
+    if not synced:
+        # Only start the stream now — the listener must not miss the first
+        # connect.
+        await hub.start()
+
+    mac = await _resolve_mac(hass, entry, api_url)
+    device_connections: set[tuple[str, str]] = (
+        {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
+    )
+
+    # Build DeviceInfo once — shared by all platforms so every entity stays
+    # consistent regardless of which platform registers first. The displayed
+    # software version comes from the upgrade detector's current version when
+    # the upgrade backend is enabled, falling back to the API's own version.
+    hostname = server_info.hostname or entry.entry_id
+    sw_version = hub.upgrade.current_version if backends.upgrade else None
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        connections=device_connections,
+        name=f"Odio Remote ({hostname})",
+        manufacturer="Odio",
+        sw_version=sw_version or server_info.api_version,
+        hw_version=server_info.os_version,
+        configuration_url=f"{api_url}/ui",
+    )
 
     entry.runtime_data = OdioRemoteRuntimeData(
         hub=hub,
