@@ -227,6 +227,21 @@ class TestDegradedStartup:
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_degraded_startup_keeps_cached_services(self):
+        hass = _make_hass()
+        entry = _make_entry(
+            data={
+                "server_info": MOCK_SERVER_INFO,
+                "cached_services": [{"name": "mpd"}],
+            }
+        )
+        hub = _prepare_hub(make_hub(connected=False), connect_error=OdioConnectionError("down"))
+
+        await _setup(hass, entry, hub)
+
+        assert entry.data["cached_services"] == [{"name": "mpd"}]
+
+    @pytest.mark.asyncio
     async def test_degraded_without_cache_uses_empty_defaults(self):
         hass = _make_hass()
         entry = _make_entry()
@@ -286,6 +301,20 @@ class TestConnectionChange:
 
         hass.config_entries.async_schedule_reload.assert_not_called()
         assert entry.data["server_info"]["hostname"] == "htpc2"
+
+    @pytest.mark.asyncio
+    async def test_reconnect_with_no_services_clears_stale_cache(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = await self._setup_connected(hass, entry)
+        assert entry.data["cached_services"]
+
+        # All units removed server-side; the resync leaves the hub empty.
+        hub.services._set_snapshot([])
+        set_connected(hub, False)
+        set_connected(hub, True)
+
+        assert entry.data["cached_services"] == []
 
     @pytest.mark.asyncio
     async def test_disconnect_does_nothing(self):

@@ -78,9 +78,13 @@ async def _resolve_mac(
 
 
 def _cache_services(hass: HomeAssistant, entry: OdioConfigEntry, hub: OdioHub) -> None:
-    """Persist the systemd service list so switches survive API-down startups."""
+    """Persist the systemd service list so switches survive API-down startups.
+
+    Only call with a synced hub — an empty list is real (all units removed)
+    and must overwrite a stale cache.
+    """
     services = [asdict(s.state) for s in hub.services.values()]
-    if services and services != entry.data.get("cached_services"):
+    if services != entry.data.get("cached_services"):
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "cached_services": services}
         )
@@ -127,10 +131,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
 
     # Initial sync fetches server_info + power capabilities; if the API is
     # down, fall back to the cached snapshot and let the stream connect later.
+    synced = True
     try:
         await hub.connect()
         startup = StartupData.from_hub(hub)
     except OdioError:
+        synced = False
         startup = StartupData.from_cache(entry.data)
         _LOGGER.warning(
             "API unreachable at startup — using cached data (backends: %s)",
@@ -145,7 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OdioConfigEntry) -> bool
     backends = server_info.backends
     _LOGGER.debug("Detected backends: %s", backends)
 
-    if backends.systemd:
+    if backends.systemd and synced:
         _cache_services(hass, entry, hub)
     if backends.upgrade:
         _register_sw_version_sync(hass, entry, hub)
