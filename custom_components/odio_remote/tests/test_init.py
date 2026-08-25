@@ -374,17 +374,43 @@ class TestSwVersionSync:
 class TestAsyncUnload:
 
     @pytest.mark.asyncio
-    async def test_unload_closes_hub(self):
+    async def test_unload_unloads_platforms(self):
         hass = _make_hass()
         entry = MagicMock()
-        entry.runtime_data.hub.close = AsyncMock()
 
         result = await async_unload_entry(hass, entry)
 
         assert result is True
-        entry.runtime_data.hub.close.assert_awaited_once()
         hass.config_entries.async_unload_platforms.assert_awaited_once_with(
             entry, PLATFORMS
+        )
+
+    @pytest.mark.asyncio
+    async def test_setup_registers_hub_close_for_unload(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = _prepare_hub(make_hub())
+
+        await _setup(hass, entry, hub)
+
+        assert any(
+            c.args == (hub.close,) for c in entry.async_on_unload.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_hub_close_registered_before_fallible_setup_steps(self):
+        hass = _make_hass()
+        entry = _make_entry()
+        hub = _prepare_hub(make_hub())
+        hass.config_entries.async_forward_entry_setups = AsyncMock(
+            side_effect=RuntimeError("platform boom")
+        )
+
+        with pytest.raises(RuntimeError):
+            await _setup(hass, entry, hub)
+
+        assert any(
+            c.args == (hub.close,) for c in entry.async_on_unload.call_args_list
         )
 
     @pytest.mark.asyncio
