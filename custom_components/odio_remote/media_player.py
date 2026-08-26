@@ -26,6 +26,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pyodio import (
     ADDED,
+    REMOVED,
     AudioClient,
     AudioClientState,
     Backends,
@@ -203,12 +204,36 @@ def _register_dynamic_mpris(
     }
     known_app_names: set[str] = {e._app_name for e in known_mpris_players.values()}
 
+    def _rebind(entity: OdioMPRISMediaPlayer, bus_name: str) -> None:
+        known_mpris_players.pop(entity._player_name, None)
+        entity._player_name = bus_name
+        known_mpris_players[bus_name] = entity
+        entity.async_write_ha_state()
+
     @callback
     def _handle_player_change(change: str, player: Any) -> None:
-        if change != ADDED or not isinstance(player, Player):
+        if not isinstance(player, Player) or not player.bus_name:
             return
         bus_name = player.bus_name
-        if not bus_name or bus_name in known_mpris_players:
+        if change == REMOVED:
+            # The replacement instance may have been ADDED while this one was
+            # still alive (overlapping restart) — that event was dropped, so
+            # look for a live sibling of the same app to rebind onto now.
+            entity = known_mpris_players.get(bus_name)
+            if entity is None:
+                return
+            sibling = next(
+                (
+                    p for p in ctx.hub.players.values()
+                    if extract_mpris_app_name(p.bus_name) == entity._app_name
+                    and p.bus_name not in known_mpris_players
+                ),
+                None,
+            )
+            if sibling is not None:
+                _rebind(entity, sibling.bus_name)
+            return
+        if change != ADDED or bus_name in known_mpris_players:
             return
         app_name = extract_mpris_app_name(bus_name)
         if app_name in known_app_names:
@@ -222,10 +247,7 @@ def _register_dynamic_mpris(
                 None,
             )
             if existing is not None:
-                known_mpris_players.pop(existing._player_name, None)
-                existing._player_name = bus_name
-                known_mpris_players[bus_name] = existing
-                existing.async_write_ha_state()
+                _rebind(existing, bus_name)
             return
         entity = OdioMPRISMediaPlayer(ctx, player)
         known_mpris_players[bus_name] = entity

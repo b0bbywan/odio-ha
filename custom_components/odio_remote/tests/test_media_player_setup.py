@@ -330,3 +330,45 @@ class TestRegisterDynamicMpris:
         async_add.assert_not_called()
         assert entity._player_name == instance2_bus
         entity.async_write_ha_state.assert_called_once()
+
+    def test_removed_rebinds_to_overlapping_new_instance(self):
+        hub = make_hub(players=[MOCK_PLAYERS[1]])
+        ctx = _make_ctx(hub)
+        initial = _build_mpris_entities(ctx)
+        entity = initial[0]
+        entity.async_write_ha_state = MagicMock()
+        entry = _make_entry()
+        async_add = MagicMock()
+        _register_dynamic_mpris(entry, ctx, async_add, initial)
+
+        # Overlap: instance2 appears while instance1 is still alive — the
+        # ADDED is dropped because the entity is still available.
+        instance2_bus = "org.mpris.MediaPlayer2.chromium.instance2"
+        push_event(hub, "player.added", _player_added(
+            {**MOCK_PLAYERS[1], "bus_name": instance2_bus}
+        ))
+        async_add.assert_not_called()
+        assert entity._player_name == "org.mpris.MediaPlayer2.chromium.instance1"
+
+        # instance1 dies afterwards: the entity must rebind, not wedge.
+        push_event(hub, "player.removed", {"bus_name": "org.mpris.MediaPlayer2.chromium.instance1"})
+
+        async_add.assert_not_called()
+        assert entity._player_name == instance2_bus
+        assert entity.available is True
+
+    def test_removed_without_sibling_leaves_entity_unbound(self):
+        hub = make_hub(players=[MOCK_PLAYERS[1]])
+        ctx = _make_ctx(hub)
+        initial = _build_mpris_entities(ctx)
+        entity = initial[0]
+        entity.async_write_ha_state = MagicMock()
+        entry = _make_entry()
+        async_add = MagicMock()
+        _register_dynamic_mpris(entry, ctx, async_add, initial)
+
+        push_event(hub, "player.removed", {"bus_name": "org.mpris.MediaPlayer2.chromium.instance1"})
+
+        assert entity._player_name == "org.mpris.MediaPlayer2.chromium.instance1"
+        assert entity.available is False
+        entity.async_write_ha_state.assert_not_called()
