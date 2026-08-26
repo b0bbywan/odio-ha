@@ -45,8 +45,9 @@ This integration connects to a Linux machine running the [go-odio-api server](ht
 
 ### Real-time updates (SSE)
 All state is pushed by the server via **Server-Sent Events** — no polling after initial fetch.
-- Coordinators refresh once at startup, then stay in sync via SSE
+- One snapshot at startup, then everything stays in sync via SSE
 - Automatic reconnection with exponential backoff (1s → 5min)
+- Server down at HA boot? Entities start from cached data and go live on first connect
 - Configurable server-side keepalive interval (default 30s, range 10–120s)
 
 ### Audio (PulseAudio / PipeWire backend)
@@ -65,7 +66,8 @@ All state is pushed by the server via **Server-Sent Events** — no polling afte
 - `media_player` entity per active D-Bus MPRIS player (Spotify, Firefox, Chromium, mpd, etc.)
 - Full transport controls: play/pause/stop/next/previous/seek (when the player supports them)
 - Volume control, shuffle, and repeat mode
-- Rich metadata: title, artist, album, album art (remote URLs only)
+- Rich metadata: title, artist, album, album art (local covers included, served through the server's `/cover` proxy)
+- **Queue support** (players exposing the MPRIS TrackList interface): browse the queue via the media browser, jump to a queued track, enqueue with add/next/play/replace, clear the playlist
 - Live position tracking via SSE
 - Players appear/disappear dynamically as they start and stop
 - Optional mapping to an existing HA media player for fallback controls
@@ -94,7 +96,7 @@ Exposes a server-configured upgrade as a native HA `update` entity, presented as
 - Detection is fully server-driven (systemd timer + fsnotify push over SSE) — HA never polls or re-checks
 
 ### Mapping to existing media players
-You can map Odio entities (services or remote clients) to any existing HA media_player entity via the configuration or reconfiguration flow.
+You can map Odio entities (services, remote clients, or MPRIS players) to any existing HA media_player entity via the configuration or reconfiguration flow.
 
 Examples:
 - Map a service like `mpd.service` to `media_player.music_player_daemon`
@@ -179,7 +181,7 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 ### MPRIS backend
 | Entity | Description |
 |--------|-------------|
-| `media_player.odio_remote_[hostname]_[player]` | One per MPRIS player (e.g. Spotify, Firefox) — transport controls, volume, metadata, position tracking |
+| `media_player.odio_remote_[hostname]_[player]` | One per MPRIS player (e.g. Spotify, Firefox) — transport controls, volume, metadata, position tracking, queue browsing/enqueue when the player supports TrackList |
 
 ### Bluetooth backend
 | Entity | Description |
