@@ -1,5 +1,5 @@
 """Tests for OdioMPRISMediaPlayer entity properties, actions and SSE-driven state."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -130,7 +130,7 @@ class TestMPRISEntityProperties:
     def test_media_position_updated_at_is_aware(self):
         entity, _ = _make_entity(MOCK_SPOTIFY)
         ts = entity.media_position_updated_at
-        assert ts == datetime(2026, 3, 4, 19, 6, 0, tzinfo=timezone.utc)
+        assert ts == datetime(2026, 3, 4, 19, 6, 0, tzinfo=UTC)
         assert ts.tzinfo is not None
 
     def test_media_image_url_uses_cover_proxy(self):
@@ -233,7 +233,7 @@ class TestMPRISSseFlow:
             "emitted_at": EMITTED_AT_MS,
         }])
         assert entity.media_position == 99
-        expected_ts = datetime.fromtimestamp(EMITTED_AT_MS / 1000, tz=timezone.utc)
+        expected_ts = datetime.fromtimestamp(EMITTED_AT_MS / 1000, tz=UTC)
         assert entity.media_position_updated_at == expected_ts
 
     def test_position_event_leaves_other_players_untouched(self):
