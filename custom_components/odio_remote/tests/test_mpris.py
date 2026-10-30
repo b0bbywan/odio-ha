@@ -1,6 +1,6 @@
 """Tests for OdioMPRISMediaPlayer entity properties, actions and SSE-driven state."""
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.media_player import (
@@ -519,6 +519,29 @@ class TestMPRISPlayMedia:
             await entity.async_play_media(MediaType.MUSIC, "/com/spotify/track/gone")
         hub.client.player_tracklist_goto.assert_not_awaited()
         hub.client.player_tracklist_add.assert_not_awaited()
+
+    async def test_media_source_id_is_resolved_before_add_track(self):
+        tts_id = "media-source://tts/tts.google_translate_fr_fr?message=Hello"
+        entity, hub = _with_tracklist()
+        resolved = MagicMock(url="/api/tts_proxy/abc.mp3", mime_type="audio/mpeg")
+        with (
+            patch(
+                "custom_components.odio_remote.media_player.media_source.async_resolve_media",
+                AsyncMock(return_value=resolved),
+            ) as resolve,
+            patch(
+                "custom_components.odio_remote.media_player.async_process_play_media_url",
+                return_value="http://ha.local:8123/api/tts_proxy/abc.mp3",
+            ),
+        ):
+            await entity.async_play_media(MediaType.MUSIC, tts_id)
+        resolve.assert_awaited_once_with(entity.hass, tts_id, entity.entity_id)
+        hub.client.player_tracklist_add.assert_awaited_once_with(
+            SPOTIFY_BUS,
+            "http://ha.local:8123/api/tts_proxy/abc.mp3",
+            after_track=SPOTIFY_TRACK_ID,
+            set_as_current=True,
+        )
 
     async def test_delegates_when_player_has_no_tracklist(self):
         entity, _ = _make_entity(MOCK_SPOTIFY)
