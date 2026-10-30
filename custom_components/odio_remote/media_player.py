@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from homeassistant.components import media_source
 from homeassistant.components.media_player import (
     ATTR_MEDIA_ENQUEUE,
     BrowseError,
@@ -19,6 +20,7 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
     MediaType,
     RepeatMode,
+    async_process_play_media_url,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -1042,6 +1044,13 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
             _LOGGER.debug("MPRIS goto %s: %s", media_id, self._player_name)
             await player.go_to(media_id)
             return
+
+        # HA-internal URIs (TTS, local media) -> absolute http(s) URL.
+        if media_source.is_media_source_id(media_id):
+            sourced = await media_source.async_resolve_media(
+                self.hass, media_id, self.entity_id
+            )
+            media_id = async_process_play_media_url(self.hass, sourced.url)
 
         enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
         if enqueue == MediaPlayerEnqueue.ADD:
