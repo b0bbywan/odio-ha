@@ -1,35 +1,132 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <radialGradient id="plate" cx="0.55" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#0b4a06"/>
+      <stop offset="0.6" stop-color="#063805"/>
+      <stop offset="1" stop-color="#022404"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0.65" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#eaff90"/>
+      <stop offset="0.5" stop-color="#c4e85a"/>
+      <stop offset="1" stop-color="#96c93c"/>
+    </linearGradient>
+    <linearGradient id="med" x1="0.6" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#7cc20f"/>
+      <stop offset="0.5" stop-color="#65ac08"/>
+      <stop offset="1" stop-color="#2a770b"/>
+    </linearGradient>
+    <linearGradient id="gap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#002e06"/>
+      <stop offset="1" stop-color="#002304"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="0.6" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#348523"/>
+      <stop offset="0.5" stop-color="#489b24"/>
+      <stop offset="1" stop-color="#8ccc34"/>
+    </linearGradient>
+    <!-- concave bowl: top wall shadowed by the ring above, bottom wall lit -->
+    <radialGradient id="surround" cx="0.5" cy="0.95" r="0.95">
+      <stop offset="0" stop-color="#5cb22a"/>
+      <stop offset="0.3" stop-color="#2d8219"/>
+      <stop offset="0.65" stop-color="#0c4a0e"/>
+      <stop offset="1" stop-color="#002104"/>
+    </radialGradient>
+    <!-- soft shadow cast by the dome onto the bowl -->
+    <radialGradient id="domeShadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.78" stop-color="#001a03"/>
+      <stop offset="1" stop-color="#001a03" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dome" cx="0.6" cy="0.3" r="0.72">
+      <stop offset="0" stop-color="#60b011"/>
+      <stop offset="0.45" stop-color="#3f8c06"/>
+      <stop offset="0.8" stop-color="#1a5e08"/>
+      <stop offset="1" stop-color="#0a2e05"/>
+    </radialGradient>
+    <linearGradient id="domeEdge" x1="0.6" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#b4ec5e"/>
+      <stop offset="0.55" stop-color="#b4ec5e" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="spec" cx="0.55" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#f8ffc4"/>
+      <stop offset="1" stop-color="#e2fd78"/>
+    </radialGradient>
+    <radialGradient id="screw" cx="0.6" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#082c04"/>
+      <stop offset="1" stop-color="#124f06"/>
+    </radialGradient>
+    <!-- edge highlights fade out toward the top, as in the source -->
+    <linearGradient id="lipMed" gradientUnits="userSpaceOnUse" x1="0" y1="79" x2="0" y2="489">
+      <stop offset="0" stop-color="#f4ff7e" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#f4ff7e" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#f4ff7e"/>
+    </linearGradient>
+    <linearGradient id="lipMid" gradientUnits="userSpaceOnUse" x1="0" y1="131" x2="0" y2="417">
+      <stop offset="0" stop-color="#a6dd4a" stop-opacity="0.15"/>
+      <stop offset="0.5" stop-color="#a6dd4a" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#b8ea52"/>
+    </linearGradient>
+    <linearGradient id="lipGroove" gradientUnits="userSpaceOnUse" x1="0" y1="142" x2="0" y2="398">
+      <stop offset="0" stop-color="#a6dd4a" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#a6dd4a" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#b8ea52"/>
+    </linearGradient>
+    <linearGradient id="lipBowl" gradientUnits="userSpaceOnUse" x1="0" y1="186" x2="0" y2="358">
+      <stop offset="0.55" stop-color="#8fd63a" stop-opacity="0"/>
+      <stop offset="0.8" stop-color="#8fd63a" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#9fe040"/>
+    </linearGradient>
+  </defs>
 
-	<defs>
-		<radialGradient id="cone" cx="50%" cy="45%" r="60%">
-			<stop offset="0%" stop-color="#b6ff66"></stop>
-			<stop offset="40%" stop-color="#4caf50"></stop>
-			<stop offset="100%" stop-color="#0d3d1e"></stop>
-		</radialGradient>
+  <!-- plate -->
+  <ellipse cx="300" cy="300" rx="293" ry="264" fill="url(#plate)"/>
 
-		<linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
-			<stop offset="0%" stop-color="#8be44f"></stop>
-			<stop offset="100%" stop-color="#1e6b34"></stop>
-		</linearGradient>
-	</defs>
+  <!-- rim -->
+  <ellipse cx="300" cy="288" rx="239" ry="230" fill="#031a03"/>
+  <ellipse cx="300" cy="288" rx="237" ry="228" fill="url(#rim)" stroke="#f4ff86" stroke-width="2"/>
 
-	<!-- outer frame -->
-	<circle cx="256" cy="256" r="230" fill="#0b2d17"></circle>
+  <!-- medium ring with screws -->
+  <ellipse cx="300" cy="284" rx="209" ry="205" fill="url(#med)" stroke="url(#lipMed)" stroke-width="2"/>
+  <ellipse cx="300" cy="284" rx="207" ry="203" fill="none" stroke="#2f6a08" stroke-width="1.5"/>
+  <g id="screws">
+    <g transform="translate(153 162)">
+      <circle r="16.5" fill="#8ad030"/>
+      <circle cx="1" cy="-1" r="15.5" fill="url(#screw)" stroke="#082b04" stroke-width="2"/>
+    </g>
+    <g transform="translate(447 162)">
+      <circle r="16.5" fill="#8ad030"/>
+      <circle cx="1" cy="-1" r="15.5" fill="url(#screw)" stroke="#082b04" stroke-width="2"/>
+    </g>
+    <g transform="translate(150 410)">
+      <circle r="16.5" fill="#8ad030"/>
+      <circle cx="1" cy="-1" r="15.5" fill="url(#screw)" stroke="#082b04" stroke-width="2"/>
+    </g>
+    <g transform="translate(450 410)">
+      <circle r="16.5" fill="#8ad030"/>
+      <circle cx="1" cy="-1" r="15.5" fill="url(#screw)" stroke="#082b04" stroke-width="2"/>
+    </g>
+  </g>
 
-	<!-- rings -->
-	<circle cx="256" cy="256" r="200" fill="url(#ring)"></circle>
-	<circle cx="256" cy="256" r="175" fill="#0b2d17"></circle>
-	<circle cx="256" cy="256" r="150" fill="url(#ring)"></circle>
-	<circle cx="256" cy="256" r="120" fill="#0b2d17"></circle>
+  <!-- dark gap -->
+  <ellipse cx="300" cy="278" rx="172" ry="170" fill="url(#gap)" stroke="#c9ea55" stroke-width="2"/>
 
-	<!-- cone -->
-	<circle cx="256" cy="256" r="95" fill="url(#cone)"></circle>
-	<circle cx="256" cy="256" r="35" fill="#7bff55"></circle>
+  <!-- mid ring -->
+  <ellipse cx="300" cy="274" rx="141" ry="143" fill="url(#mid)" stroke="url(#lipMid)" stroke-width="2"/>
 
-	<!-- screws in corners -->
-	<circle cx="160" cy="160" r="10" fill="#0b2d17"></circle>
-	<circle cx="352" cy="160" r="10" fill="#0b2d17"></circle>
-	<circle cx="160" cy="352" r="10" fill="#0b2d17"></circle>
-	<circle cx="352" cy="352" r="10" fill="#0b2d17"></circle>
+  <!-- groove -->
+  <ellipse cx="300" cy="270" rx="123" ry="128" fill="#041f06" stroke="url(#lipGroove)" stroke-width="2"/>
 
+  <!-- surround -->
+  <ellipse cx="300" cy="270" rx="120" ry="125" fill="url(#surround)"/>
+
+  <!-- dome gap and cast shadow, offset left (light from top-right) -->
+  <ellipse cx="294" cy="270" rx="104" ry="94" fill="url(#domeShadow)"/>
+  <ellipse cx="300" cy="272" rx="91" ry="86" fill="#001f04" stroke="url(#lipBowl)" stroke-width="2"/>
+
+  <!-- dome -->
+  <ellipse cx="300" cy="272" rx="79" ry="74" fill="#001a03"/>
+  <ellipse cx="300" cy="272" rx="77" ry="72" fill="url(#dome)" stroke="url(#domeEdge)" stroke-width="2"/>
+
+  <!-- specular, offset up-right -->
+  <circle cx="311" cy="236" r="21" fill="url(#spec)" stroke="#1f5a08" stroke-width="1.5"/>
 </svg>
