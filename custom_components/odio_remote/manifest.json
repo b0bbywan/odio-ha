@@ -1,6 +1,7 @@
 {
   "domain": "odio_remote",
   "name": "Odio Remote",
+  "categories": ["media_entertainment", "computers_network"],
   "codeowners": ["@b0bbywan"],
   "config_flow": true,
   "dependencies": ["zeroconf"],
