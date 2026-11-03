@@ -24,7 +24,7 @@
   <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" /></a>
   <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/Home%20Assistant-18BCF2?logo=homeassistant&logoColor=white" alt="Home Assistant" /></a>
-  <a href="https://hacs.xyz/"><img src="https://img.shields.io/badge/HACS-03A9F4" alt="HACS" /></a>
+  <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-Default-03A9F4" alt="HACS Default" /></a>
   <a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/GitHub%20Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions" /></a>
   </p>
   
