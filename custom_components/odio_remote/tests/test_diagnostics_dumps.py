@@ -153,17 +153,18 @@ async def test_stock_hostname_keeps_cached_service_descriptions():
 # --- Common-word hostname ---------------------------------------------------
 
 
-async def test_common_word_hostname_keeps_sink_descriptions():
-    diag = await _replay("rpi4_upgrade_available", **{"<host_1>": "stereo"})
-    assert [o["description"] for o in diag["audio"]["outputs"]] == [
-        "Built-in Audio Stereo",
-        "Built-in Audio Digital Stereo (HDMI)",
-    ]
-
-
-async def test_common_word_hostname_keeps_os_version():
-    diag = await _replay("fedora_network_sinks", **{"<host_1>": "workstation"})
-    assert diag["server_info"]["os_version"] == "Fedora Linux 44 (Workstation Edition)"
+@pytest.mark.parametrize(
+    ("name", "hostname", "os_version"),
+    [
+        ("rpi4_upgrade_available", "debian", "Debian GNU/Linux 13 (trixie)"),
+        ("fedora_network_sinks", "fedora", "Fedora Linux 44 (Workstation Edition)"),
+    ],
+)
+async def test_distro_default_hostname_keeps_os_version(name, hostname, os_version):
+    diag = await _replay(name, **{"<host_1>": hostname})
+    assert diag["server_info"]["hostname"] == "<host_1>"
+    assert diag["server_info"]["os_version"] == os_version
+    assert diag["entry"]["data"]["server_info"]["os_version"] == os_version
 
 
 # --- Leaks seen in rpi_bluetooth_mappings (dumped by the current code) -----

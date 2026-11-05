@@ -77,7 +77,8 @@ class _Pseudonymizer:
 
     def add_known(self, kind: str, value: str | None) -> None:
         if value and not _is_stock(value):
-            self._known[value.lower()] = kind
+            # Case-sensitive: hostname "debian" must not hit "Debian GNU/Linux".
+            self._known[value] = self._known[value.lower()] = kind
             self._known_re = None
 
     def add_whole(self, kind: str, value: str | None) -> None:
@@ -99,8 +100,7 @@ class _Pseudonymizer:
                 re.escape(v) for v in sorted(self._known, key=len, reverse=True)
             )
             self._known_re = re.compile(
-                rf"(?<![{_HOST_EDGE}])(?:{alternatives})(?![{_HOST_EDGE}])",
-                re.IGNORECASE,
+                rf"(?<![{_HOST_EDGE}])(?:{alternatives})(?![{_HOST_EDGE}])"
             )
         if self._known_re is not None:
             text = self._known_re.sub(
