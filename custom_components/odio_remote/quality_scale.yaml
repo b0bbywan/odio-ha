@@ -8,17 +8,21 @@ rules:
   appropriate-polling:
     status: exempt
     comment: No polling — all state updates are SSE-driven (update_interval=None).
-  brands:
-    status: exempt
-    comment: Custom integration distributed via HACS, not in HA core.
+  brands: done
   common-modules: done
   config-flow-test-coverage: done
   config-flow: done
   dependency-transparency: done
   docs-actions: done
+  docs-conditions:
+    status: exempt
+    comment: No custom conditions provided.
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: No custom triggers provided.
   entity-event-setup: done
   entity-unique-id: done
   has-entity-name: done
@@ -42,3 +46,45 @@ rules:
     status: exempt
     comment: No authentication — API has no credentials.
   test-coverage: done
+
+  # ===== Gold =====
+  devices: done
+  diagnostics: todo
+  discovery: done
+  discovery-update-info:
+    status: todo
+    comment: |
+      The entry unique_id is the API URL, so an IP change looks like a new
+      instance. Needs a stable server identifier first.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One device per config entry; dynamic items are entities, not devices.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: All entities are primary and useful in automations.
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: |
+      go-odio-api is backward compatible since the SSE API: older servers
+      simply lack newer features, with no error state for the user to repair.
+  stale-devices:
+    status: exempt
+    comment: One device per config entry; dynamic items are entities, not devices.
+
+  # ===== Platinum =====
+  async-dependency: done
+  inject-websession: done
+  strict-typing: todo
