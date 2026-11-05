@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -41,6 +42,7 @@ class OdioPowerOffButton(OdioEntity, ButtonEntity):
 
     _attr_device_class = None
     _attr_translation_key = "power_off"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "power_off"
 
     @api_command
@@ -54,6 +56,7 @@ class OdioRebootButton(OdioEntity, ButtonEntity):
 
     _attr_device_class = ButtonDeviceClass.RESTART
     _attr_translation_key = "reboot"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "reboot"
 
     @api_command
@@ -67,6 +70,7 @@ class OdioBluetoothPairingButton(OdioEntity, ButtonEntity):
 
     _attr_device_class = None
     _attr_translation_key = "bluetooth_pairing"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_pairing"
 
     @api_command
