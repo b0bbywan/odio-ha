@@ -1,6 +1,7 @@
 """Tests for Odio Remote select platform."""
 from unittest.mock import MagicMock
 
+from homeassistant.const import EntityCategory
 from pyodio import PowerCapabilities, ServerInfo
 
 from custom_components.odio_remote import OdioRemoteRuntimeData
@@ -61,6 +62,9 @@ class TestOdioBluetoothPairSelectConstruction:
 
     def test_translation_key(self):
         assert _make_select()[0].translation_key == "bluetooth_pair"
+
+    def test_entity_category_is_config(self):
+        assert _make_select()[0].entity_category == EntityCategory.CONFIG
 
     def test_current_option_is_none(self):
         assert _make_select(status=_DISCOVERED)[0].current_option is None

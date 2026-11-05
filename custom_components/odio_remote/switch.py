@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -211,6 +212,7 @@ class OdioBluetoothSwitch(OdioBluetoothEntity, SwitchEntity):
     """Switch that powers the Bluetooth adapter on or off."""
 
     _attr_translation_key = "bluetooth_power"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_power"
 
     @property
@@ -233,6 +235,7 @@ class OdioBluetoothScanSwitch(OdioBluetoothEntity, SwitchEntity):
     """Switch that starts/stops Bluetooth discovery of nearby audio devices."""
 
     _attr_translation_key = "bluetooth_scan"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_scan"
 
     @property

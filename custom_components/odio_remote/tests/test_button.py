@@ -2,6 +2,7 @@
 from unittest.mock import MagicMock
 
 from homeassistant.components.button import ButtonDeviceClass
+from homeassistant.const import EntityCategory
 from pyodio import PowerCapabilities, ServerInfo
 
 from custom_components.odio_remote import OdioRemoteRuntimeData
@@ -155,6 +156,14 @@ class TestOdioBluetoothPairingButton:
         assert self._make_button(connected=False)[0].available is False
 
 
+
+class TestButtonEntityCategory:
+    """Power and pairing actions are device configuration, not primary controls."""
+
+    def test_all_buttons_are_config(self):
+        hub = make_hub()
+        for cls in (OdioPowerOffButton, OdioRebootButton, OdioBluetoothPairingButton):
+            assert cls(hub, ENTRY_ID, MOCK_DEVICE_INFO).entity_category == EntityCategory.CONFIG
 class TestButtonSetupWithBluetooth:
     """Tests async_setup_entry pairing button creation."""
 
