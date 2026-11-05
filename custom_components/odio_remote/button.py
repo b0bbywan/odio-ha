@@ -41,7 +41,6 @@ class OdioPowerOffButton(OdioEntity, ButtonEntity):
 
     _attr_device_class = None
     _attr_translation_key = "power_off"
-    _attr_icon = "mdi:power"
     _unique_suffix = "power_off"
 
     @api_command
@@ -68,7 +67,6 @@ class OdioBluetoothPairingButton(OdioEntity, ButtonEntity):
 
     _attr_device_class = None
     _attr_translation_key = "bluetooth_pairing"
-    _attr_icon = "mdi:bluetooth-connect"
     _unique_suffix = "bluetooth_pairing"
 
     @api_command
