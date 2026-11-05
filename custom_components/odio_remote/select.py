@@ -42,7 +42,6 @@ class OdioBluetoothPairSelect(OdioBluetoothEntity, SelectEntity):
     """
 
     _attr_translation_key = "bluetooth_pair"
-    _attr_icon = "mdi:bluetooth-connect"
     _unique_suffix = "bluetooth_pair"
 
     def _discovered_devices(self) -> list[BluetoothDevice]:

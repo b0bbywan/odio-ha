@@ -1,0 +1,47 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "bluetooth_pairing_active": {
+        "default": "mdi:bluetooth-connect"
+      }
+    },
+    "button": {
+      "power_off": {
+        "default": "mdi:power"
+      },
+      "bluetooth_pairing": {
+        "default": "mdi:bluetooth-connect"
+      }
+    },
+    "select": {
+      "bluetooth_pair": {
+        "default": "mdi:bluetooth-connect"
+      }
+    },
+    "sensor": {
+      "default_output": {
+        "default": "mdi:speaker"
+      },
+      "bluetooth_connected_device": {
+        "default": "mdi:bluetooth-audio"
+      }
+    },
+    "switch": {
+      "bluetooth_power": {
+        "default": "mdi:bluetooth",
+        "state": {
+          "off": "mdi:bluetooth-off"
+        }
+      },
+      "bluetooth_scan": {
+        "default": "mdi:bluetooth-settings"
+      },
+      "bluetooth_device": {
+        "default": "mdi:bluetooth-audio",
+        "state": {
+          "off": "mdi:bluetooth-off"
+        }
+      }
+    }
+  }
+}
