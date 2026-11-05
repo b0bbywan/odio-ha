@@ -59,7 +59,6 @@ class OdioBluetoothPairingActiveSensor(OdioBluetoothEntity, BinarySensorEntity):
     """Binary sensor reporting whether Bluetooth pairing mode is active."""
 
     _attr_translation_key = "bluetooth_pairing_active"
-    _attr_icon = "mdi:bluetooth-connect"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _unique_suffix = "bluetooth_pairing_active"
 

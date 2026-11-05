@@ -44,7 +44,6 @@ class OdioDefaultOutputSensor(OdioEntity, SensorEntity):
     """Sensor reporting the description of the default audio output."""
 
     _attr_translation_key = "default_output"
-    _attr_icon = "mdi:speaker"
     _unique_suffix = "default_output"
 
     def _change_sources(self) -> tuple:
@@ -74,7 +73,6 @@ class OdioBluetoothConnectedDeviceSensor(OdioBluetoothEntity, SensorEntity):
     """Sensor reporting the name of the connected Bluetooth device."""
 
     _attr_translation_key = "bluetooth_connected_device"
-    _attr_icon = "mdi:bluetooth-audio"
     _unique_suffix = "bluetooth_connected_device"
 
     @property
