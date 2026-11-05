@@ -65,6 +65,7 @@
       "bluetooth_pair": {"name": "Pair Bluetooth Device"}
     },
     "sensor": {
+      "default_output": {"name": "Default Output"},
       "bluetooth_connected_device": {
         "name": "Connected Device",
         "state": {"none": "None"}

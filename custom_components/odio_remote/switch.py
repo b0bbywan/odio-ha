@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -211,12 +212,8 @@ class OdioBluetoothSwitch(OdioBluetoothEntity, SwitchEntity):
     """Switch that powers the Bluetooth adapter on or off."""
 
     _attr_translation_key = "bluetooth_power"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_power"
-
-    @property
-    def icon(self) -> str:
-        """Return icon based on power state."""
-        return "mdi:bluetooth" if self.is_on else "mdi:bluetooth-off"
 
     @property
     def is_on(self) -> bool:
@@ -238,7 +235,7 @@ class OdioBluetoothScanSwitch(OdioBluetoothEntity, SwitchEntity):
     """Switch that starts/stops Bluetooth discovery of nearby audio devices."""
 
     _attr_translation_key = "bluetooth_scan"
-    _attr_icon = "mdi:bluetooth-settings"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_scan"
 
     @property
@@ -263,6 +260,8 @@ class OdioBluetoothDeviceSwitch(OdioBluetoothEntity, SwitchEntity):
     Once connected, the device becomes a PulseAudio/PipeWire sink and is
     selectable as the default output on the receiver media_player.
     """
+
+    _attr_translation_key = "bluetooth_device"
 
     def __init__(
         self,
@@ -303,11 +302,6 @@ class OdioBluetoothDeviceSwitch(OdioBluetoothEntity, SwitchEntity):
             if device.address == self._address:
                 return device
         return None
-
-    @property
-    def icon(self) -> str:
-        """Return icon based on connection state."""
-        return "mdi:bluetooth-audio" if self.is_on else "mdi:bluetooth-off"
 
     @property
     def is_on(self) -> bool:

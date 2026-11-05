@@ -1,6 +1,7 @@
 """Tests for Odio Remote switch platform."""
 from unittest.mock import MagicMock
 
+from homeassistant.const import EntityCategory
 from pyodio import PowerCapabilities, ServerInfo, ServiceState
 
 from custom_components.odio_remote import OdioRemoteRuntimeData
@@ -293,14 +294,13 @@ class TestOdioBluetoothSwitchConstruction:
         assert (DOMAIN, ENTRY_ID) in _make_bt_switch()[0].device_info["identifiers"]
 
 
-class TestOdioBluetoothSwitchIcon:
+class TestOdioBluetoothSwitchCategory:
 
-    def test_icon_when_on(self):
-        assert _make_bt_switch()[0].icon == "mdi:bluetooth"
+    def test_translation_key_drives_icon(self):
+        assert _make_bt_switch()[0].translation_key == "bluetooth_power"
 
-    def test_icon_when_off(self):
-        switch, _ = _make_bt_switch({**MOCK_BLUETOOTH_STATUS, "powered": False})
-        assert switch.icon == "mdi:bluetooth-off"
+    def test_entity_category_is_config(self):
+        assert _make_bt_switch()[0].entity_category == EntityCategory.CONFIG
 
 
 class TestOdioBluetoothSwitchIsOn:
@@ -454,11 +454,12 @@ class TestOdioBluetoothDeviceSwitch:
         status = {**MOCK_BLUETOOTH_STATUS, "known_devices": [device]}
         assert _make_device_switch(status=status)[0].is_on is False
 
-    def test_icon_reflects_connection(self):
-        assert _make_device_switch()[0].icon == "mdi:bluetooth-audio"
-        device = {**MOCK_BLUETOOTH_STATUS["known_devices"][0], "connected": False}
-        status = {**MOCK_BLUETOOTH_STATUS, "known_devices": [device]}
-        assert _make_device_switch(status=status)[0].icon == "mdi:bluetooth-off"
+    def test_translation_key_drives_icon(self):
+        assert _make_device_switch()[0].translation_key == "bluetooth_device"
+
+    def test_name_still_follows_device(self):
+        switch = _make_device_switch()[0]
+        assert switch.name == MOCK_BLUETOOTH_STATUS["known_devices"][0]["name"]
 
     def test_unavailable_when_device_gone(self):
         status = {**MOCK_BLUETOOTH_STATUS, "known_devices": []}
