@@ -65,6 +65,10 @@ All API communication and SSE state tracking is delegated to **pyodio's `OdioHub
 
 Uses the low-level `pyodio.OdioClient` (no hub — a validation call shouldn't open an SSE stream). `GET /services` returning 404 is tolerated (backend enabled but no units configured). Steps: user (validate URL) → sse (keepalive) → services (mappings). Options flow adds a **Mappings** step for services, remote clients, and MPRIS players. Schema building and mapping parsing are in `config_flow_helpers.py`, operating on pyodio dataclasses (`ServiceState`, `AudioClientState`, `PlayerState`).
 
+### Diagnostics (`diagnostics.py`)
+
+Config-entry diagnostics only (1 entry = 1 device). Dumps entry data, `runtime_data` and the hub's live `.state` dataclasses, then pseudonymizes: hostnames, IPs, MACs and users become per-dump tokens (`<host_1>`, `<ipv6_1>`, `<mac_1>`, `<user_1>`), matched from known field values first then regexes over every string, so sink names and descriptions keep their shape. `props` is dropped; `metadata` keeps its keys with redacted values. systemd template units (`unit@instance.service`) are exempt from the `user@host` pass. AirPlay sink (`raop_sink.*`) descriptions are announced names, tokenized as `<airplay_n>` unless already a token.
+
 ### Errors
 
 pyodio exceptions are used everywhere: `OdioError` → `OdioConnectionError` (⊃ `OdioTimeoutError`) and `OdioApiError(.status)`. The single HA boundary is the `helpers.api_command` decorator (`except OdioError` → `HomeAssistantError`).
