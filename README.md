@@ -14,8 +14,8 @@
   <p align="center"> 
   <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=b0bbywan&repository=odio-ha&category=integration"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Add to HACS" 
   /></a>
-  <a href="https://docs.odio.love/guides/home-assistant/#media-players"><img src="https://img.shields.io/badge/Media%20players-1DB954" alt="Media players" /></a>
-  <a href="https://docs.odio.love/guides/home-assistant/#real-time-updates"><img src="https://img.shields.io/badge/Real--time%20SSE-F97316" alt="Real-time SSE" /></a>
+  <a href="https://docs.odio.love/control/home-assistant/entities/"><img src="https://img.shields.io/badge/Media%20players-1DB954" alt="Media players" /></a>
+  <a href="https://docs.odio.love/control/home-assistant/entities/#data-updates"><img src="https://img.shields.io/badge/Real--time%20SSE-F97316" alt="Real-time SSE" /></a>
   <a href="https://docs.odio.love/api/zeroconf/"><img src="https://img.shields.io/badge/Zeroconf%20discovery-6B21A8" alt="Zeroconf discovery" /></a>   
   </p>
   <p align="center">   
@@ -58,8 +58,8 @@ All state is pushed by the server via **Server-Sent Events** — no polling afte
 - No local clients for now due to name collision risks
 
 ### Services (systemd backend)
-- `media_player` entity per detected user-scope systemd service
-- Start/stop switch per service
+- Start/stop switch per user-scope service
+- `media_player` entity per service mapped to an existing HA media player
 - Optional mapping to an existing HA media player → inherits full playback controls & metadata
 
 ### MPRIS (media player backend)
@@ -163,7 +163,7 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 ### Always present
 | Entity | Description |
 |--------|-------------|
-| `media_player.odio_remote_[hostname]` | Main hub — state: `playing` / `idle` / `unavailable`. Global volume/mute and audio output selection when audio backend enabled. |
+| `media_player.odio_remote_[hostname]` | Main hub — state: `playing` / `idle` / `off` (disconnected). Global volume/mute and audio output selection when audio backend enabled. |
 | `binary_sensor.odio_remote_[hostname]_connection_status` | SSE stream connected (diagnostic) |
 
 ### Audio backend (PulseAudio / PipeWire)
@@ -175,8 +175,8 @@ All grouped under one device: **”Odio Remote (hostname)”**.
 ### Services backend (systemd)
 | Entity | Description |
 |--------|-------------|
-| `media_player.odio_remote_[hostname]_[service]` | One per user-scope service — start/stop, volume/mute, optional mapping for full playback |
-| `switch.odio_remote_[hostname]_[service]` | Direct start/stop toggle per service |
+| `switch.odio_remote_[hostname]_[service]` | Start/stop toggle per user-scope service |
+| `media_player.odio_remote_[hostname]_[service]` | One per mapped service — start/stop, volume/mute, and the mapped player's playback controls |
 
 ### MPRIS backend
 | Entity | Description |

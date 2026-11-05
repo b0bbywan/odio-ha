@@ -210,7 +210,15 @@ class TestPseudonymizer:
     def test_known_host_matches_whole_labels_only(self):
         pseudo = _Pseudonymizer()
         pseudo.add_known("host", "htpc")
-        assert pseudo.scrub("htpc-api on HTPC") == "htpc-api on <host_1>"
+        assert pseudo.scrub("htpc-api on htpc") == "htpc-api on <host_1>"
+
+    def test_known_host_matches_its_case_or_lowercase(self):
+        pseudo = _Pseudonymizer()
+        pseudo.add_known("host", "MyPi")
+        pseudo.add_known("host", "debian")
+        assert pseudo.scrub("MyPi mypi MYPI debian Debian") == (
+            "<host_1> <host_1> MYPI <host_2> Debian"
+        )
 
     def test_stock_odio_name_never_tokenized(self):
         pseudo = _Pseudonymizer()
