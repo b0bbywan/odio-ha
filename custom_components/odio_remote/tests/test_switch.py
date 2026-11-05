@@ -1,6 +1,7 @@
 """Tests for Odio Remote switch platform."""
 from unittest.mock import MagicMock
 
+from homeassistant.const import EntityCategory
 from pyodio import PowerCapabilities, ServerInfo, ServiceState
 
 from custom_components.odio_remote import OdioRemoteRuntimeData
@@ -293,10 +294,13 @@ class TestOdioBluetoothSwitchConstruction:
         assert (DOMAIN, ENTRY_ID) in _make_bt_switch()[0].device_info["identifiers"]
 
 
-class TestOdioBluetoothSwitchIcon:
+class TestOdioBluetoothSwitchCategory:
 
     def test_translation_key_drives_icon(self):
         assert _make_bt_switch()[0].translation_key == "bluetooth_power"
+
+    def test_entity_category_is_config(self):
+        assert _make_bt_switch()[0].entity_category == EntityCategory.CONFIG
 
 
 class TestOdioBluetoothSwitchIsOn:

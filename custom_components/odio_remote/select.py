@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pyodio import BluetoothDevice
@@ -42,6 +43,7 @@ class OdioBluetoothPairSelect(OdioBluetoothEntity, SelectEntity):
     """
 
     _attr_translation_key = "bluetooth_pair"
+    _attr_entity_category = EntityCategory.CONFIG
     _unique_suffix = "bluetooth_pair"
 
     def _discovered_devices(self) -> list[BluetoothDevice]:
