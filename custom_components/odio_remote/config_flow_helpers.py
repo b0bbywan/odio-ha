@@ -10,6 +10,11 @@ from pyodio import AudioClientState, PlayerState, ServiceState
 from .helpers import extract_mpris_app_name
 
 
+def flow_schema(schema: vol.Schema) -> Any:
+    """Hand a schema to HA flows, typed as probatio.Schema since 2026.9."""
+    return schema
+
+
 def build_mapping_schema(
     entities: list[Any],
     current_mappings: dict[str, str] | None,

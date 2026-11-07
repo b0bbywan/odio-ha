@@ -28,6 +28,7 @@ from pyodio import (
 
 from .config_flow_helpers import (
     build_mapping_schema,
+    flow_schema,
     get_client_keys,
     get_player_keys,
     get_service_keys,
@@ -277,7 +278,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=flow_schema(STEP_USER_DATA_SCHEMA),
             errors=errors,
         )
 
@@ -354,9 +355,9 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="sse",
-            data_schema=add_suggested_values_to_schema(
+            data_schema=flow_schema(add_suggested_values_to_schema(
                 schema, {CONF_KEEPALIVE_INTERVAL: DEFAULT_KEEPALIVE_INTERVAL}
-            ),
+            )),
         )
 
     async def async_step_services(
@@ -386,7 +387,7 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="services",
-            data_schema=schema,
+            data_schema=flow_schema(schema),
             description_placeholders={
                 "services_info": (
                     "Associez vos services audio à des entités media_player "
@@ -416,9 +417,9 @@ class OdioConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=add_suggested_values_to_schema(
+            data_schema=flow_schema(add_suggested_values_to_schema(
                 STEP_USER_DATA_SCHEMA, {CONF_API_URL: current_url}
-            ),
+            )),
             errors=errors,
         )
 
@@ -501,7 +502,7 @@ class OdioOptionsFlow(OptionsFlowWithReload):
 
         return self.async_show_form(
             step_id="sse",
-            data_schema=add_suggested_values_to_schema(schema, suggested),
+            data_schema=flow_schema(add_suggested_values_to_schema(schema, suggested)),
         )
 
     async def async_step_mappings(
@@ -589,7 +590,7 @@ class OdioOptionsFlow(OptionsFlowWithReload):
 
         return self.async_show_form(
             step_id="mappings",
-            data_schema=vol.Schema(schema_dict),
+            data_schema=flow_schema(vol.Schema(schema_dict)),
             description_placeholders={
                 "info": (
                     "Associez vos services et clients distants à des entités "
