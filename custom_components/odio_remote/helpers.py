@@ -13,9 +13,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from pyodio import OdioError
+from pyodio import OdioConnectionError, OdioError
 
-from .const import _MPRIS_BUS_PREFIX
+from .const import _MPRIS_BUS_PREFIX, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,6 +125,15 @@ def api_command(
         except HomeAssistantError:
             raise
         except OdioError as err:
-            raise HomeAssistantError(str(err)) from err
+            key = (
+                "connection_error"
+                if isinstance(err, OdioConnectionError)
+                else "api_error"
+            )
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key=key,
+                translation_placeholders={"error": str(err)},
+            ) from err
 
     return wrapper

@@ -152,8 +152,10 @@ class TestApiCommand:
         async def action():
             raise OdioConnectionError("unreachable")
 
-        with pytest.raises(HomeAssistantError, match="unreachable"):
+        with pytest.raises(HomeAssistantError) as exc_info:
             await action()
+        assert exc_info.value.translation_key == "connection_error"
+        assert exc_info.value.translation_placeholders == {"error": "unreachable"}
 
     @pytest.mark.asyncio
     async def test_converts_odio_timeout_error(self):
@@ -162,8 +164,10 @@ class TestApiCommand:
         async def action():
             raise OdioTimeoutError("timed out")
 
-        with pytest.raises(HomeAssistantError, match="timed out"):
+        with pytest.raises(HomeAssistantError) as exc_info:
             await action()
+        assert exc_info.value.translation_key == "connection_error"
+        assert exc_info.value.translation_placeholders == {"error": "timed out"}
 
     @pytest.mark.asyncio
     async def test_converts_odio_api_error(self):
@@ -172,8 +176,10 @@ class TestApiCommand:
         async def action():
             raise OdioApiError(500, "bad response")
 
-        with pytest.raises(HomeAssistantError, match="bad response"):
+        with pytest.raises(HomeAssistantError) as exc_info:
             await action()
+        assert exc_info.value.translation_key == "api_error"
+        assert exc_info.value.translation_placeholders == {"error": "HTTP 500: bad response"}
 
     @pytest.mark.asyncio
     async def test_lets_programming_errors_bubble(self):
