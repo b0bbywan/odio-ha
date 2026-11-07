@@ -23,7 +23,7 @@ from homeassistant.components.media_player import (
     async_process_play_media_url,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from pyodio import (
@@ -51,6 +51,7 @@ from .const import (
     ATTR_SERVICE_ENABLED,
     ATTR_SERVICE_SCOPE,
     ATTR_USER,
+    DOMAIN,
 )
 from .entity import OdioEntity
 from .helpers import (
@@ -1038,8 +1039,10 @@ class OdioMPRISMediaPlayer(MappedEntityMixin, OdioEntity, MediaPlayerEntity):
             if not any(track.track_id == media_id for track in player.tracks):
                 await player.refresh_tracklist()
             if not any(track.track_id == media_id for track in player.tracks):
-                raise HomeAssistantError(
-                    f"Track {media_id} is no longer in the tracklist"
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="track_not_found",
+                    translation_placeholders={"track_id": media_id},
                 )
             _LOGGER.debug("MPRIS goto %s: %s", media_id, self._player_name)
             await player.go_to(media_id)

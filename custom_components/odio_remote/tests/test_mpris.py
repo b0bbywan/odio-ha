@@ -11,7 +11,7 @@ from homeassistant.components.media_player import (
     MediaType,
     RepeatMode,
 )
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from pyodio import OdioConnectionError, TracklistState
 
 from custom_components.odio_remote.media_player import OdioMPRISMediaPlayer, _MediaPlayerContext
@@ -515,8 +515,9 @@ class TestMPRISPlayMedia:
     async def test_stale_track_id_never_reaches_add_track(self):
         entity, hub = _with_tracklist()
         hub.client.get_player_tracklist.return_value = TracklistState.from_dict(MOCK_TRACKLIST)
-        with pytest.raises(HomeAssistantError):
+        with pytest.raises(ServiceValidationError) as exc_info:
             await entity.async_play_media(MediaType.MUSIC, "/com/spotify/track/gone")
+        assert exc_info.value.translation_key == "track_not_found"
         hub.client.player_tracklist_goto.assert_not_awaited()
         hub.client.player_tracklist_add.assert_not_awaited()
 

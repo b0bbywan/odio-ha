@@ -130,5 +130,10 @@
       "no_mappable_entities": "Aucun service ou client disponible à associer",
       "not_loaded": "L'intégration n'est pas chargée"
     }
+  },
+  "exceptions": {
+    "connection_error": {"message": "Impossible de joindre l'API Odio : {error}"},
+    "api_error": {"message": "L'API Odio a refusé la commande : {error}"},
+    "track_not_found": {"message": "La piste {track_id} n'est plus dans la liste de lecture"}
   }
 }

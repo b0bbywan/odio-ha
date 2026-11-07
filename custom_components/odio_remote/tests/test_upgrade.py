@@ -126,8 +126,10 @@ class TestOdioUpdateEntityInstall:
         """A 409 (already running) surfaces as HomeAssistantError."""
         hub, entity = _make_entity(UPGRADE_AVAILABLE)
         hub.client.upgrade_start.side_effect = OdioApiError(409, "already running")
-        with pytest.raises(HomeAssistantError, match="already running"):
+        with pytest.raises(HomeAssistantError) as exc_info:
             await entity.async_install(version=None, backup=False)
+        assert exc_info.value.translation_key == "api_error"
+        assert "already running" in exc_info.value.translation_placeholders["error"]
 
 
 # ---------------------------------------------------------------------------

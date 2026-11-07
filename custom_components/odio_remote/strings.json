@@ -128,5 +128,10 @@
       "no_mappable_entities": "No services or clients available to map",
       "not_loaded": "Integration not loaded"
     }
+  },
+  "exceptions": {
+    "connection_error": {"message": "Cannot reach the Odio API: {error}"},
+    "api_error": {"message": "The Odio API rejected the command: {error}"},
+    "track_not_found": {"message": "Track {track_id} is no longer in the tracklist"}
   }
 }
