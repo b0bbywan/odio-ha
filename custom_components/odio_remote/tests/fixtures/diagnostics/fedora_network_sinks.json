@@ -1,0 +1,370 @@
+{
+  "values": {
+    "<host_1>": "tour",
+    "<host_2>": "raspodio-2",
+    "<host_3>": "airport",
+    "<host_4>": "snapserver",
+    "<host_5>": "raspodio3b-2",
+    "<host_6>": "raspodio3b",
+    "<host_7>": "raspodio",
+    "<ip_1>": "192.168.1.50",
+    "<ip_2>": "192.168.1.40",
+    "<ipv6_1>": "fe80::ba27:ebff:fe00:3",
+    "<ipv6_2>": "fe80::ba27:ebff:fe00:4",
+    "<ipv6_3>": "fe80::ba27:ebff:fe00:5",
+    "<mac_1>": "00:d8:61:00:00:06",
+    "<user_1>": "alice",
+    "<user_2>": "pi",
+    "<user_3>": "media",
+    "<airplay_1>": "Living Room",
+    "<airplay_2>": "SnapAir"
+  },
+  "dump": {
+    "entry": {
+      "title": "Odio Remote",
+      "data": {
+        "api_url": "http://<ip_1>:8018",
+        "cached_services": [
+          {
+            "active_state": "inactive",
+            "description": "Music Player Daemon",
+            "enabled": false,
+            "exists": true,
+            "name": "mpd.service",
+            "running": false,
+            "scope": "user",
+            "url": "http://<ip_2>:8090"
+          },
+          {
+            "active_state": "active",
+            "description": "PipeWire PulseAudio",
+            "enabled": false,
+            "exists": true,
+            "name": "pipewire-pulse.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          }
+        ],
+        "mac": "<mac_1>",
+        "power_capabilities": {
+          "power_off": true,
+          "reboot": true
+        },
+        "server_info": {
+          "api_sw": "odio-api",
+          "api_version": "v0.17.4",
+          "backends": {
+            "bluetooth": false,
+            "mpris": true,
+            "power": true,
+            "pulseaudio": true,
+            "systemd": true,
+            "upgrade": false,
+            "zeroconf": true
+          },
+          "hostname": "<host_1>",
+          "os_platform": "linux/amd64",
+          "os_version": "Fedora Linux 44 (Workstation Edition)"
+        }
+      },
+      "options": {
+        "keepalive_interval": 30,
+        "service_mappings": {}
+      }
+    },
+    "connected": true,
+    "server_info": {
+      "hostname": "<host_1>",
+      "os_platform": "linux/amd64",
+      "os_version": "Fedora Linux 44 (Workstation Edition)",
+      "api_sw": "odio-api",
+      "api_version": "v0.17.4",
+      "backends": {
+        "bluetooth": false,
+        "mpris": true,
+        "power": true,
+        "pulseaudio": true,
+        "systemd": true,
+        "upgrade": false,
+        "zeroconf": true
+      }
+    },
+    "power_capabilities": {
+      "reboot": true,
+      "power_off": true
+    },
+    "service_mappings": {},
+    "audio": {
+      "server": {
+        "kind": "pipewire",
+        "default_sink": "tunnel.<host_2>.local.alsa_output.platform-soc_sound.stereo-fallback",
+        "volume": 1.0,
+        "muted": false
+      },
+      "clients": [
+        {
+          "id": 342,
+          "name": "Playback",
+          "app": "Google Chrome",
+          "muted": false,
+          "volume": 1.0,
+          "corked": false,
+          "backend": "pipewire",
+          "binary": "chrome",
+          "user": "<user_1>",
+          "host": "<host_1>",
+          "props": "**REDACTED**"
+        }
+      ],
+      "outputs": [
+        {
+          "id": 51,
+          "name": "Snapcast",
+          "description": "Snapcast Server",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 53,
+          "name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+          "description": "Audio interne Stéréo analogique",
+          "nick": "ALC887-VD Analog",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "analog-output-lineout",
+          "is_network": false,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 80,
+          "name": "raop_sink.<host_3>.local.<ipv6_1>.5000",
+          "description": "<airplay_1>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 81,
+          "name": "raop_sink.<host_4>.local.<ip_2>.5000",
+          "description": "<airplay_2>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 83,
+          "name": "raop_sink.<host_5>.local.<ipv6_2>.5000",
+          "description": "<host_6>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 84,
+          "name": "tunnel.<host_2>.local.alsa_output.platform-soc_sound.stereo-fallback",
+          "description": "Built-in Audio Stereo on <user_2>@<host_7>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "running",
+          "default": true,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 85,
+          "name": "raop_sink.<host_2>.local.<ipv6_3>.5000",
+          "description": "<host_7>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 106,
+          "name": "tunnel.<host_5>.local.alsa_output.platform-2000b840.mailbox.stereo-fallback",
+          "description": "Audio interne Stéréo on <user_3>@<host_6>",
+          "nick": "",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "",
+          "is_network": true,
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 113,
+          "name": "alsa_output.pci-0000_01_00.1.hdmi-stereo",
+          "description": "GP104 High Definition Audio Controller Stéréo numérique (HDMI) [24G2W1G4]",
+          "nick": "24G2W1G4",
+          "muted": false,
+          "volume": 1.0,
+          "state": "suspended",
+          "default": false,
+          "driver": "PipeWire",
+          "active_port": "hdmi-output-0",
+          "is_network": false,
+          "props": "**REDACTED**"
+        }
+      ]
+    },
+    "players": [
+      {
+        "bus_name": "org.mpris.MediaPlayer2.mpd",
+        "identity": "Music Player Daemon",
+        "playback_status": "Stopped",
+        "loop_status": "None",
+        "shuffle": null,
+        "volume": 0,
+        "position": null,
+        "position_updated_at": "2026-11-07T12:07:51.841200+01:00",
+        "rate": 1,
+        "metadata": {},
+        "capabilities": {
+          "can_play": true,
+          "can_pause": true,
+          "can_go_next": true,
+          "can_go_previous": true,
+          "can_seek": false,
+          "can_control": true
+        },
+        "tracklist_supported": true,
+        "available": true,
+        "tracklist": {
+          "can_edit_tracks": true,
+          "tracks": []
+        }
+      },
+      {
+        "bus_name": "org.mpris.MediaPlayer2.spotify",
+        "identity": "Spotify",
+        "playback_status": "Paused",
+        "loop_status": "None",
+        "shuffle": true,
+        "volume": 1,
+        "position": 224224000,
+        "position_updated_at": "2026-11-07T12:51:31.588028+01:00",
+        "rate": 1,
+        "metadata": {
+          "mpris:artUrl": "**REDACTED**",
+          "mpris:length": "**REDACTED**",
+          "mpris:trackid": "**REDACTED**",
+          "xesam:album": "**REDACTED**",
+          "xesam:albumArtist": "**REDACTED**",
+          "xesam:artist": "**REDACTED**",
+          "xesam:autoRating": "**REDACTED**",
+          "xesam:discNumber": "**REDACTED**",
+          "xesam:title": "**REDACTED**",
+          "xesam:trackNumber": "**REDACTED**",
+          "xesam:url": "**REDACTED**"
+        },
+        "capabilities": {
+          "can_play": true,
+          "can_pause": true,
+          "can_go_next": true,
+          "can_go_previous": true,
+          "can_seek": true,
+          "can_control": true
+        },
+        "tracklist_supported": false,
+        "available": true,
+        "tracklist": null
+      },
+      {
+        "bus_name": "org.mpris.MediaPlayer2.chromium.instance5094",
+        "identity": "Chrome",
+        "playback_status": "Playing",
+        "loop_status": null,
+        "shuffle": null,
+        "volume": 1,
+        "position": 914702861,
+        "position_updated_at": "2026-11-07T16:46:46.657000+00:00",
+        "rate": 1,
+        "metadata": {
+          "mpris:artUrl": "**REDACTED**",
+          "mpris:length": "**REDACTED**",
+          "mpris:trackid": "**REDACTED**",
+          "xesam:album": "**REDACTED**",
+          "xesam:artist": "**REDACTED**",
+          "xesam:title": "**REDACTED**"
+        },
+        "capabilities": {
+          "can_play": true,
+          "can_pause": true,
+          "can_go_next": false,
+          "can_go_previous": false,
+          "can_seek": true,
+          "can_control": true
+        },
+        "tracklist_supported": false,
+        "available": true,
+        "tracklist": null
+      }
+    ],
+    "services": [
+      {
+        "name": "mpd.service",
+        "scope": "user",
+        "active_state": "inactive",
+        "running": false,
+        "enabled": false,
+        "exists": true,
+        "description": "Music Player Daemon",
+        "url": "http://<ip_2>:8090"
+      },
+      {
+        "name": "pipewire-pulse.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": false,
+        "exists": true,
+        "description": "PipeWire PulseAudio",
+        "url": ""
+      }
+    ],
+    "bluetooth": {
+      "state": null,
+      "devices": []
+    },
+    "upgrade": null
+  }
+}
