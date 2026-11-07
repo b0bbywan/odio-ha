@@ -1,0 +1,770 @@
+{
+  "values": {
+    "<host_1>": "bureau",
+    "<host_2>": "desktop",
+    "<ip_1>": "192.168.1.33",
+    "<ip_2>": "192.168.1.40",
+    "<mac_1>": "b8:27:eb:00:00:07",
+    "<mac_2>": "aa:bb:cc:00:00:02",
+    "<mac_3>": "aa:bb:cc:00:00:03",
+    "<mac_4>": "aa:bb:cc:00:00:04",
+    "<mac_5>": "aa:bb:cc:00:00:05",
+    "<mac_6>": "aa:bb:cc:00:00:06",
+    "<user_1>": "alice",
+    "<user_2>": "pi",
+    "<bt_1>": "Pixel 6a",
+    "<bt_2>": "JBL Go 3",
+    "<bt_3>": "Living Room",
+    "<bt_4>": "carol-laptop",
+    "<bt_5>": "Xiaomi 11 Lite 5G NE",
+    "<entity_1>": "odio_remote_oldpi_music_player_daemon",
+    "<entity_2>": "openhome_uuid_00000000_0000_1000_8000_b827eb000007",
+    "<entity_3>": "oldpi_snapcast_client",
+    "<entity_4>": "spotify_carol",
+    "<entity_5>": "upmpd_oldpi_upnp_av"
+  },
+  "dump": {
+    "entry": {
+      "title": "Odio Remote",
+      "data": {
+        "api_url": "http://<ip_1>:8018",
+        "cached_services": [
+          {
+            "active_state": "active",
+            "description": "Bluetooth service",
+            "enabled": true,
+            "exists": true,
+            "name": "bluetooth.service",
+            "running": true,
+            "scope": "system",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "Sound Service",
+            "enabled": true,
+            "exists": true,
+            "name": "pulseaudio.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "Music Player Daemon",
+            "enabled": true,
+            "exists": true,
+            "name": "mpd.service",
+            "running": true,
+            "scope": "user",
+            "url": ":8080"
+          },
+          {
+            "active_state": "active",
+            "description": "Autoplay discs and usb with mpd",
+            "enabled": true,
+            "exists": true,
+            "name": "mpd-discplayer.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "Shairport Sync - AirPlay Audio Receiver",
+            "enabled": true,
+            "exists": true,
+            "name": "shairport-sync.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "Snapcast client",
+            "enabled": true,
+            "exists": true,
+            "name": "snapclient.service",
+            "running": true,
+            "scope": "user",
+            "url": "http://<ip_2>:1780"
+          },
+          {
+            "active_state": "active",
+            "description": "A spotify playing daemon",
+            "enabled": true,
+            "exists": true,
+            "name": "spotifyd.service",
+            "running": true,
+            "scope": "user",
+            "url": "https://open.spotify.com"
+          },
+          {
+            "active_state": "active",
+            "description": "QBZ headless Qobuz playback daemon",
+            "enabled": true,
+            "exists": true,
+            "name": "qbzd.service",
+            "running": true,
+            "scope": "user",
+            "url": "https://play.qobuz.com/"
+          },
+          {
+            "active_state": "active",
+            "description": "UPnP Renderer front-end to MPD",
+            "enabled": true,
+            "exists": true,
+            "name": "upmpdcli.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          }
+        ],
+        "mac": "<mac_1>",
+        "power_capabilities": {
+          "power_off": true,
+          "reboot": true
+        },
+        "server_info": {
+          "api_sw": "odio-api",
+          "api_version": "v0.18.1",
+          "backends": {
+            "bluetooth": true,
+            "mpris": true,
+            "power": true,
+            "pulseaudio": true,
+            "systemd": true,
+            "upgrade": true,
+            "zeroconf": true
+          },
+          "hostname": "<host_1>",
+          "os_platform": "linux/arm",
+          "os_version": "Raspbian GNU/Linux 13 (trixie)"
+        }
+      },
+      "options": {
+        "scan_interval": 10,
+        "service_mappings": {
+          "mpris:mpd": "media_player.<entity_1>",
+          "system/upmpdcli.service": "media_player.<entity_2>",
+          "user/mpd.service": "media_player.<entity_1>",
+          "user/snapclient.service": "media_player.<entity_3>",
+          "user/spotifyd.service": "media_player.<entity_4>",
+          "user/upmpdcli.service": "media_player.<entity_5>"
+        },
+        "service_scan_interval": 60
+      }
+    },
+    "connected": true,
+    "server_info": {
+      "hostname": "<host_1>",
+      "os_platform": "linux/arm",
+      "os_version": "Raspbian GNU/Linux 13 (trixie)",
+      "api_sw": "odio-api",
+      "api_version": "v0.18.1",
+      "backends": {
+        "bluetooth": true,
+        "mpris": true,
+        "power": true,
+        "pulseaudio": true,
+        "systemd": true,
+        "upgrade": true,
+        "zeroconf": true
+      }
+    },
+    "power_capabilities": {
+      "reboot": true,
+      "power_off": true
+    },
+    "service_mappings": {
+      "mpris:mpd": "media_player.<entity_1>",
+      "system/upmpdcli.service": "media_player.<entity_2>",
+      "user/mpd.service": "media_player.<entity_1>",
+      "user/snapclient.service": "media_player.<entity_3>",
+      "user/spotifyd.service": "media_player.<entity_4>",
+      "user/upmpdcli.service": "media_player.<entity_5>"
+    },
+    "audio": {
+      "server": {
+        "kind": "pulseaudio",
+        "default_sink": "alsa_output.platform-soc_sound.stereo-fallback",
+        "volume": 1.0,
+        "muted": false
+      },
+      "clients": [
+        {
+          "id": 66,
+          "name": "Tunnel for <user_1>@<host_2>",
+          "app": "PipeWire",
+          "muted": false,
+          "volume": 1.0,
+          "corked": true,
+          "backend": "pulseaudio",
+          "binary": "pipewire",
+          "user": "<user_1>",
+          "host": "<host_2>",
+          "props": "**REDACTED**"
+        },
+        {
+          "id": 68,
+          "name": "Playback",
+          "app": "Snapcast",
+          "muted": false,
+          "volume": 1.0,
+          "corked": false,
+          "backend": "pulseaudio",
+          "binary": "snapclient",
+          "user": "<user_2>",
+          "host": "<host_1>",
+          "props": "**REDACTED**"
+        }
+      ],
+      "outputs": [
+        {
+          "id": 0,
+          "name": "alsa_output.platform-soc_sound.stereo-fallback",
+          "description": "Built-in Audio Stereo",
+          "nick": "Built-in Audio Stereo",
+          "muted": false,
+          "volume": 1.0,
+          "state": "running",
+          "default": true,
+          "driver": "module-alsa-card.c",
+          "active_port": "analog-output",
+          "is_network": false,
+          "props": "**REDACTED**"
+        }
+      ]
+    },
+    "players": [
+      {
+        "bus_name": "org.mpris.MediaPlayer2.com.blitzfc.qbz",
+        "identity": "QBZ",
+        "playback_status": "Stopped",
+        "loop_status": "None",
+        "shuffle": null,
+        "volume": 1,
+        "position": null,
+        "position_updated_at": "2026-10-27T15:08:45.721515+01:00",
+        "rate": 1,
+        "metadata": {
+          "mpris:artUrl": "**REDACTED**",
+          "mpris:length": "**REDACTED**",
+          "mpris:trackid": "**REDACTED**",
+          "xesam:album": "**REDACTED**",
+          "xesam:artist": "**REDACTED**",
+          "xesam:title": "**REDACTED**",
+          "xesam:url": "**REDACTED**"
+        },
+        "capabilities": {
+          "can_play": true,
+          "can_pause": true,
+          "can_go_next": true,
+          "can_go_previous": true,
+          "can_seek": true,
+          "can_control": true
+        },
+        "tracklist_supported": false,
+        "available": true,
+        "tracklist": null
+      },
+      {
+        "bus_name": "org.mpris.MediaPlayer2.snapcast",
+        "identity": "Snapcast client",
+        "playback_status": "Playing",
+        "loop_status": null,
+        "shuffle": null,
+        "volume": 1,
+        "position": null,
+        "position_updated_at": "2026-11-08T13:41:06.541024+01:00",
+        "rate": 1,
+        "metadata": {
+          "mpris:artUrl": "**REDACTED**",
+          "mpris:length": "**REDACTED**",
+          "mpris:trackid": "**REDACTED**",
+          "snapcast:stream": "**REDACTED**",
+          "snapcast:streamStatus": "**REDACTED**",
+          "xesam:album": "**REDACTED**",
+          "xesam:albumArtist": "**REDACTED**",
+          "xesam:artist": "**REDACTED**",
+          "xesam:discNumber": "**REDACTED**",
+          "xesam:title": "**REDACTED**",
+          "xesam:trackNumber": "**REDACTED**",
+          "xesam:url": "**REDACTED**"
+        },
+        "capabilities": {
+          "can_play": false,
+          "can_pause": false,
+          "can_go_next": false,
+          "can_go_previous": false,
+          "can_seek": false,
+          "can_control": true
+        },
+        "tracklist_supported": false,
+        "available": true,
+        "tracklist": null
+      },
+      {
+        "bus_name": "org.mpris.MediaPlayer2.mpd",
+        "identity": "Music Player Daemon",
+        "playback_status": "Stopped",
+        "loop_status": "None",
+        "shuffle": null,
+        "volume": 1,
+        "position": null,
+        "position_updated_at": "2026-11-08T12:07:49.193166+01:00",
+        "rate": 1,
+        "metadata": {},
+        "capabilities": {
+          "can_play": true,
+          "can_pause": true,
+          "can_go_next": false,
+          "can_go_previous": true,
+          "can_seek": false,
+          "can_control": true
+        },
+        "tracklist_supported": true,
+        "available": true,
+        "tracklist": {
+          "can_edit_tracks": true,
+          "tracks": [
+            {
+              "track_id": "/org/mpris/MediaPlayer2/Track/11",
+              "metadata": {
+                "mpris:trackid": "**REDACTED**",
+                "xesam:album": "**REDACTED**",
+                "xesam:title": "**REDACTED**"
+              }
+            },
+            {
+              "track_id": "/org/mpris/MediaPlayer2/Track/12",
+              "metadata": {
+                "mpris:trackid": "**REDACTED**"
+              }
+            },
+            {
+              "track_id": "/org/mpris/MediaPlayer2/Track/13",
+              "metadata": {
+                "mpris:trackid": "**REDACTED**"
+              }
+            },
+            {
+              "track_id": "/org/mpris/MediaPlayer2/Track/14",
+              "metadata": {
+                "mpris:trackid": "**REDACTED**"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "services": [
+      {
+        "name": "bluetooth.service",
+        "scope": "system",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Bluetooth service",
+        "url": ""
+      },
+      {
+        "name": "pulseaudio.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Sound Service",
+        "url": ""
+      },
+      {
+        "name": "mpd.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Music Player Daemon",
+        "url": ":8080"
+      },
+      {
+        "name": "mpd-discplayer.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Autoplay discs and usb with mpd",
+        "url": ""
+      },
+      {
+        "name": "shairport-sync.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Shairport Sync - AirPlay Audio Receiver",
+        "url": ""
+      },
+      {
+        "name": "snapclient.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "Snapcast client",
+        "url": "http://<ip_2>:1780"
+      },
+      {
+        "name": "spotifyd.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "A spotify playing daemon",
+        "url": "https://open.spotify.com"
+      },
+      {
+        "name": "qbzd.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "QBZ headless Qobuz playback daemon",
+        "url": "https://play.qobuz.com/"
+      },
+      {
+        "name": "upmpdcli.service",
+        "scope": "user",
+        "active_state": "active",
+        "running": true,
+        "enabled": true,
+        "exists": true,
+        "description": "UPnP Renderer front-end to MPD",
+        "url": ""
+      }
+    ],
+    "bluetooth": {
+      "state": {
+        "powered": true,
+        "discoverable": false,
+        "pairable": false,
+        "pairing_active": false,
+        "pairing_until": null,
+        "scanning": true,
+        "known_devices": [
+          {
+            "address": "<mac_2>",
+            "name": "<bt_1>",
+            "paired": true,
+            "bonded": true,
+            "trusted": true,
+            "connected": false
+          },
+          {
+            "address": "<mac_3>",
+            "name": "<bt_2>",
+            "paired": true,
+            "bonded": true,
+            "trusted": true,
+            "connected": false
+          },
+          {
+            "address": "<mac_4>",
+            "name": "<bt_3>",
+            "paired": true,
+            "bonded": true,
+            "trusted": true,
+            "connected": false
+          },
+          {
+            "address": "<mac_5>",
+            "name": "<bt_4>",
+            "paired": true,
+            "bonded": true,
+            "trusted": true,
+            "connected": false
+          },
+          {
+            "address": "<mac_6>",
+            "name": "<bt_5>",
+            "paired": true,
+            "bonded": true,
+            "trusted": true,
+            "connected": false
+          }
+        ]
+      },
+      "devices": [
+        {
+          "address": "<mac_2>",
+          "name": "<bt_1>",
+          "paired": true,
+          "bonded": true,
+          "trusted": true,
+          "connected": false
+        },
+        {
+          "address": "<mac_3>",
+          "name": "<bt_2>",
+          "paired": true,
+          "bonded": true,
+          "trusted": true,
+          "connected": false
+        },
+        {
+          "address": "<mac_4>",
+          "name": "<bt_3>",
+          "paired": true,
+          "bonded": true,
+          "trusted": true,
+          "connected": false
+        },
+        {
+          "address": "<mac_5>",
+          "name": "<bt_4>",
+          "paired": true,
+          "bonded": true,
+          "trusted": true,
+          "connected": false
+        },
+        {
+          "address": "<mac_6>",
+          "name": "<bt_5>",
+          "paired": true,
+          "bonded": true,
+          "trusted": true,
+          "connected": false
+        }
+      ]
+    },
+    "upgrade": {
+      "current": "2026.10.0b3",
+      "latest": "2026.10.0b3",
+      "upgrade_available": false,
+      "checked_at": "2026-11-07T23:34:05+00:00",
+      "extra": {
+        "manifest": {
+          "odios": "2026.10.0b3",
+          "roles": {
+            "bluetooth": "2026.10.0b1",
+            "branding": "2026.10.0b1",
+            "common": "2026.10.0b3",
+            "display": "2026.10.0b3",
+            "mpd": "2026.10.0b2",
+            "mpd_discplayer": "2026.10.0b3",
+            "odio_api": "2026.10.0b2",
+            "pipewire": "2026.10.0b1",
+            "pulseaudio": "2026.10.0b1",
+            "qbzd": "2026.10.0b2",
+            "shairport_sync": "2026.10.0b2",
+            "snapclient": "2026.10.0b2",
+            "spotifyd": "2026.10.0b2",
+            "upgrade": "2026.10.0b3",
+            "upmpdcli": "2026.10.0b3"
+          },
+          "catalog": {
+            "bluetooth": {
+              "version": "2026.10.0b1",
+              "label": "Bluetooth",
+              "description": "Bluetooth audio, in and out",
+              "group": "Audio",
+              "services": [],
+              "opt_in": false,
+              "required": false
+            },
+            "branding": {
+              "version": "2026.10.0b1",
+              "label": "Branding",
+              "description": "odio login banner",
+              "group": "System",
+              "services": [],
+              "opt_in": false,
+              "required": false
+            },
+            "common": {
+              "version": "2026.10.0b3",
+              "label": "Base system",
+              "description": "Core system configuration",
+              "group": "System",
+              "services": [],
+              "opt_in": false,
+              "required": true
+            },
+            "display": {
+              "version": "2026.10.0b3",
+              "label": "Screen",
+              "description": "Web dashboard on an attached screen (experimental)",
+              "group": "System",
+              "services": [
+                "odio-kiosk@odio.service"
+              ],
+              "opt_in": true,
+              "required": false,
+              "archs": [
+                "amd64",
+                "arm64"
+              ]
+            },
+            "mpd": {
+              "version": "2026.10.0b2",
+              "label": "MPD",
+              "description": "Music library on USB drives, CDs and network shares",
+              "group": "Playback",
+              "services": [
+                "mpd.socket",
+                "mpd.service",
+                "mpd2mpris.service"
+              ],
+              "opt_in": false,
+              "required": true,
+              "features": {
+                "mympd": {
+                  "label": "myMPD",
+                  "description": "Web player for your music library and web radios"
+                }
+              }
+            },
+            "mpd_discplayer": {
+              "version": "2026.10.0b3",
+              "label": "CD & USB player",
+              "description": "Plays a CD or USB drive as soon as it is inserted",
+              "group": "Playback",
+              "services": [
+                "mpd-discplayer.service"
+              ],
+              "opt_in": false,
+              "required": false
+            },
+            "odio_api": {
+              "version": "2026.10.0b2",
+              "label": "odio-api",
+              "description": "Remote control API and web dashboard",
+              "group": "System",
+              "services": [
+                "odio-api.service"
+              ],
+              "opt_in": false,
+              "required": true
+            },
+            "pulseaudio": {
+              "version": "2026.10.0b1",
+              "label": "PulseAudio",
+              "description": "Sound server, with network streaming",
+              "group": "Audio",
+              "services": [
+                "pulseaudio.socket",
+                "pulseaudio.service",
+                "pulse-tcp.service"
+              ],
+              "opt_in": false,
+              "required": true
+            },
+            "qbzd": {
+              "version": "2026.10.0b2",
+              "label": "Qobuz Connect",
+              "description": "Play from the Qobuz app (experimental)",
+              "group": "Streaming",
+              "services": [
+                "qbzd.service"
+              ],
+              "opt_in": true,
+              "required": false
+            },
+            "shairport_sync": {
+              "version": "2026.10.0b2",
+              "label": "AirPlay",
+              "description": "Play from Apple devices",
+              "group": "Streaming",
+              "services": [
+                "shairport-sync.service"
+              ],
+              "opt_in": false,
+              "required": false
+            },
+            "snapclient": {
+              "version": "2026.10.0b2",
+              "label": "Snapcast",
+              "description": "Synchronized multi-room playback",
+              "group": "Streaming",
+              "services": [
+                "snapclient.service",
+                "snapclientmpris.service"
+              ],
+              "opt_in": false,
+              "required": false
+            },
+            "spotifyd": {
+              "version": "2026.10.0b2",
+              "label": "Spotify Connect",
+              "description": "Play from the Spotify app",
+              "group": "Streaming",
+              "services": [
+                "spotifyd.service"
+              ],
+              "opt_in": false,
+              "required": false
+            },
+            "upgrade": {
+              "version": "2026.10.0b3",
+              "label": "Upgrade",
+              "description": "Keeps odio up to date",
+              "group": "System",
+              "services": [
+                "odio-check-upgrade.timer",
+                "odioctl-web-proxy.socket"
+              ],
+              "opt_in": false,
+              "required": true
+            },
+            "upmpdcli": {
+              "version": "2026.10.0b3",
+              "label": "UPnP / DLNA",
+              "description": "Play from UPnP and OpenHome control apps",
+              "group": "Streaming",
+              "services": [
+                "upmpdcli.service"
+              ],
+              "opt_in": false,
+              "required": false,
+              "features": {
+                "qobuz": {
+                  "label": "Qobuz",
+                  "description": "Qobuz in UPnP control apps"
+                },
+                "tidal": {
+                  "label": "Tidal",
+                  "description": "Tidal in UPnP control apps"
+                },
+                "upnpwebradios": {
+                  "label": "Web radios",
+                  "description": "Web radios in UPnP control apps"
+                }
+              }
+            }
+          }
+        },
+        "pending_components": [],
+        "pending_removals": [],
+        "roles": [],
+        "target_tag": "2026.10.0b3"
+      },
+      "run": {
+        "state": "idle",
+        "origin": "systemd",
+        "percent": null,
+        "step": null,
+        "started_at": "2026-10-26T20:43:02+00:00",
+        "finished_at": "2026-10-26T21:03:28+00:00"
+      },
+      "can_check": true,
+      "can_upgrade": true
+    }
+  }
+}

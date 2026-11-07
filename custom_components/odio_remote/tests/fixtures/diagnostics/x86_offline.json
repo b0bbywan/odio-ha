@@ -1,0 +1,152 @@
+{
+  "values": {
+    "<host_1>": "htpc",
+    "<ip_1>": "192.168.1.20",
+    "<mac_1>": "00:1a:2b:3c:4d:5e",
+    "<entity_1>": "odio_remote_htpc_mozilla_firefox_esr"
+  },
+  "dump": {
+    "entry": {
+      "title": "Odio Remote",
+      "data": {
+        "api_url": "http://<ip_1>:8018",
+        "cached_services": [
+          {
+            "active_state": "inactive",
+            "description": "netflix.com",
+            "enabled": false,
+            "exists": true,
+            "name": "firefox-kiosk@netflix.com.service",
+            "running": false,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "inactive",
+            "description": "youtube.com",
+            "enabled": false,
+            "exists": true,
+            "name": "firefox-kiosk@youtube.com.service",
+            "running": false,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "inactive",
+            "description": "arte.tv",
+            "enabled": false,
+            "exists": true,
+            "name": "firefox-kiosk@arte.tv.service",
+            "running": false,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "inactive",
+            "description": "tv.orange.fr",
+            "enabled": false,
+            "exists": true,
+            "name": "firefox-kiosk@tv.orange.fr.service",
+            "running": false,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "inactive",
+            "description": "Kodi",
+            "enabled": false,
+            "exists": true,
+            "name": "kodi.service",
+            "running": false,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "PipeWire PulseAudio",
+            "enabled": true,
+            "exists": true,
+            "name": "pipewire-pulse.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          },
+          {
+            "active_state": "active",
+            "description": "Odio Dashboard UI",
+            "enabled": true,
+            "exists": true,
+            "name": "odio-ui.service",
+            "running": true,
+            "scope": "user",
+            "url": ""
+          }
+        ],
+        "mac": "<mac_1>",
+        "power_capabilities": {
+          "power_off": true,
+          "reboot": true
+        },
+        "server_info": {
+          "api_sw": "odio-api",
+          "api_version": "v0.19.0-beta.2",
+          "backends": {
+            "bluetooth": false,
+            "mpris": true,
+            "power": true,
+            "pulseaudio": true,
+            "systemd": true,
+            "upgrade": false,
+            "zeroconf": true
+          },
+          "hostname": "<host_1>",
+          "os_platform": "linux/amd64",
+          "os_version": "Debian GNU/Linux 13 (trixie)"
+        }
+      },
+      "options": {
+        "scan_interval": 10,
+        "service_mappings": {
+          "user/firefox-kiosk@netflix.com.service": "media_player.<entity_1>"
+        },
+        "service_scan_interval": 60
+      }
+    },
+    "connected": false,
+    "server_info": {
+      "hostname": "<host_1>",
+      "os_platform": "linux/amd64",
+      "os_version": "Debian GNU/Linux 13 (trixie)",
+      "api_sw": "odio-api",
+      "api_version": "v0.19.0-beta.2",
+      "backends": {
+        "bluetooth": false,
+        "mpris": true,
+        "power": true,
+        "pulseaudio": true,
+        "systemd": true,
+        "upgrade": false,
+        "zeroconf": true
+      }
+    },
+    "power_capabilities": {
+      "reboot": true,
+      "power_off": true
+    },
+    "service_mappings": {
+      "user/firefox-kiosk@netflix.com.service": "media_player.<entity_1>"
+    },
+    "audio": {
+      "server": null,
+      "clients": [],
+      "outputs": []
+    },
+    "players": [],
+    "services": [],
+    "bluetooth": {
+      "state": null,
+      "devices": []
+    },
+    "upgrade": null
+  }
+}
