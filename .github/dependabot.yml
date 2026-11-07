@@ -4,7 +4,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # One HA bump per monthly release, not per patch.
+      - dependency-name: homeassistant
+        update-types: ["version-update:semver-patch"]
     groups:
+      # Own PR, so a breaking HA release doesn't hold back tooling bumps.
+      homeassistant:
+        patterns:
+          - "homeassistant"
       python:
         patterns:
           - "*"
