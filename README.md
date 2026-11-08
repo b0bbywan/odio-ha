@@ -122,9 +122,9 @@ This way, Odio augments your existing players with Linux-level audio control and
   
 <img width="1644" height="921" alt="Without poweroff and reboot enabled" src="https://github.com/user-attachments/assets/f9f5b949-87c3-4d3d-824c-22e1a3229653" />
   
-**With MPD mapped**
+**MPD Media Player**
   
-<img width="1644" height="921" alt="With MPD mapped" src="https://github.com/user-attachments/assets/dc73cd84-1428-4d3f-8ce4-2d95a3657be2" />
+<img width="1540" height="923" alt="image" src="https://github.com/user-attachments/assets/5795fb5d-c0fa-4888-bffe-01efbd6fe052" />
   
 ## Installation
 
